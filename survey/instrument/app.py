@@ -46,7 +46,17 @@ app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 # swap to Redis if concurrent participants > 50).
 _SESSIONS: dict[str, dict] = {}
 
-PROLIFIC_COMPLETION_URL = "https://app.prolific.co/submissions/complete?cc=PLACEHOLDER"
+def _completion_url(study_id: str) -> str:
+    """Build Prolific completion URL from env var per study."""
+    import os
+    key_map = {
+        "pilot_v1":        "PROLIFIC_COMPLETION_CODE_PILOT",
+        "main_v1":         "PROLIFIC_COMPLETION_CODE_MAIN",
+        "system_eval_v1":  "PROLIFIC_COMPLETION_CODE_SYSEVAL",
+    }
+    env_key = key_map.get(study_id, "PROLIFIC_COMPLETION_CODE_PILOT")
+    code = os.environ.get(env_key, "PLACEHOLDER")
+    return f"https://app.prolific.co/submissions/complete?cc={code}"
 STUDY_TYPE_MAP: dict[str, str] = {
     "main_v1": "main",
     "system_eval_v1": "system_eval",
@@ -171,11 +181,12 @@ async def submit_rating(
 async def done(request: Request, session_token: str) -> Response:
     session = _SESSIONS.pop(session_token, {})
     fails = sum(1 for v in session.get("attention_checks", {}).values() if not v)
+    study_id = session.get("study_id", "pilot_v1")
     return TEMPLATES.TemplateResponse(
         "done.html",
         {
             "request": request,
-            "completion_url": PROLIFIC_COMPLETION_URL,
+            "completion_url": _completion_url(study_id),
             "attention_failures": fails,
         },
     )

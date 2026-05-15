@@ -20,6 +20,9 @@ reset-db:
 install:
 	uv pip install -e ".[dev]"
 
+discover-selectors:
+	python scripts/discover_selectors.py
+
 fonts:
 	python -m generation.layout.download_fonts
 

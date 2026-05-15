@@ -1,8 +1,8 @@
 # Pre-Registration: System Evaluation Study
 **Study:** AI-Generated Greeting Cards — End-to-End Evaluation
-**Version:** v1 | **Date registered:** [fill before launch]
-**OSF project:** [fill URL after submission]
-**Corresponding researcher:** [name, institution, email]
+**Version:** v1 | **Date registered:** [fill on OSF submission day]
+**OSF project:** [fill URL after submission — submit before running `make system-eval`]
+**Corresponding researcher:** Gagandeep Singh, gagan708344@gmail.com
 
 ---
 
@@ -84,7 +84,7 @@ Excluded participants are replaced until n_effective = 200 post-exclusion.
 
 ## 7. Analysis code
 
-Pre-registered analysis script: `eval/system_eval.py`, commit hash [fill after freezing].
+Pre-registered analysis script: `eval/system_eval.py`, scaffold commit `72c1b9f4dba4c5b1667712dc91963988cf24b7fa`. Final analysis commit: [fill with `git rev-parse HEAD` on the day the system eval study launches].
 Figures: `eval/reports/figures.py`.
 
 ---
