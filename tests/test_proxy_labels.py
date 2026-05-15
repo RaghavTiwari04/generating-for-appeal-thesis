@@ -42,14 +42,12 @@ def test_zscore_range() -> None:
 
 def test_proxy_score_bounds() -> None:
     df = _make_df()
-    weights = ProxyWeights()
     for col in ["favourite_velocity", "review_velocity", "log_review_count"]:
         df[col + "_norm"] = (
             df.groupby("occasion")[col]
             .transform(lambda s: _zscore_clip_minmax(s))
             .fillna(0.0)
         )
-    from data.labels.proxy import ProxyWeights
 
     w = ProxyWeights()
     df["proxy_score"] = (

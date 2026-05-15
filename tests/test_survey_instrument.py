@@ -11,24 +11,22 @@ from fastapi.testclient import TestClient
 # Patch DB + sampler before importing app so no real connections happen
 @pytest.fixture(scope="module")
 def client():
-    dummy_card = {
-        "card_key": "test-card-001",
-        "is_generated": False,
-        "condition_tag": None,
-        "occasion": "birthday/general",
-        "cover_path": "s3://bucket/images/test.png",
-        "headline": "Happy Birthday!",
-        "inside_message": "Wishing you all the best.",
-    }
+    from survey.instrument.sampler import CardAssignment
 
-    with patch("survey.instrument.sampler.sample_main", return_value=[
-        MagicMock(**dummy_card, __dict__=dummy_card)
-    ]), \
-    patch("survey.instrument.sampler.sample_system_eval", return_value=[
-        MagicMock(**dummy_card, __dict__=dummy_card)
-    ]), \
-    patch("survey.instrument.app._insert_rating", return_value=None), \
-    patch("survey.instrument.app._presign", return_value="/static/placeholder.png"):
+    dummy_card = CardAssignment(
+        card_key="test-card-001",
+        is_generated=False,
+        condition_tag=None,
+        occasion="birthday/general",
+        cover_path="s3://bucket/images/test.png",
+        headline="Happy Birthday!",
+        inside_message="Wishing you all the best.",
+    )
+
+    with patch("survey.instrument.app.sample_main", return_value=[dummy_card]), \
+         patch("survey.instrument.app.sample_system_eval", return_value=[dummy_card]), \
+         patch("survey.instrument.app._insert_rating", return_value=None), \
+         patch("survey.instrument.app._presign", return_value="/static/placeholder.png"):
         from survey.instrument.app import app as _app
         yield TestClient(_app, raise_server_exceptions=True)
 

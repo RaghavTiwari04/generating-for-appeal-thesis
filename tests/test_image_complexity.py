@@ -22,11 +22,13 @@ def test_solid_image_low_complexity(solid_white_img: Image.Image) -> None:
     assert score < 0.15, f"Solid image should be low complexity, got {score}"
 
 
-def test_checkerboard_high_complexity() -> None:
-    arr = np.indices((256, 256)).sum(axis=0) % 2 * 255
-    img = Image.fromarray(arr.astype(np.uint8), "L").convert("RGB")
+def test_noise_high_complexity() -> None:
+    """Random noise should score high — maximum unpredictability."""
+    rng = np.random.default_rng(0)
+    arr = rng.integers(0, 255, (256, 256), dtype=np.uint8)
+    img = Image.fromarray(arr, "L").convert("RGB")
     score = compute_complexity(img)
-    assert score > 0.5, f"Checkerboard should be high complexity, got {score}"
+    assert score > 0.7, f"Random noise should be high complexity, got {score}"
 
 
 def test_complexity_in_range(gradient_img: Image.Image) -> None:

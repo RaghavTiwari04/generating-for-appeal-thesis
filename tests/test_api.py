@@ -74,27 +74,27 @@ class TestGenerateEndpoint:
         assert r.status_code == 400
 
     def test_valid_request_returns_job_id(self):
-        with patch("app.api._EXECUTOR") as mock_exec:
-            mock_exec.submit = MagicMock()
-            # Simulate executor calling the pipeline synchronously
-            def fake_submit(fn, *args, **kwargs):
-                # Mark job done immediately with dummy results
-                job = args[0]
-                job.status = "done"
-                job.results = [_dummy_result()]
-                return MagicMock()
-            mock_exec.return_value = MagicMock()
+        # Patch run_in_executor on the running event loop so no real thread spawns.
+        # TestClient runs the ASGI app in a thread with its own event loop.
+        import concurrent.futures
 
-            with patch("asyncio.get_event_loop") as mock_loop:
-                future = MagicMock()
-                mock_loop.return_value.run_in_executor.return_value = future
+        def _fake_run_in_executor(executor, fn, *args, **kwargs):
+            """Run synchronously, mark job done immediately."""
+            job = args[0]
+            job.status = "done"
+            job.results = [_dummy_result()]
+            # Return a real future so wrap_future is happy
+            fut = concurrent.futures.Future()
+            fut.set_result(None)
+            return fut
 
-                r = client.post("/api/generate", json={
-                    "occasion": "birthday/general",
-                    "tone": "warm-sincere",
-                    "n_candidates": 2,
-                    "top_k": 1,
-                })
+        with patch("asyncio.BaseEventLoop.run_in_executor", side_effect=_fake_run_in_executor):
+            r = client.post("/api/generate", json={
+                "occasion": "birthday/general",
+                "tone": "warm-sincere",
+                "n_candidates": 2,
+                "top_k": 1,
+            })
         assert r.status_code == 200
         d = r.json()
         assert "job_id" in d

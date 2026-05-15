@@ -137,8 +137,8 @@ class EtsyScraper(Scraper):
             seller_id = m.group(1) if m else None
 
         if price_minor is None:
-            # Etsy sometimes puts price in a <p> near the add-to-cart section
             price_text = _text(tree.css_first(
+                "[data-buy-box-region='price'], "
                 "[data-buy-box-region='price'] p, "
                 "p.wt-text-heading-01"
             ))

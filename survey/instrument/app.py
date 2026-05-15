@@ -111,9 +111,9 @@ async def show_card(request: Request, session_token: str) -> Response:
     is_attention = (idx % 10 == 9)  # every 10th item is an attention check
 
     return TEMPLATES.TemplateResponse(
+        request,
         "card.html",
         {
-            "request": request,
             "session_token": session_token,
             "card_number": idx + 1,
             "total_cards": len(cards),
@@ -183,9 +183,9 @@ async def done(request: Request, session_token: str) -> Response:
     fails = sum(1 for v in session.get("attention_checks", {}).values() if not v)
     study_id = session.get("study_id", "pilot_v1")
     return TEMPLATES.TemplateResponse(
+        request,
         "done.html",
         {
-            "request": request,
             "completion_url": _completion_url(study_id),
             "attention_failures": fails,
         },

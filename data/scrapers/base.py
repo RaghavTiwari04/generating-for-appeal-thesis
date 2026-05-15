@@ -222,6 +222,7 @@ ON CONFLICT DO NOTHING;
 def upsert_listing(source: str, parsed: ParsedListing) -> str:
     """Upsert into `listings`, append a snapshot, return listing_id."""
     import json
+    from psycopg.types.json import Jsonb
 
     payload = {
         "source": source,
@@ -237,7 +238,7 @@ def upsert_listing(source: str, parsed: ParsedListing) -> str:
         "favourite_count": parsed.favourite_count,
         "is_bestseller": parsed.is_bestseller,
         "listing_created_at": parsed.listing_created_at,
-        "raw_metadata": json.dumps(
+        "raw_metadata": Jsonb(
             {**(parsed.raw_metadata or {}), "image_urls": parsed.image_urls}
         ),
     }

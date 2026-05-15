@@ -56,14 +56,22 @@ def compute_icc(
         ratings=rating_col,
     ).set_index("Type")
 
-    row1 = icc_df.loc["ICC3"]
-    rowk = icc_df.loc["ICC3k"]
+    # pingouin ≥ 0.5 uses "ICC(C,1)" / "ICC(C,k)";
+    # older versions used "ICC3" / "ICC3k". Support both.
+    key1 = "ICC(C,1)" if "ICC(C,1)" in icc_df.index else "ICC3"
+    keyk = "ICC(C,k)" if "ICC(C,k)" in icc_df.index else "ICC3k"
+
+    row1 = icc_df.loc[key1]
+    rowk = icc_df.loc[keyk]
+
+    ci_col = "CI95" if "CI95" in icc_df.columns else "CI95%"
+    ci = rowk[ci_col]
 
     return ICCResult(
         icc31=float(row1["ICC"]),
         icc3k=float(rowk["ICC"]),
-        ci_low=float(rowk["CI95%"][0]),
-        ci_high=float(rowk["CI95%"][1]),
+        ci_low=float(ci[0]),
+        ci_high=float(ci[1]),
         f_value=float(row1["F"]),
         p_value=float(row1["pval"]),
         n_raters=n_raters,

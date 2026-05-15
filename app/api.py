@@ -202,9 +202,9 @@ async def start_generate(req: GenerateRequest, background_tasks: BackgroundTasks
     _JOBS[job_id] = job
     _evict_old_jobs()
 
-    loop = asyncio.get_event_loop()
-    loop.run_in_executor(_EXECUTOR, _run_pipeline, job, req.model_dump())
-
+    asyncio.get_running_loop().run_in_executor(
+        _EXECUTOR, _run_pipeline, job, req.model_dump()
+    )
     return GenerateResponse(job_id=job_id)
 
 

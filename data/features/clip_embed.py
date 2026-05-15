@@ -115,9 +115,8 @@ def run_embed_missing(limit: int = 1000, feature_version: str = "siglip-base-v1"
         for row in rows:
             try:
                 data = get_object(row["storage_path"])
-                img = Image.open_bytes(data) if hasattr(Image, "open_bytes") else Image.open(
-                    __import__("io").BytesIO(data)
-                )
+                import io as _io
+                img = Image.open(_io.BytesIO(data))
                 img = img.convert("RGB")
                 emb = embedder.embed_images([img])[0]
                 cur.execute(

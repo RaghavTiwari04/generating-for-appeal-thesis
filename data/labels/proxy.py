@@ -140,6 +140,7 @@ SET score = EXCLUDED.score,
 def persist_proxy_scores(
     df: pd.DataFrame, *, label_source: str = "proxy_v1", weights: ProxyWeights | None = None
 ) -> int:
+    from psycopg.types.json import Jsonb
     weights = weights or ProxyWeights()
     rows = []
     for _, r in df.iterrows():
@@ -148,7 +149,7 @@ def persist_proxy_scores(
                 "listing_id": r["listing_id"],
                 "label_source": label_source,
                 "score": float(r["proxy_score"]),
-                "raw": json.dumps(
+                "raw": Jsonb(
                     {
                         "favourite_velocity": float(r["favourite_velocity"]),
                         "review_velocity": float(r["review_velocity"]),

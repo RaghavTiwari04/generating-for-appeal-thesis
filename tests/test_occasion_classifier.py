@@ -56,7 +56,34 @@ class TestWeakLabels:
 class TestOccasionClassifierModel:
     @pytest.fixture
     def model(self):
-        return OccasionClassifier(n_labels=len(OCCASIONS))
+        """Build classifier with a tiny random DistilBERT-shaped encoder (no download)."""
+        from unittest.mock import MagicMock, patch
+        import torch.nn as nn
+
+        # Stub the HuggingFace encoder with a minimal 2-layer transformer
+        tiny_encoder = nn.TransformerEncoder(
+            nn.TransformerEncoderLayer(d_model=768, nhead=8, batch_first=True, dim_feedforward=128),
+            num_layers=1,
+        )
+        # Give it .config.hidden_size so the classifier can read it
+        tiny_encoder.config = MagicMock(hidden_size=768)
+
+        class _FakeLM:
+            """Minimal stand-in for a HuggingFace model."""
+            config = MagicMock(hidden_size=768)
+
+            def __call__(self, input_ids, attention_mask):
+                B, T = input_ids.shape
+                import torch
+                fake_last_hidden = torch.randn(B, T, 768)
+                return MagicMock(last_hidden_state=fake_last_hidden)
+
+        with patch(
+            "data.features.occasion_classifier.AutoModel.from_pretrained",
+            return_value=_FakeLM(),
+        ):
+            clf = OccasionClassifier(n_labels=len(OCCASIONS))
+        return clf
 
     def test_forward_shape(self, model: OccasionClassifier) -> None:
         ids = torch.randint(0, 1000, (4, 16))

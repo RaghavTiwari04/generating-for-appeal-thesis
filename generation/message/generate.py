@@ -84,6 +84,8 @@ def _extract_json(text: str) -> dict:
         text = re.sub(r"^```(?:json)?\s*", "", text)
         text = re.sub(r"\s*```\s*$", "", text)
     start, end = text.find("{"), text.rfind("}")
+    if start == -1 or end == -1 or end <= start:
+        raise ValueError(f"No JSON object in LLM response: {text[:200]}")
     return json.loads(text[start : end + 1])
 
 

@@ -185,14 +185,21 @@ class TestOrchestrator:
     def test_orchestrator_returns_candidates(
         self, dummy_brief: Brief, dummy_cover: Image.Image, dummy_scores: dict
     ) -> None:
-        mocks = self._mock_all(dummy_brief, dummy_cover, dummy_scores)
+        composed_mock = MagicMock(image=dummy_cover, headline=dummy_brief.headline)
+        cursor_mock = MagicMock(
+            fetchone=MagicMock(return_value={"card_id": "uuid-1"})
+        )
+        cursor_ctx = MagicMock(__enter__=MagicMock(return_value=cursor_mock),
+                               __exit__=MagicMock(return_value=False))
+        conn_inner = MagicMock(cursor=MagicMock(return_value=cursor_ctx))
+        conn_ctx = MagicMock(__enter__=MagicMock(return_value=conn_inner),
+                             __exit__=MagicMock(return_value=False))
+
         with patch("pipeline.orchestrator.generate_brief", return_value=dummy_brief), \
              patch("pipeline.orchestrator.get_diffusion_runner", return_value=MagicMock(
-                 generate=MagicMock(return_value=[dummy_cover] * 2)
+                 return_value=MagicMock(generate=MagicMock(return_value=[dummy_cover] * 2))
              )), \
-             patch("pipeline.orchestrator.compose", return_value=Mocks := MagicMock(
-                 image=dummy_cover, headline=dummy_brief.headline
-             )), \
+             patch("pipeline.orchestrator.compose", return_value=composed_mock), \
              patch("pipeline.orchestrator.generate_message", return_value=InsideMessage(
                  primary="Happy Birthday", alternatives=[]
              )), \
@@ -204,13 +211,7 @@ class TestOrchestrator:
                  embed_texts=MagicMock(return_value=np.zeros((2, 768))),
              )), \
              patch("pipeline.orchestrator.put_image", return_value=("x", "s3://b/k")), \
-             patch("pipeline.orchestrator.connection") as mock_conn:
-            mock_conn.return_value.__enter__ = MagicMock(return_value=MagicMock())
-            mock_conn.return_value.__exit__ = MagicMock(return_value=False)
-            mock_conn.return_value.__enter__.return_value.cursor.return_value.__enter__ = MagicMock(
-                return_value=MagicMock(fetchone=MagicMock(return_value={"card_id": "uuid-1"}))
-            )
-            mock_conn.return_value.__enter__.return_value.cursor.return_value.__exit__ = MagicMock(return_value=False)
+             patch("pipeline.orchestrator.connection", return_value=conn_ctx):
 
             from pipeline.orchestrator import OrchestratorConfig, generate
             cfg = OrchestratorConfig(n_candidates=2, top_k=2,

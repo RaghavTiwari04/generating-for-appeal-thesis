@@ -18,6 +18,8 @@ Usage:
 from __future__ import annotations
 
 import json
+
+from psycopg.types.json import Jsonb
 from dataclasses import dataclass
 
 import pandas as pd
@@ -108,7 +110,7 @@ def build_and_persist(
                     "listing_id": card_key,
                     "label_source": label_source,
                     "score": _likert_to_01(pi_mean),
-                    "raw": json.dumps(raw_dict),
+                    "raw": Jsonb(raw_dict),
                 },
             )
             rows_written += 1

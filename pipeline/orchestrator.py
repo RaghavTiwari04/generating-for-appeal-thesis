@@ -10,10 +10,13 @@ calibrated saleability score.
 
 from __future__ import annotations
 
+import io
 import json
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+
+from psycopg.types.json import Jsonb
 
 from common.config import settings
 from common.db import connection
@@ -126,8 +129,6 @@ def _persist(
 ) -> None:
     with connection() as conn, conn.cursor() as cur:
         for cand in ranked:
-            import io
-
             buf = io.BytesIO()
             cand.image.save(buf, format="PNG")
             _, storage_path = put_image(buf.getvalue(), content_type="image/png")
@@ -137,7 +138,7 @@ def _persist(
                 {
                     "pipeline_version": PIPELINE_VERSION,
                     "condition_tag": cfg.condition_tag,
-                    "brief": json.dumps(
+                    "brief": Jsonb(
                         {
                             "request": request,
                             "brief": brief.model_dump(),
@@ -148,7 +149,7 @@ def _persist(
                     "cover_path": storage_path,
                     "inside_message": cand.inside_message,
                     "headline_text": cand.headline,
-                    "predicted_scores": json.dumps(cand.scores or {}),
+                    "predicted_scores": Jsonb(cand.scores or {}),
                     "seed": cand.seed,
                 },
             )

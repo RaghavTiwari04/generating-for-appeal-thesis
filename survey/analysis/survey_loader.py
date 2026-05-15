@@ -12,6 +12,8 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 
+from psycopg.types.json import Jsonb
+
 import pandas as pd
 
 from common.db import connection, engine
@@ -104,7 +106,7 @@ def to_saleability_labels(agg: AggregatedRatings, *, study_id: str) -> int:
                 "listing_id": card_key,
                 "label_source": label_source,
                 "score": float((row["purchase_intent_mean"] - 1) / 6),  # 1-7 -> 0-1
-                "raw": json.dumps(
+                "raw": Jsonb(
                     {dim: float(row[f"{dim}_mean"]) for dim in LIKERT_DIMENSIONS if f"{dim}_mean" in row}
                 ),
             }

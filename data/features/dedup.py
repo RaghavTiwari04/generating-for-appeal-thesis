@@ -87,7 +87,11 @@ def tfidf_duplicates(rows: list[tuple[str, str]], threshold: float = TFIDF_THRES
         return
     ids = [r[0] for r in rows]
     texts = [r[1] or "" for r in rows]
-    vec = TfidfVectorizer(min_df=2, max_df=0.9, ngram_range=(1, 2)).fit(texts)
+    n = len(texts)
+    # Scale min_df / max_df for small corpora to avoid empty vocabulary
+    min_df = max(1, min(2, n - 1))
+    max_df = 1.0 if n < 10 else 0.9
+    vec = TfidfVectorizer(min_df=min_df, max_df=max_df, ngram_range=(1, 2)).fit(texts)
     mat = vec.transform(texts)
     sim = cosine_similarity(mat, dense_output=False)
     rows_, cols_ = sim.nonzero()

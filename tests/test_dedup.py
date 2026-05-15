@@ -27,9 +27,15 @@ def test_phash_identical_images() -> None:
 
 
 def test_phash_very_different_images() -> None:
-    h1 = compute_phash(_solid_img((0, 0, 0)))
-    h2 = compute_phash(_solid_img((255, 255, 255)))
-    # Very different images should differ on many bits
+    # Solid images have no frequency content → similar pHash regardless of colour.
+    # Use texturally-opposite images: noise vs uniform grey.
+    import numpy as np
+    rng = np.random.default_rng(0)
+    noise_arr = rng.integers(0, 255, (128, 128), dtype=np.uint8)
+    noise_img = Image.fromarray(noise_arr).convert("RGB")
+    flat_img = Image.new("RGB", (128, 128), color=(128, 128, 128))
+    h1 = compute_phash(noise_img)
+    h2 = compute_phash(flat_img)
     assert hamming(h1, h2) > PHASH_HAMMING_THRESHOLD
 
 

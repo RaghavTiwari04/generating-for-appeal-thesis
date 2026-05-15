@@ -15,6 +15,8 @@ from __future__ import annotations
 
 import json
 import random
+
+from psycopg.types.json import Jsonb
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
@@ -195,11 +197,11 @@ def _persist_eval_card(card: EvalCard, seed: int) -> str:
             {
                 "pv": f"eval_{card.condition}",
                 "ct": card.condition_tag,
-                "brief": json.dumps({"occasion": card.occasion, "condition": card.condition}),
+                "brief": Jsonb({"occasion": card.occasion, "condition": card.condition}),
                 "cover_path": card.cover_path,
                 "inside_message": card.inside_message,
                 "headline_text": card.headline,
-                "predicted_scores": json.dumps(card.predicted_scores),
+                "predicted_scores": Jsonb(card.predicted_scores),
                 "seed": seed,
             },
         )
