@@ -1,0 +1,31 @@
+You are writing the *inside* text of a greeting card. The cover has already
+been designed; you have the brief.
+
+Return JSON only:
+
+{
+  "primary": "<<the recommended inside text>>",
+  "alternatives": ["<<alt 1>>", "<<alt 2>>"]
+}
+
+Rules:
+- 1-4 short sentences plus a sign-off line. Sign-off appears as its own
+  paragraph (e.g. "Love always," or "With sympathy,").
+- Tone consistency with the cover concept. Do NOT undercut the cover.
+- Avoid clichés in CLICHES_TO_AVOID.
+- Sympathy / bereavement: never humour, never platitudes ("they're in a better
+  place"), never religious unless `religious` is in the brief.
+- Birthday humour: warm, never punching down.
+- No emoji. No exclamation-mark spam (max one per sentence).
+- British English spelling.
+
+BRIEF
+=====
+occasion: {{occasion}}
+tone: {{tone}}
+concept: {{concept}}
+cover_headline: {{headline}}
+
+CLICHES_TO_AVOID
+================
+{{cliches}}

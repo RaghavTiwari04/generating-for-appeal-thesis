@@ -1,0 +1,54 @@
+# W&B hyperparameter sweep config for the saleability predictor.
+#
+# Run:
+#   wandb sweep models/predictor/sweep.yaml
+#   wandb agent <sweep_id>  # on GPU machine
+#
+# Optimises val Spearman on the saleability head.
+
+program: models/predictor/train.py
+method: bayes
+metric:
+  name: spearman_saleability
+  goal: maximize
+
+parameters:
+  epochs:
+    value: 40                   # fixed; early stop controls actual runtime
+
+  lr:
+    distribution: log_uniform_values
+    min: 5e-5
+    max: 5e-4
+
+  weight_decay:
+    distribution: log_uniform_values
+    min: 1e-3
+    max: 1e-1
+
+  batch_size:
+    values: [32, 64, 128]
+
+  saleability_loss_factor:
+    distribution: uniform
+    min: 1.5
+    max: 3.5
+
+  trunk_hidden:
+    values: [256, 512, 1024]
+
+  head_hidden:
+    values: [64, 128, 256]
+
+  dropout:
+    distribution: uniform
+    min: 0.05
+    max: 0.30
+
+  occasion_emb_dim:
+    values: [16, 32, 64]
+
+early_terminate:
+  type: hyperband
+  min_iter: 5
+  eta: 3

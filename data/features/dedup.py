@@ -1,0 +1,206 @@
+"""Three-stage deduplication pipeline.
+
+Stage 1: perceptual hash near-duplicate clustering   (cheap, image-only)
+Stage 2: CLIP cosine > 0.95 semantic duplicate       (uses pgvector kNN)
+Stage 3: TF-IDF title+description cosine > 0.85       (text-only fallback)
+
+We assign each listing to a single canonical cluster_id and record cluster size
+on `listing_features`. Canonical = highest combined engagement (review_count +
+favourite_count).
+"""
+
+from __future__ import annotations
+
+import uuid
+from collections import defaultdict
+from dataclasses import dataclass
+
+import imagehash
+import numpy as np
+from PIL import Image
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
+
+from common.db import connection
+from common.logging import get_logger
+from common.storage import get_object
+
+log = get_logger(__name__)
+
+PHASH_HAMMING_THRESHOLD = 6   # ~10% of 64-bit hash
+CLIP_COSINE_THRESHOLD = 0.95
+TFIDF_THRESHOLD = 0.85
+
+
+@dataclass
+class DedupStats:
+    listings_total: int
+    clusters: int
+    duplicates: int
+
+
+# ---------------------------------------------------------------------------
+# Stage 1: pHash
+# ---------------------------------------------------------------------------
+def compute_phash(img: Image.Image | bytes) -> int:
+    from io import BytesIO
+
+    if isinstance(img, (bytes, bytearray)):
+        img = Image.open(BytesIO(img))
+    img = img.convert("RGB")
+    h = imagehash.phash(img)
+    return int(str(h), 16)
+
+
+def hamming(a: int, b: int) -> int:
+    return bin(a ^ b).count("1")
+
+
+# ---------------------------------------------------------------------------
+# Stage 2: CLIP semantic dup (pgvector kNN)
+# ---------------------------------------------------------------------------
+_CLIP_NEIGHBOURS = """
+SELECT lf2.listing_id AS neighbour_id,
+       1 - (lf1.clip_embedding <=> lf2.clip_embedding) AS cosine
+FROM listing_features lf1
+JOIN listing_features lf2
+  ON lf2.listing_id <> lf1.listing_id
+WHERE lf1.listing_id = %(listing_id)s
+  AND lf2.clip_embedding IS NOT NULL
+ORDER BY lf1.clip_embedding <=> lf2.clip_embedding
+LIMIT %(k)s;
+"""
+
+
+def find_clip_neighbours(listing_id: str, *, k: int = 20) -> list[tuple[str, float]]:
+    with connection() as conn, conn.cursor() as cur:
+        cur.execute(_CLIP_NEIGHBOURS, {"listing_id": listing_id, "k": k})
+        return [(r["neighbour_id"], float(r["cosine"])) for r in cur.fetchall()]
+
+
+# ---------------------------------------------------------------------------
+# Stage 3: TF-IDF text dup
+# ---------------------------------------------------------------------------
+def tfidf_duplicates(rows: list[tuple[str, str]], threshold: float = TFIDF_THRESHOLD):
+    """rows: [(listing_id, text)]. Yields (id_a, id_b, sim) above threshold."""
+    if len(rows) < 2:
+        return
+    ids = [r[0] for r in rows]
+    texts = [r[1] or "" for r in rows]
+    vec = TfidfVectorizer(min_df=2, max_df=0.9, ngram_range=(1, 2)).fit(texts)
+    mat = vec.transform(texts)
+    sim = cosine_similarity(mat, dense_output=False)
+    rows_, cols_ = sim.nonzero()
+    for r, c in zip(rows_, cols_):
+        if r >= c:
+            continue
+        s = sim[r, c]
+        if s >= threshold:
+            yield ids[r], ids[c], float(s)
+
+
+# ---------------------------------------------------------------------------
+# Union-Find for clustering
+# ---------------------------------------------------------------------------
+class UnionFind:
+    def __init__(self) -> None:
+        self.parent: dict[str, str] = {}
+
+    def find(self, x: str) -> str:
+        self.parent.setdefault(x, x)
+        while self.parent[x] != x:
+            self.parent[x] = self.parent[self.parent[x]]
+            x = self.parent[x]
+        return x
+
+    def union(self, a: str, b: str) -> None:
+        ra, rb = self.find(a), self.find(b)
+        if ra != rb:
+            self.parent[ra] = rb
+
+
+# ---------------------------------------------------------------------------
+# Driver
+# ---------------------------------------------------------------------------
+def run_dedup(limit: int | None = None) -> DedupStats:
+    """Materialise duplicate clusters into listing_features.duplicate_cluster_id."""
+    uf = UnionFind()
+
+    with connection() as conn, conn.cursor() as cur:
+        # Stage 1: pHash. Already stored at ingest (listing_images.phash).
+        cur.execute(
+            "SELECT listing_id, phash FROM listing_images WHERE is_primary AND phash IS NOT NULL"
+        )
+        rows = cur.fetchall()
+        by_top = defaultdict(list)
+        for r in rows:
+            phash = int(str(r["phash"]), 2) if isinstance(r["phash"], str) else r["phash"]
+            by_top[phash >> 56].append((str(r["listing_id"]), phash))
+        for bucket in by_top.values():
+            for i in range(len(bucket)):
+                for j in range(i + 1, len(bucket)):
+                    if hamming(bucket[i][1], bucket[j][1]) <= PHASH_HAMMING_THRESHOLD:
+                        uf.union(bucket[i][0], bucket[j][0])
+
+        # Stage 2: CLIP semantic
+        cur.execute("SELECT listing_id FROM listing_features WHERE clip_embedding IS NOT NULL")
+        for r in cur.fetchall():
+            for neighbour, cos in find_clip_neighbours(str(r["listing_id"]), k=10):
+                if cos >= CLIP_COSINE_THRESHOLD:
+                    uf.union(str(r["listing_id"]), neighbour)
+
+        # Stage 3: TF-IDF on title+description (small batches)
+        cur.execute(
+            "SELECT listing_id, COALESCE(title,'') || ' ' || COALESCE(description,'') AS t "
+            "FROM listings"
+        )
+        text_rows = [(str(r["listing_id"]), r["t"]) for r in cur.fetchall()]
+        for a, b, _ in tfidf_duplicates(text_rows):
+            uf.union(a, b)
+
+        # Materialise clusters
+        clusters: dict[str, list[str]] = defaultdict(list)
+        for lid in set(r["listing_id"] for r in rows):
+            clusters[uf.find(str(lid))].append(str(lid))
+
+        # Cluster id = stable UUID derived from canonical member
+        # Canonical = max engagement (review_count + favourite_count NULLs as 0)
+        cur.execute(
+            "SELECT listing_id, "
+            "COALESCE(review_count,0) + COALESCE(favourite_count,0) AS engagement "
+            "FROM listings"
+        )
+        engagement = {str(r["listing_id"]): r["engagement"] for r in cur.fetchall()}
+
+        updates = []
+        for members in clusters.values():
+            canonical = max(members, key=lambda m: engagement.get(m, 0))
+            cluster_id = str(uuid.uuid5(uuid.NAMESPACE_OID, canonical))
+            size = len(members)
+            for m in members:
+                updates.append((cluster_id, size, m))
+
+        cur.executemany(
+            """
+            INSERT INTO listing_features (listing_id, duplicate_cluster_id, duplicate_cluster_size, feature_version)
+            VALUES (%s, %s, %s, 'dedup-v1')
+            ON CONFLICT (listing_id) DO UPDATE
+            SET duplicate_cluster_id   = EXCLUDED.duplicate_cluster_id,
+                duplicate_cluster_size = EXCLUDED.duplicate_cluster_size,
+                computed_at            = NOW();
+            """,
+            [(cid, sz, lid) for (cid, sz, lid) in updates],
+        )
+
+    duplicates = sum(1 for u in updates if u[1] > 1)
+    return DedupStats(
+        listings_total=len(updates),
+        clusters=len(clusters),
+        duplicates=duplicates,
+    )
+
+
+if __name__ == "__main__":
+    import typer
+
+    typer.run(run_dedup)

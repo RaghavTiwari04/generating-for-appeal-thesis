@@ -1,0 +1,47 @@
+# Python
+__pycache__/
+*.py[cod]
+*.so
+*.egg-info/
+.eggs/
+.venv/
+venv/
+env/
+build/
+dist/
+
+# Env / secrets
+.env
+.env.*.local
+*.secret
+
+# Caches
+.cache/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.ipynb_checkpoints/
+
+# Data / artefacts (large, store out-of-band)
+data_local/
+artifacts/
+checkpoints/
+*.ckpt
+*.safetensors
+*.pt
+*.pth
+*.bin
+wandb/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+
+# Scraper raw HTML cache (regenerable)
+.cache/raw_html/
+
+# Generated card outputs (regenerable)
+generated/

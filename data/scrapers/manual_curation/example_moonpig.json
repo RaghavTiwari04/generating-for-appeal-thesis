@@ -1,0 +1,87 @@
+[
+  {
+    "source": "moonpig",
+    "source_listing_id": "mp_001",
+    "url": "https://www.moonpig.com/uk/personalised-cards/p/happy-birthday-mum-watercolour-flowers/",
+    "title": "Happy Birthday Mum — Watercolour Flowers",
+    "description": "A beautiful watercolour floral birthday card for Mum, featuring hand-painted wildflowers and a heartfelt message inside.",
+    "seller_id": null,
+    "price_minor_units": 399,
+    "currency": "GBP",
+    "review_count": 2847,
+    "review_avg": 4.9,
+    "favourite_count": null,
+    "is_bestseller": true,
+    "listing_created_at": null,
+    "image_urls": [],
+    "raw_metadata": {
+      "collection": "bestsellers",
+      "occasion_tag": "birthday",
+      "recipient_tag": "mum",
+      "manually_curated": true
+    }
+  },
+  {
+    "source": "moonpig",
+    "source_listing_id": "mp_002",
+    "url": "https://www.moonpig.com/uk/personalised-cards/p/funny-birthday-card-getting-old/",
+    "title": "Getting Old? Nah, Just Getting Better — Funny Birthday",
+    "description": "A humorous birthday card featuring bold typography and an irreverent message about ageing.",
+    "seller_id": null,
+    "price_minor_units": 349,
+    "currency": "GBP",
+    "review_count": 1123,
+    "review_avg": 4.7,
+    "favourite_count": null,
+    "is_bestseller": false,
+    "listing_created_at": null,
+    "image_urls": [],
+    "raw_metadata": {
+      "collection": "humour",
+      "occasion_tag": "birthday",
+      "manually_curated": true
+    }
+  },
+  {
+    "source": "thortful",
+    "source_listing_id": "th_001",
+    "url": "https://www.thortful.com/product/wildflower-birthday-card",
+    "title": "Wildflower Birthday Card",
+    "description": "Illustrated wildflower design with cheerful colours. Perfect for anyone who loves nature.",
+    "seller_id": "botanical_studio",
+    "price_minor_units": 350,
+    "currency": "GBP",
+    "review_count": 412,
+    "review_avg": 4.8,
+    "favourite_count": 891,
+    "is_bestseller": true,
+    "listing_created_at": null,
+    "image_urls": [],
+    "raw_metadata": {
+      "occasion_tag": "birthday",
+      "style_tag": "illustrated",
+      "manually_curated": true
+    }
+  },
+  {
+    "source": "papier",
+    "source_listing_id": "pap_001",
+    "url": "https://www.papier.com/cards/birthday/minimalist-birthday-card",
+    "title": "Minimalist Gold Type Birthday Card",
+    "description": "Clean sans-serif typography on a cream background. Understated and elegant.",
+    "seller_id": null,
+    "price_minor_units": 499,
+    "currency": "GBP",
+    "review_count": 234,
+    "review_avg": 4.6,
+    "favourite_count": null,
+    "is_bestseller": false,
+    "listing_created_at": null,
+    "image_urls": [],
+    "raw_metadata": {
+      "occasion_tag": "birthday",
+      "style_tag": "minimalist",
+      "manually_curated": true
+    }
+  }
+]
