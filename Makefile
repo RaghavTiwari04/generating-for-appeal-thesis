@@ -132,6 +132,13 @@ train-loras: \
 	train-lora-valentines_day \
 	train-lora-sympathy/bereavement
 
+# ── Web app ───────────────────────────────────────────────────────────────────
+serve:
+	uvicorn app.api:app --reload --port 8000
+
+serve-docker:
+	docker compose --profile app up --build app
+
 # ── Data pipeline (single-command full run) ───────────────────────────────────
 pipeline:
 	python -m data.pipeline_runner

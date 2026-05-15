@@ -1,0 +1,400 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Greeting Card Generator</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.1/dist/cdn.min.js" defer></script>
+<style>
+  [x-cloak] { display: none !important; }
+  .card-img { transition: transform 0.2s; }
+  .card-img:hover { transform: scale(1.03); cursor: pointer; }
+  .score-bar { transition: width 0.6s ease; }
+  @keyframes pulse-ring { 0%,100%{opacity:1} 50%{opacity:.4} }
+  .generating { animation: pulse-ring 1.4s ease-in-out infinite; }
+</style>
+</head>
+<body class="bg-stone-50 min-h-screen" x-data="app()" x-init="init()">
+
+<!-- ── Header ─────────────────────────────────────────────────────────── -->
+<header class="bg-white border-b border-stone-200 px-6 py-4 flex items-center gap-4">
+  <span class="text-2xl">🎴</span>
+  <div>
+    <h1 class="font-semibold text-stone-800 text-lg leading-tight">Greeting Card Generator</h1>
+    <p class="text-xs text-stone-400">AI-generated · saleability-conditioned · print-ready</p>
+  </div>
+</header>
+
+<main class="max-w-5xl mx-auto px-4 py-8 space-y-8">
+
+  <!-- ── Generation form ──────────────────────────────────────────────── -->
+  <section class="bg-white rounded-2xl shadow-sm border border-stone-200 p-6">
+    <h2 class="font-semibold text-stone-700 mb-5">Create a card</h2>
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+
+      <!-- Occasion -->
+      <div class="sm:col-span-2">
+        <label class="block text-sm font-medium text-stone-600 mb-1">Occasion <span class="text-red-400">*</span></label>
+        <select x-model="form.occasion"
+                class="w-full border border-stone-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400">
+          <option value="">— choose —</option>
+          <template x-for="occ in occasions" :key="occ">
+            <option :value="occ" x-text="occ.replace(/\//g,' › ').replace(/_/g,' ')"></option>
+          </template>
+        </select>
+      </div>
+
+      <!-- Relationship -->
+      <div>
+        <label class="block text-sm font-medium text-stone-600 mb-1">For (relationship)</label>
+        <select x-model="form.relationship"
+                class="w-full border border-stone-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400">
+          <option value="">— optional —</option>
+          <template x-for="r in relationships" :key="r">
+            <option :value="r" x-text="r"></option>
+          </template>
+        </select>
+      </div>
+
+      <!-- Tone -->
+      <div>
+        <label class="block text-sm font-medium text-stone-600 mb-1">Tone <span class="text-red-400">*</span></label>
+        <select x-model="form.tone"
+                class="w-full border border-stone-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400">
+          <template x-for="t in tones" :key="t">
+            <option :value="t" x-text="t.replace(/-/g,' ')"></option>
+          </template>
+        </select>
+      </div>
+
+      <!-- N candidates -->
+      <div>
+        <label class="block text-sm font-medium text-stone-600 mb-1">
+          Candidates to generate: <span class="font-bold text-blue-600" x-text="form.n_candidates"></span>
+        </label>
+        <input type="range" min="1" max="16" step="1" x-model.number="form.n_candidates"
+               class="w-full accent-blue-500">
+        <p class="text-xs text-stone-400 mt-1">More = better quality, slower (~5s per candidate)</p>
+      </div>
+
+      <!-- Top K -->
+      <div>
+        <label class="block text-sm font-medium text-stone-600 mb-1">
+          Show top: <span class="font-bold text-blue-600" x-text="form.top_k"></span>
+        </label>
+        <input type="range" min="1" max="8" step="1" x-model.number="form.top_k"
+               class="w-full accent-blue-500">
+      </div>
+
+    </div>
+
+    <button @click="generate()"
+            :disabled="!form.occasion || !form.tone || status === 'running'"
+            class="mt-6 w-full sm:w-auto px-8 py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-stone-300 disabled:cursor-not-allowed text-white font-semibold rounded-xl transition-colors text-sm">
+      <span x-show="status !== 'running'">✨ Generate cards</span>
+      <span x-show="status === 'running'" class="generating">Generating…</span>
+    </button>
+  </section>
+
+  <!-- ── Progress ─────────────────────────────────────────────────────── -->
+  <section x-show="status === 'running' || progressLog.length" x-cloak
+           class="bg-white rounded-2xl shadow-sm border border-stone-200 p-6">
+    <h2 class="font-semibold text-stone-700 mb-4">Progress</h2>
+    <div class="space-y-2">
+      <template x-for="(msg, i) in progressLog" :key="i">
+        <div class="flex items-center gap-2 text-sm text-stone-600">
+          <span class="text-green-500 text-xs">✓</span>
+          <span x-text="msg"></span>
+        </div>
+      </template>
+      <div x-show="status === 'running'" class="flex items-center gap-2 text-sm text-blue-500">
+        <span class="generating">●</span>
+        <span>Working…</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Error ─────────────────────────────────────────────────────────── -->
+  <section x-show="status === 'error'" x-cloak
+           class="bg-red-50 border border-red-200 rounded-2xl p-6 text-red-700 text-sm">
+    <strong>Generation failed:</strong>
+    <span x-text="errorMsg"></span>
+  </section>
+
+  <!-- ── Results grid ──────────────────────────────────────────────────── -->
+  <section x-show="results.length" x-cloak>
+    <div class="flex items-center justify-between mb-4">
+      <h2 class="font-semibold text-stone-700">
+        Generated cards
+        <span class="text-stone-400 font-normal text-sm" x-text="`(top ${results.length} by saleability)`"></span>
+      </h2>
+      <span class="text-xs text-stone-400">Click a card to view full size + inside message</span>
+    </div>
+
+    <div class="grid grid-cols-2 sm:grid-cols-3 gap-4">
+      <template x-for="(card, i) in results" :key="card.card_id">
+        <div @click="openCard(card)"
+             class="bg-white rounded-xl border border-stone-200 shadow-sm overflow-hidden cursor-pointer hover:shadow-md transition-shadow">
+          <div class="relative">
+            <img :src="card.image_data_url" :alt="card.headline"
+                 class="card-img w-full object-cover aspect-[5/7]">
+            <!-- Rank badge -->
+            <div class="absolute top-2 left-2 bg-white/90 backdrop-blur text-xs font-bold text-stone-700 px-2 py-0.5 rounded-full shadow">
+              #<span x-text="card.rank"></span>
+            </div>
+            <!-- Score badge -->
+            <div class="absolute top-2 right-2 bg-blue-600 text-white text-xs font-bold px-2 py-0.5 rounded-full shadow">
+              <span x-text="scoreLabel(card.scores)"></span>
+            </div>
+          </div>
+          <div class="p-3">
+            <p class="text-xs font-semibold text-stone-700 line-clamp-2" x-text="card.headline"></p>
+            <p class="text-xs text-stone-400 mt-1" x-text="card.occasion.replace(/\//g,' › ').replace(/_/g,' ')"></p>
+            <!-- Mini score bars -->
+            <div class="mt-2 space-y-1">
+              <template x-for="[label, key] in scoreFields" :key="key">
+                <div class="flex items-center gap-1.5">
+                  <span class="text-[10px] text-stone-400 w-16 shrink-0" x-text="label"></span>
+                  <div class="flex-1 bg-stone-100 rounded-full h-1.5">
+                    <div class="score-bar bg-blue-400 h-1.5 rounded-full"
+                         :style="`width: ${Math.round((card.scores[key] || 0) * 100)}%`"></div>
+                  </div>
+                  <span class="text-[10px] text-stone-400 w-6 text-right"
+                        x-text="Math.round((card.scores[key] || 0) * 100)"></span>
+                </div>
+              </template>
+            </div>
+          </div>
+        </div>
+      </template>
+    </div>
+  </section>
+
+  <!-- ── Recent history ────────────────────────────────────────────────── -->
+  <section x-show="history.length" x-cloak>
+    <h2 class="font-semibold text-stone-700 mb-4">Recent cards</h2>
+    <div class="flex gap-3 overflow-x-auto pb-2">
+      <template x-for="h in history" :key="h.job_id">
+        <div class="shrink-0 w-28 bg-white rounded-xl border border-stone-200 overflow-hidden shadow-sm cursor-pointer hover:shadow-md transition-shadow"
+             @click="openHistoryCard(h)">
+          <img :src="h.image_data_url" :alt="h.headline" class="w-full aspect-[5/7] object-cover">
+          <p class="text-[10px] text-stone-500 p-1.5 line-clamp-2" x-text="h.headline"></p>
+        </div>
+      </template>
+    </div>
+  </section>
+
+</main>
+
+<!-- ── Card detail modal ─────────────────────────────────────────────── -->
+<div x-show="selected" x-cloak
+     @click.self="selected = null"
+     class="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
+  <div class="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto"
+       x-show="selected" x-transition>
+    <template x-if="selected">
+      <div>
+        <div class="flex items-center justify-between p-5 border-b border-stone-200">
+          <div>
+            <h3 class="font-semibold text-stone-800" x-text="selected.headline"></h3>
+            <p class="text-xs text-stone-400 mt-0.5"
+               x-text="selected.occasion?.replace(/\//g,' › ').replace(/_/g,' ')"></p>
+          </div>
+          <button @click="selected = null"
+                  class="text-stone-400 hover:text-stone-600 text-2xl leading-none">&times;</button>
+        </div>
+
+        <div class="flex flex-col sm:flex-row gap-5 p-5">
+          <!-- Cover image -->
+          <div class="sm:w-64 shrink-0">
+            <img :src="selected.image_data_url" :alt="selected.headline"
+                 class="w-full rounded-xl shadow border border-stone-200">
+          </div>
+
+          <!-- Details -->
+          <div class="flex-1 space-y-4">
+            <!-- Inside message -->
+            <div>
+              <h4 class="text-xs font-semibold text-stone-500 uppercase tracking-wide mb-1">Inside message</h4>
+              <p class="text-sm text-stone-700 leading-relaxed whitespace-pre-line"
+                 x-text="selected.inside_message"></p>
+            </div>
+
+            <!-- Scores -->
+            <div>
+              <h4 class="text-xs font-semibold text-stone-500 uppercase tracking-wide mb-2">Saleability scores</h4>
+              <div class="space-y-2">
+                <template x-for="[label, key] in scoreFields" :key="key">
+                  <div class="flex items-center gap-2">
+                    <span class="text-xs text-stone-500 w-28 shrink-0" x-text="label"></span>
+                    <div class="flex-1 bg-stone-100 rounded-full h-2">
+                      <div class="score-bar h-2 rounded-full"
+                           :class="scoreColour(card?.scores[key] || selected.scores[key] || 0)"
+                           :style="`width: ${Math.round((selected.scores[key] || 0) * 100)}%`"></div>
+                    </div>
+                    <span class="text-xs font-mono text-stone-600 w-8 text-right"
+                          x-text="Math.round((selected.scores[key] || 0) * 100) + '%'"></span>
+                  </div>
+                </template>
+              </div>
+            </div>
+
+            <!-- Buttons -->
+            <div class="flex gap-3 pt-2">
+              <button @click="downloadCard(selected)"
+                      class="flex-1 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold rounded-xl transition-colors">
+                ⬇ Download print PNG
+              </button>
+              <button @click="copyMessage(selected.inside_message)"
+                      class="px-4 py-2.5 border border-stone-300 hover:border-stone-400 text-stone-600 text-sm rounded-xl transition-colors">
+                📋 Copy message
+              </button>
+            </div>
+            <p class="text-xs text-stone-400" x-show="copied">Message copied to clipboard!</p>
+          </div>
+        </div>
+      </div>
+    </template>
+  </div>
+</div>
+
+<script>
+function app() {
+  return {
+    form: {
+      occasion: '',
+      relationship: '',
+      tone: 'warm-sincere',
+      n_candidates: 8,
+      top_k: 3,
+      constraints: {},
+    },
+    occasions: [],
+    relationships: [],
+    tones: [],
+    status: 'idle',   // idle | running | done | error
+    progressLog: [],
+    results: [],
+    history: [],
+    selected: null,
+    errorMsg: '',
+    copied: false,
+    scoreFields: [
+      ['Saleability',   'saleability_calibrated'],
+      ['Aesthetic',     'aesthetic'],
+      ['Occasion fit',  'occasion_fit'],
+      ['Emotional',     'emotional'],
+      ['Distinctive',   'distinctiveness'],
+    ],
+
+    async init() {
+      try {
+        const r = await fetch('/api/occasions');
+        const d = await r.json();
+        this.occasions = d.occasions;
+        this.relationships = d.relationships;
+        this.tones = d.tones;
+        this.form.tone = this.tones[0] || 'warm-sincere';
+      } catch (e) {
+        console.error('Could not load occasions:', e);
+      }
+      await this.loadHistory();
+    },
+
+    async generate() {
+      if (!this.form.occasion || !this.form.tone) return;
+      this.status = 'running';
+      this.progressLog = [];
+      this.results = [];
+      this.errorMsg = '';
+
+      let jobId;
+      try {
+        const r = await fetch('/api/generate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(this.form),
+        });
+        const d = await r.json();
+        jobId = d.job_id;
+      } catch (e) {
+        this.status = 'error';
+        this.errorMsg = String(e);
+        return;
+      }
+
+      const es = new EventSource(`/api/generate/${jobId}`);
+      es.onmessage = (ev) => {
+        const data = JSON.parse(ev.data);
+        if (data.type === 'progress') {
+          this.progressLog.push(data.message);
+        } else if (data.type === 'done') {
+          this.results = data.results;
+          this.status = 'done';
+          es.close();
+          this.loadHistory();
+        } else if (data.type === 'error') {
+          this.status = 'error';
+          this.errorMsg = data.message;
+          es.close();
+        }
+      };
+      es.onerror = () => {
+        if (this.status === 'running') {
+          this.status = 'error';
+          this.errorMsg = 'Connection lost';
+          es.close();
+        }
+      };
+    },
+
+    async loadHistory() {
+      try {
+        const r = await fetch('/api/history?limit=12');
+        const d = await r.json();
+        this.history = d.cards;
+      } catch (_) {}
+    },
+
+    openCard(card) { this.selected = card; this.copied = false; },
+    openHistoryCard(h) {
+      this.selected = {
+        headline: h.headline,
+        occasion: h.occasion,
+        inside_message: '',
+        image_data_url: h.image_data_url,
+        scores: { saleability_calibrated: h.score },
+      };
+    },
+
+    scoreLabel(scores) {
+      const s = scores?.saleability_calibrated ?? scores?.saleability ?? 0;
+      return Math.round(s * 100) + '%';
+    },
+
+    scoreColour(v) {
+      if (v >= 0.7) return 'bg-green-400';
+      if (v >= 0.4) return 'bg-blue-400';
+      return 'bg-stone-300';
+    },
+
+    downloadCard(card) {
+      const a = document.createElement('a');
+      a.href = card.image_data_url;
+      a.download = `card-${card.occasion}-${Date.now()}.jpg`;
+      a.click();
+    },
+
+    async copyMessage(text) {
+      try {
+        await navigator.clipboard.writeText(text || '');
+        this.copied = true;
+        setTimeout(() => this.copied = false, 2500);
+      } catch (_) {}
+    },
+  };
+}
+</script>
+</body>
+</html>
