@@ -1,19 +1,19 @@
 #!/bin/bash
 #SBATCH --job-name=gc-predictor
-#SBATCH --partition=gpus
+#SBATCH --partition=t4
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=32G
 #SBATCH --time=01:00:00
 #SBATCH --output=logs/slurm-%j-predictor.out
 #SBATCH --error=logs/slurm-%j-predictor.err
-
-# Train 5-head saleability predictor — small model, any GPU fine
+#SBATCH --mail-type=END,FAIL
 
 set -euo pipefail
-module load anaconda3/2024 2>/dev/null || module load anaconda3
-conda activate gc
+. /vol/cuda/12.0.0/setup.sh
+source /vol/bitbucket/$USER/venvs/gc/bin/activate
 cd "$SLURM_SUBMIT_DIR"
+source cluster/jobs/_start_services.sh
 
 echo "=== Predictor training ==="
 echo "GPU: $(nvidia-smi --query-gpu=name --format=csv,noheader)"

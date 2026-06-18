@@ -9,8 +9,8 @@
 
 set -euo pipefail
 
-USERNAME="${1:?Usage: bash cluster/ssh_tunnel.sh YOUR_IMPERIAL_USERNAME}"
-HOST="login.hpc.imperial.ac.uk"
+USERNAME="${1:?Usage: bash cluster/ssh_tunnel.sh YOUR_DOC_SHORTCODE}"
+HOST="gpucluster2.doc.ic.ac.uk"
 
 echo "Opening SSH tunnels to $HOST as $USERNAME..."
 echo "  Remote :5432 → local Postgres"

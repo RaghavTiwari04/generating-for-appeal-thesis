@@ -1,49 +1,79 @@
 #!/usr/bin/env bash
-# One-time setup on Imperial HPC cluster.
-# Usage: bash cluster/setup_env.sh
+# One-time setup on Imperial DoC GPU cluster.
+#
+# IMPORTANT: Run this on a SHELL SERVER or LAB PC, NOT on gpucluster2/3.
+#   ssh SHORTCODE@shell3.doc.ic.ac.uk
+#   cd /vol/bitbucket/$USER/masters_thesis
+#   bash cluster/setup_env.sh
+#
+# Or use an interactive session:
+#   salloc --gres=gpu:1 -p t4
+#   bash cluster/setup_env.sh
 
 set -euo pipefail
 
-echo "=== Setting up greeting-cards environment ==="
+WORK="/vol/bitbucket/$USER"
+echo "=== Setting up in $WORK/masters_thesis ==="
 
-# Load modules (adjust names to match Imperial's module system)
-module load anaconda3/2024 2>/dev/null || module load anaconda3 2>/dev/null || {
-    echo "WARNING: Could not load anaconda3 module. Trying conda directly..."
-}
-
-# Check for Tesseract
-if ! command -v tesseract &>/dev/null; then
-    echo "WARNING: Tesseract not found. OCR step will fail."
-    echo "Try: module load tesseract  OR  conda install -c conda-forge tesseract"
+# CUDA
+if [ -f /vol/cuda/12.0.0/setup.sh ]; then
+    source /vol/cuda/12.0.0/setup.sh
+    echo "CUDA 12.0 loaded"
 fi
 
-# Create conda environment
-if conda info --envs | grep -q "^gc "; then
-    echo "Conda env 'gc' already exists. Updating..."
-    conda activate gc
-    pip install -e ".[dev]"
+# Use virtualenv (cluster standard) — NOT conda
+VENV="$WORK/venvs/gc"
+if [ -d "$VENV" ]; then
+    echo "Virtualenv $VENV already exists. Activating..."
+    source "$VENV/bin/activate"
 else
-    echo "Creating conda env 'gc' with Python 3.11..."
-    conda create -n gc python=3.11 -y
-    conda activate gc
+    echo "Creating virtualenv at $VENV ..."
+    python3 -m virtualenv "$VENV"
+    source "$VENV/bin/activate"
 
-    # Install PyTorch with CUDA (Imperial typically has CUDA 12.x)
+    # Install PyTorch with CUDA 12.1
     pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
 
     # Install project
     pip install -e ".[dev]"
-
-    # Playwright for scraping (optional on cluster)
-    # playwright install chromium
 fi
 
-# Create directories
-mkdir -p logs artifacts/predictor artifacts/lora artifacts/generation
+# Create directories on bitbucket (NOT home — home is only 12GB)
+mkdir -p "$WORK/masters_thesis/logs"
+mkdir -p "$WORK/masters_thesis/artifacts/predictor"
+mkdir -p "$WORK/masters_thesis/artifacts/lora"
+mkdir -p "$WORK/pgdata"
+mkdir -p "$WORK/minio-data"
 
-# Download fonts (CPU, quick)
-python -m generation.layout.download_fonts 2>/dev/null || echo "Font download skipped (run manually if needed)"
+# Download fonts
+python -m generation.layout.download_fonts 2>/dev/null || echo "Font download skipped"
+
+# Pre-download HuggingFace models (compute nodes may have no internet!)
+echo ""
+echo "=== Pre-downloading model weights ==="
+echo "This may take a while on first run..."
+python -c "
+from transformers import AutoModel, AutoTokenizer
+print('Downloading SigLIP...')
+AutoModel.from_pretrained('google/siglip-base-patch16-224')
+print('SigLIP cached.')
+" 2>/dev/null || echo "SigLIP download failed — try manually"
+
+python -c "
+from diffusers import StableDiffusionXLInpaintPipeline
+import torch
+print('Downloading SDXL...')
+StableDiffusionXLInpaintPipeline.from_pretrained(
+    'stabilityai/stable-diffusion-xl-base-1.0',
+    torch_dtype=torch.float16,
+)
+print('SDXL cached.')
+" 2>/dev/null || echo "SDXL download failed — try manually"
 
 echo ""
 echo "=== Setup complete ==="
-echo "Activate with: conda activate gc"
-echo "Then copy and edit .env: cp cluster/.env.cluster .env && nano .env"
+echo "Activate with: source $VENV/bin/activate"
+echo "Copy and edit .env: cp cluster/.env.cluster .env && nano .env"
+echo ""
+echo "IMPORTANT: If using Flux instead of SDXL, also pre-download:"
+echo "  python -c \"from diffusers import FluxPipeline; FluxPipeline.from_pretrained('black-forest-labs/FLUX.1-dev')\""

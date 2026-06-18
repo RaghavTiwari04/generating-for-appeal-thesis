@@ -99,7 +99,8 @@ def generate(request: dict, cfg: OrchestratorConfig | None = None) -> list[Candi
         from data.features.clip_embed import CLIPEmbedder
         from models.predictor.infer import PredictorRunner
 
-        predictor = PredictorRunner(cfg.predictor_ckpt, cfg.predictor_calib)
+        calib = cfg.predictor_calib if (cfg.predictor_calib and cfg.predictor_calib.exists()) else None
+        predictor = PredictorRunner(cfg.predictor_ckpt, calib)
         embedder = CLIPEmbedder()
         ranked = rerank(
             candidates, predictor=predictor, embedder=embedder, top_k=cfg.top_k

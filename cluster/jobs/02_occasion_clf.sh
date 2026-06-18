@@ -1,19 +1,19 @@
 #!/bin/bash
 #SBATCH --job-name=gc-occasion-clf
-#SBATCH --partition=gpus
+#SBATCH --partition=t4
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=16G
 #SBATCH --time=00:30:00
 #SBATCH --output=logs/slurm-%j-occasion-clf.out
 #SBATCH --error=logs/slurm-%j-occasion-clf.err
-
-# Occasion classifier: train DistilBERT then infer on all listings
+#SBATCH --mail-type=END,FAIL
 
 set -euo pipefail
-module load anaconda3/2024 2>/dev/null || module load anaconda3
-conda activate gc
+. /vol/cuda/12.0.0/setup.sh
+source /vol/bitbucket/$USER/venvs/gc/bin/activate
 cd "$SLURM_SUBMIT_DIR"
+source cluster/jobs/_start_services.sh
 
 echo "=== Occasion classifier ==="
 echo "GPU: $(nvidia-smi --query-gpu=name --format=csv,noheader)"

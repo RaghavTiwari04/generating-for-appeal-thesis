@@ -1,0 +1,2 @@
+All fonts in this directory are licensed under the SIL Open Font License v1.1.
+https://scripts.sil.org/OFL
