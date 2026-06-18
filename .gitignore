@@ -40,6 +40,15 @@ Thumbs.db
 .vscode/
 *.swp
 
+# Claude Code / MCP local config
+.claude/
+.mcp.json
+
+# Debug artifacts
+*_output.txt
+scraped_gallery.html
+pipeline_flowchart.html
+
 # Scraper raw HTML cache (regenerable)
 .cache/raw_html/
 
