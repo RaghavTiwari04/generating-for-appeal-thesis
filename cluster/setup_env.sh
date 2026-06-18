@@ -33,8 +33,8 @@ else
     python3 -m virtualenv "$VENV"
     source "$VENV/bin/activate"
 
-    # Install PyTorch with CUDA 12.1 (backward compatible with CUDA 12.0)
-    pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
+    # Install PyTorch with CUDA 11.8 (compatible with cluster's CUDA 12.0)
+    pip install torch torchvision --index-url https://download.pytorch.org/whl/cu118
 
     # Install project
     pip install -e ".[dev]"
