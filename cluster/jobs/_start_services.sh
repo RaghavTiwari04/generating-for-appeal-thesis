@@ -3,6 +3,7 @@
 # Usage (in job script): source cluster/jobs/_start_services.sh
 
 WORK="/vol/bitbucket/$USER"
+export HF_HOME="$WORK/.cache/huggingface"
 PG_DIR="$WORK/pgdata"
 MINIO_DIR="$WORK/minio-data"
 MINIO_BIN="$WORK/bin/minio"

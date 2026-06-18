@@ -13,6 +13,8 @@
 set -euo pipefail
 
 WORK="/vol/bitbucket/$USER"
+export HF_HOME="$WORK/.cache/huggingface"
+mkdir -p "$HF_HOME"
 echo "=== Setting up in $WORK/masters_thesis ==="
 
 # CUDA
@@ -31,8 +33,8 @@ else
     python3 -m virtualenv "$VENV"
     source "$VENV/bin/activate"
 
-    # Install PyTorch with CUDA 12.1
-    pip install torch torchvision --index-url https://download.pytorch.org/whl/cu120
+    # Install PyTorch with CUDA 12.1 (backward compatible with CUDA 12.0)
+    pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
 
     # Install project
     pip install -e ".[dev]"
