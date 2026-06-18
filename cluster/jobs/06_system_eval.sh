@@ -8,6 +8,7 @@
 #SBATCH --output=logs/slurm-%j-syseval.out
 #SBATCH --error=logs/slurm-%j-syseval.err
 #SBATCH --mail-type=END,FAIL
+#SBATCH --mail-user=${USER}
 
 # System evaluation — generates cards under all 4 conditions (A/B/C/D)
 

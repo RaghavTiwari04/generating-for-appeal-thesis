@@ -32,7 +32,7 @@ else
     source "$VENV/bin/activate"
 
     # Install PyTorch with CUDA 12.1
-    pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
+    pip install torch torchvision --index-url https://download.pytorch.org/whl/cu120
 
     # Install project
     pip install -e ".[dev]"

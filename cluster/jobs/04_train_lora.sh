@@ -8,6 +8,7 @@
 #SBATCH --output=logs/slurm-%j-lora.out
 #SBATCH --error=logs/slurm-%j-lora.err
 #SBATCH --mail-type=END,FAIL
+#SBATCH --mail-user=${USER}
 
 # LoRA fine-tuning per occasion — needs 24GB+ VRAM
 # Use a40 (48GB) or a100 (80GB). a30 (24GB) might work tight.

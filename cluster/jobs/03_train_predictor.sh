@@ -8,6 +8,7 @@
 #SBATCH --output=logs/slurm-%j-predictor.out
 #SBATCH --error=logs/slurm-%j-predictor.err
 #SBATCH --mail-type=END,FAIL
+#SBATCH --mail-user=${USER}
 
 set -euo pipefail
 . /vol/cuda/12.0.0/setup.sh

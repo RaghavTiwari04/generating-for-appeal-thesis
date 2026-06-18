@@ -8,6 +8,7 @@
 #SBATCH --output=logs/slurm-%j-generate.out
 #SBATCH --error=logs/slurm-%j-generate.err
 #SBATCH --mail-type=END,FAIL
+#SBATCH --mail-user=${USER}
 
 # Card generation with Flux — needs 22GB+ VRAM (a40/a100)
 # For SDXL fallback (7GB), change partition to t4/a16 and set

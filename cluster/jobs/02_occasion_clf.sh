@@ -8,6 +8,7 @@
 #SBATCH --output=logs/slurm-%j-occasion-clf.out
 #SBATCH --error=logs/slurm-%j-occasion-clf.err
 #SBATCH --mail-type=END,FAIL
+#SBATCH --mail-user=${USER}
 
 set -euo pipefail
 . /vol/cuda/12.0.0/setup.sh

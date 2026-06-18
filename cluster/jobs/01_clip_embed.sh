@@ -8,6 +8,7 @@
 #SBATCH --output=logs/slurm-%j-clip-embed.out
 #SBATCH --error=logs/slurm-%j-clip-embed.err
 #SBATCH --mail-type=END,FAIL
+#SBATCH --mail-user=${USER}
 
 set -euo pipefail
 . /vol/cuda/12.0.0/setup.sh
