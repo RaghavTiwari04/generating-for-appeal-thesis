@@ -6,14 +6,11 @@ DB-dependent fixtures gated behind `--integration` flag (not run by default).
 
 from __future__ import annotations
 
-from pathlib import Path
 from textwrap import dedent
-from typing import Generator
 
 import numpy as np
 import pytest
 from PIL import Image
-
 
 # ── Image fixtures ────────────────────────────────────────────────────────────
 
@@ -36,23 +33,31 @@ def gradient_img() -> Image.Image:
 
 @pytest.fixture
 def print_res_img() -> Image.Image:
-    """1240×1748 px — print-resolution card size."""
+    """1240x1748 px - print-resolution card size."""
     return Image.new("RGB", (1240, 1748), color=(200, 180, 160))
 
 
 # ── HTML fixture helpers ──────────────────────────────────────────────────────
 
 ETSY_LISTING_HTML = dedent("""\
-    <html><body>
+    <html><head>
+    <script type="application/ld+json">
+    {
+      "@type": "Product",
+      "name": "Happy Birthday Mum — Watercolour Floral Card",
+      "description": "A beautiful watercolour card for mum",
+      "brand": {"name": "FloralPaperCo"},
+      "offers": {"price": "3.99", "priceCurrency": "GBP"},
+      "aggregateRating": {"reviewCount": 127, "ratingValue": 4.9},
+      "image": ["https://i.etsystatic.com/123/card.jpg"]
+    }
+    </script>
+    </head><body>
     <h1 data-buy-box-listing-title>Happy Birthday Mum — Watercolour Floral Card</h1>
-    <div data-product-details-description-text>A beautiful watercolour card for mum</div>
     <a href="/shop/FloralPaperCo">FloralPaperCo</a>
     <div data-buy-box-region="price">£3.99</div>
-    <span data-review-count>127 reviews</span>
-    <span data-review-rating>4.9</span>
     <span data-favorites-count>2,341</span>
     <span data-bestseller-badge>Bestseller</span>
-    <img class="wt-max-width-full" src="https://i.etsystatic.com/123/card.jpg">
     </body></html>
 """)
 

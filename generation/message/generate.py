@@ -10,12 +10,10 @@ predictor scoring is cheap (CLIP text + frozen MLP).
 
 from __future__ import annotations
 
-import json
-import re
 from dataclasses import dataclass
 from pathlib import Path
 
-from common.config import settings
+from common.llm import call_llm, extract_json
 from common.logging import get_logger
 
 log = get_logger(__name__)
@@ -52,48 +50,14 @@ def _render(occasion: str, tone: str, concept: str, headline: str) -> str:
     )
 
 
-def _call_llm(prompt: str) -> str:
-    provider = settings.llm_provider.lower()
-    if provider == "anthropic":
-        from anthropic import Anthropic
-
-        client = Anthropic(api_key=settings.anthropic_api_key)
-        resp = client.messages.create(
-            model=settings.llm_model,
-            max_tokens=512,
-            messages=[{"role": "user", "content": prompt}],
-        )
-        return "".join(b.text for b in resp.content if b.type == "text")
-    elif provider == "openai":
-        from openai import OpenAI
-
-        client = OpenAI(api_key=settings.openai_api_key)
-        resp = client.chat.completions.create(
-            model=settings.llm_model,
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.8,
-            max_tokens=512,
-        )
-        return resp.choices[0].message.content or ""
-    raise ValueError(f"Unknown LLM provider: {provider}")
-
-
-def _extract_json(text: str) -> dict:
-    text = text.strip()
-    if text.startswith("```"):
-        text = re.sub(r"^```(?:json)?\s*", "", text)
-        text = re.sub(r"\s*```\s*$", "", text)
-    start, end = text.find("{"), text.rfind("}")
-    if start == -1 or end == -1 or end <= start:
-        raise ValueError(f"No JSON object in LLM response: {text[:200]}")
-    return json.loads(text[start : end + 1])
-
-
 def generate_message(*, occasion: str, tone: str, concept: str, headline: str) -> InsideMessage:
     prompt = _render(occasion, tone, concept, headline)
-    raw = _call_llm(prompt)
-    payload = _extract_json(raw)
+    raw = call_llm(prompt, max_tokens=512, temperature=0.8)
+    payload = extract_json(raw)
+    primary = payload.get("primary")
+    if not primary:
+        raise ValueError(f"LLM response missing 'primary' key: {list(payload.keys())}")
     return InsideMessage(
-        primary=payload["primary"],
+        primary=primary,
         alternatives=list(payload.get("alternatives", []))[:3],
     )

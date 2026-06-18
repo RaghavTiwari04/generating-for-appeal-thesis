@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pair {{ pair_number }} of {{ total_pairs }}</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+         background: #f4f4f4; color: #222; min-height: 100vh; padding: 1.25rem; }
+  .container { max-width: 980px; margin: 0 auto; }
+  .progress { font-size: 0.85rem; color: #666; margin-bottom: 0.5rem; }
+  .progress-bar { width: 100%; height: 6px; background: #ddd; border-radius: 3px;
+                  margin-bottom: 1.25rem; }
+  .progress-bar-fill { height: 100%; background: #3b82f6; border-radius: 3px;
+                       width: {{ (pair_number / total_pairs * 100) | round }}%; }
+  .context-box { background: #fffbeb; border: 1px solid #fde68a; border-radius: 6px;
+                 padding: 0.85rem 1rem; margin-bottom: 1.25rem; font-size: 0.95rem; }
+  .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 1.25rem; margin-bottom: 1.25rem; }
+  @media (max-width: 720px) { .pair { grid-template-columns: 1fr; } }
+  .side { background: white; border-radius: 8px; padding: 0.9rem;
+          box-shadow: 0 1px 4px rgba(0,0,0,0.07); text-align: center; }
+  .side img { width: 100%; height: auto; display: block; border-radius: 4px;
+              background: #fafafa; max-height: 450px; object-fit: contain;
+              margin: 0 auto; }
+  .side .label { font-size: 0.7rem; color: #aaa; text-transform: uppercase;
+                 letter-spacing: 0.05em; margin-bottom: 0.4rem; }
+  .side h4 { font-size: 0.75rem; text-transform: uppercase; color: #888;
+             letter-spacing: 0.05em; margin: 0.65rem 0 0.25rem; }
+  .side p { font-size: 0.88rem; color: #333; }
+  .question { background: white; border-radius: 8px; padding: 1.25rem;
+              box-shadow: 0 1px 4px rgba(0,0,0,0.07); margin-bottom: 1rem;
+              text-align: center; }
+  .question h3 { font-size: 1.1rem; margin-bottom: 0.85rem; }
+  .choice-row { display: flex; gap: 0.75rem; justify-content: center; flex-wrap: wrap; }
+  .choice-btn { min-width: 140px; padding: 0.85rem 1.5rem; border: 2px solid #ddd;
+                background: white; border-radius: 10px; cursor: pointer; font-size: 1rem;
+                font-weight: 600; transition: all 0.15s; }
+  .choice-btn:hover { border-color: #3b82f6; background: #eff6ff; }
+  .choice-btn.selected { border-color: #3b82f6; background: #3b82f6; color: white; }
+  .submit-row { text-align: center; margin-top: 1.5rem; }
+  .btn { display: inline-block; padding: 0.85rem 2.5rem; border-radius: 10px;
+         font-size: 1.05rem; font-weight: 600; border: none; cursor: pointer;
+         transition: background 0.15s; }
+  .btn-primary { background: #22c55e; color: white; }
+  .btn-primary:hover:not(:disabled) { background: #16a34a; }
+  .btn-primary:disabled { background: #cbd5e1; color: #64748b; cursor: not-allowed; }
+  .timer { font-size: 0.75rem; color: #bbb; text-align: center; margin-top: 0.5rem; }
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="progress">Pair {{ pair_number }} of {{ total_pairs }}</div>
+  <div class="progress-bar"><div class="progress-bar-fill"></div></div>
+
+  <div class="context-box">
+    🛒 <strong>Imagine you're shopping for a birthday card.</strong>
+    Assume both cards cost the same price. Which one would you prefer to buy?
+  </div>
+
+  <div class="pair">
+    <div class="side">
+      <div class="label">Card A</div>
+      <img src="{{ left_image_url }}" alt="Greeting card A" loading="lazy"
+           onerror="this.src='/static/placeholder.png'; this.alt='Image unavailable';">
+      {% if left_headline %}
+      <h4>Title</h4><p>{{ left_headline }}</p>
+      {% endif %}
+    </div>
+    <div class="side">
+      <div class="label">Card B</div>
+      <img src="{{ right_image_url }}" alt="Greeting card B" loading="lazy"
+           onerror="this.src='/static/placeholder.png'; this.alt='Image unavailable';">
+      {% if right_headline %}
+      <h4>Title</h4><p>{{ right_headline }}</p>
+      {% endif %}
+    </div>
+  </div>
+
+  <form id="pairForm" method="POST" action="{{ submit_url }}">
+    <input type="hidden" name="pair_index" value="{{ pair_number }}">
+    <input type="hidden" name="t_start_ms" id="tStart">
+
+    <div class="question">
+      <h3>Assuming equal price, which card would you prefer to buy?</h3>
+      <div class="choice-row">
+        <button type="button" class="choice-btn" data-value="L" id="btnA">Card A</button>
+        <button type="button" class="choice-btn" data-value="T" id="btnTie">Hard to choose</button>
+        <button type="button" class="choice-btn" data-value="R" id="btnB">Card B</button>
+      </div>
+      <input type="hidden" name="winner" id="qWinner" required>
+    </div>
+
+    <div class="submit-row">
+      <button type="submit" class="btn btn-primary" id="submitBtn" disabled>
+        {% if pair_number < total_pairs %}
+          Next →
+        {% else %}
+          Finish →
+        {% endif %}
+      </button>
+    </div>
+  </form>
+  <div class="timer" id="timerDisplay"></div>
+</div>
+
+<script>
+  const tStart = Date.now();
+  document.getElementById('tStart').value = tStart.toString();
+
+  // Wire buttons
+  const btns = document.querySelectorAll('.choice-btn');
+  const hidden = document.getElementById('qWinner');
+  const submit = document.getElementById('submitBtn');
+
+  btns.forEach(btn => {
+    btn.addEventListener('click', () => {
+      btns.forEach(b => b.classList.remove('selected'));
+      btn.classList.add('selected');
+      hidden.value = btn.dataset.value;
+      submit.disabled = false;
+    });
+  });
+
+  // Optional: show elapsed time (subtle, for participant awareness)
+  setInterval(() => {
+    const elapsed = Math.floor((Date.now() - tStart) / 1000);
+    if (elapsed > 5) {
+      document.getElementById('timerDisplay').textContent = '';
+    }
+  }, 1000);
+</script>
+</body>
+</html>

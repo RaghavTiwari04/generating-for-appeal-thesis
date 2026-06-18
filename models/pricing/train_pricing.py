@@ -43,17 +43,14 @@ SELECT
     l.price_minor_units,
     l.currency,
     lf.image_complexity,
-    sl_aes.score   AS aesthetic_score,
-    sl_dist.score  AS distinctiveness_score
+    (lf.predictor_scores->>'aesthetic')::float      AS aesthetic_score,
+    (lf.predictor_scores->>'distinctiveness')::float AS distinctiveness_score
 FROM listings l
 JOIN listing_features lf USING (listing_id)
-LEFT JOIN saleability_labels sl_aes
-       ON sl_aes.listing_id = l.listing_id AND sl_aes.label_source = 'proxy_v1'
-LEFT JOIN saleability_labels sl_dist
-       ON sl_dist.listing_id = l.listing_id AND sl_dist.label_source = 'proxy_v1'
 WHERE l.price_minor_units IS NOT NULL
   AND l.currency IS NOT NULL
-  AND lf.occasion IS NOT NULL;
+  AND lf.occasion IS NOT NULL
+  AND lf.predictor_scores IS NOT NULL;
 """
 
 
@@ -80,7 +77,7 @@ def evaluate(bundle: PriceModelBundle, df: pd.DataFrame) -> dict:
     from models.pricing.price_model import _band
     true_bands = [_band(v) for v in y]
     pred_bands = preds["band"].tolist()
-    band_acc = float(sum(t == p for t, p in zip(true_bands, pred_bands)) / len(y))
+    band_acc = float(sum(t == p for t, p in zip(true_bands, pred_bands, strict=False)) / len(y))
 
     return {"rmse_gbp": rmse, "mae_gbp": mae, "band_accuracy": band_acc, "n": len(y)}
 

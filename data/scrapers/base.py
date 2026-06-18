@@ -3,22 +3,27 @@
 Each concrete scraper subclasses `Scraper` and implements:
 
 - `source: str`               (class attribute, e.g. "etsy")
-- `discover(query, ...)`      → iterable of listing URLs to fetch
-- `parse(html, url)`          → a `ParsedListing` dataclass
+- `discover(query, ...)`      -> iterable of listing URLs to fetch
+- `parse(html, url)`          -> a `ParsedListing` dataclass
 
 `fetch_and_store(url)` is implemented here and handles the polite-fetch
 pipeline (rate limit, cache check, network, store raw HTML, upsert listing).
+
+For sites with bot-detection or JS-rendered content, subclasses can set
+`use_playwright = True` to use a headless Chromium browser instead of httpx.
 """
 
 from __future__ import annotations
 
 import asyncio
+import ssl
 import time
 from abc import ABC, abstractmethod
+from collections.abc import Iterable
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
 import httpx
 from tenacity import (
@@ -78,9 +83,13 @@ class Scraper(ABC):
 
     Subclasses must set the `source` class attribute and implement
     `discover` / `parse`. `fetch_and_store` is provided.
+
+    Set `use_playwright = True` for sites that require JS rendering
+    or have bot-detection blocking plain HTTP requests.
     """
 
     source: str = ""
+    use_playwright: bool = False
 
     def __init__(
         self,
@@ -98,6 +107,8 @@ class Scraper(ABC):
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         self.cache_ttl = timedelta(days=cache_ttl_days or settings.scraper_raw_html_ttl_days)
         self._client: httpx.AsyncClient | None = None
+        self._browser: Any = None  # playwright Browser
+        self._pw: Any = None       # playwright async API
 
     # -- to be implemented by subclasses --------------------------------------
     @abstractmethod
@@ -109,18 +120,78 @@ class Scraper(ABC):
         """Parse a single listing HTML page into a ParsedListing."""
 
     # -- shared machinery -----------------------------------------------------
-    async def __aenter__(self) -> "Scraper":
+    async def __aenter__(self) -> Scraper:
+        ssl_ctx = ssl.create_default_context()
         self._client = httpx.AsyncClient(
             headers={"User-Agent": self.user_agent},
             timeout=httpx.Timeout(30.0, connect=10.0),
             follow_redirects=True,
+            verify=ssl_ctx,
         )
+        if self.use_playwright:
+            from playwright.async_api import async_playwright
+            self._pw = await async_playwright().start()
+            self._browser = await self._pw.chromium.launch(
+                headless=True,
+                args=["--disable-blink-features=AutomationControlled"],
+            )
+            log.info(f"[{self.source}] Playwright browser launched")
         return self
 
     async def __aexit__(self, *exc: Any) -> None:
         if self._client is not None:
             await self._client.aclose()
             self._client = None
+        if self._browser is not None:
+            await self._browser.close()
+            self._browser = None
+        if self._pw is not None:
+            await self._pw.stop()
+            self._pw = None
+
+    async def _new_page(self):
+        """Create a new Playwright page with stealth-ish settings."""
+        assert self._browser is not None, "Playwright not initialised"
+        ctx = await self._browser.new_context(
+            user_agent=(
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/125.0.0.0 Safari/537.36"
+            ),
+            viewport={"width": 1920, "height": 1080},
+            locale="en-GB",
+        )
+        page = await ctx.new_page()
+        # Basic stealth: hide webdriver flag
+        await page.add_init_script("""
+            Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
+        """)
+        return page
+
+    async def _pw_fetch(self, url: str, *, wait_selector: str | None = None,
+                         wait_ms: int = 3000) -> str:
+        """Fetch a URL via Playwright, return rendered HTML.
+
+        Args:
+            url: Page to load.
+            wait_selector: CSS selector to wait for before extracting HTML.
+            wait_ms: Extra time (ms) to let JS finish after navigation.
+        """
+        await self.rate_limiter.acquire()
+        page = await self._new_page()
+        try:
+            log.debug(f"PW GET {url}")
+            await page.goto(url, wait_until="domcontentloaded", timeout=30000)
+            if wait_selector:
+                try:
+                    await page.wait_for_selector(wait_selector, timeout=10000)
+                except Exception:
+                    pass  # best-effort; page may still have content
+            # Extra settle time for lazy-loaded content
+            await page.wait_for_timeout(wait_ms)
+            return await page.content()
+        finally:
+            await page.context.close()
 
     def _cache_path(self, url: str) -> Path:
         import hashlib
@@ -132,8 +203,8 @@ class Scraper(ABC):
         path = self._cache_path(url)
         if not path.exists():
             return None
-        mtime = datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc)
-        if datetime.now(tz=timezone.utc) - mtime > self.cache_ttl:
+        mtime = datetime.fromtimestamp(path.stat().st_mtime, tz=UTC)
+        if datetime.now(tz=UTC) - mtime > self.cache_ttl:
             return None
         return path.read_text(encoding="utf-8", errors="replace")
 
@@ -154,13 +225,20 @@ class Scraper(ABC):
         resp.raise_for_status()
         return resp.text
 
-    async def fetch_and_store(self, url: str, *, use_cache: bool = True) -> ParsedListing | None:
+    async def _smart_fetch(self, url: str, *, wait_selector: str | None = None) -> str:
+        """Fetch via Playwright if enabled, else httpx."""
+        if self.use_playwright:
+            return await self._pw_fetch(url, wait_selector=wait_selector)
+        return await self._fetch(url)
+
+    async def fetch_and_store(self, url: str, *, use_cache: bool = True,
+                               wait_selector: str | None = None) -> ParsedListing | None:
         """Fetch (cached or network), parse, persist raw HTML + upsert listing."""
         html: str | None = self._cache_get(url) if use_cache else None
         if html is None:
             try:
-                html = await self._fetch(url)
-            except httpx.HTTPError as e:
+                html = await self._smart_fetch(url, wait_selector=wait_selector)
+            except Exception as e:
                 log.warning(f"Fetch failed for {url}: {e}")
                 return None
             self._cache_put(url, html)
@@ -221,7 +299,6 @@ ON CONFLICT DO NOTHING;
 
 def upsert_listing(source: str, parsed: ParsedListing) -> str:
     """Upsert into `listings`, append a snapshot, return listing_id."""
-    import json
     from psycopg.types.json import Jsonb
 
     payload = {

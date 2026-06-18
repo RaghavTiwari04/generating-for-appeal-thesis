@@ -6,12 +6,13 @@
 
 # %%
 import warnings
+
 warnings.filterwarnings("ignore")
 
 import io
-import json
-import pandas as pd
+
 import matplotlib.pyplot as plt
+import pandas as pd
 from PIL import Image
 
 from common.db import engine
@@ -44,7 +45,7 @@ def show_grid(subset: pd.DataFrame, ncols: int = 4, title: str = "") -> None:
     axes = axes.flatten()
     for ax in axes:
         ax.axis("off")
-    for ax, (_, row) in zip(axes, subset.iterrows()):
+    for ax, (_, row) in zip(axes, subset.iterrows(), strict=False):
         try:
             data = get_object(row["cover_path"])
             img = Image.open(io.BytesIO(data)).convert("RGB")

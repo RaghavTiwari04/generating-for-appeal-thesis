@@ -1,15 +1,7 @@
 """Ablation: reranker ignores distinctiveness head.
 
-Uses the full pipeline + rerank but sorts candidates by saleability head
-alone, with the distinctiveness signal zeroed out of the composite score.
-
-Concretely: sort key = saleability_calibrated (unchanged), but we also
-record what the ranking would look like if we used:
-    composite = 0.7 * saleability + 0.3 * distinctiveness   (default, approx)
-vs:
-    composite = 1.0 * saleability                            (this ablation)
-
-Both orderings are persisted so downstream analysis can compare.
+Default reranker uses composite = 0.7*PI + 0.3*distinctiveness. This ablation
+zeros the distinctiveness weight so reranking uses purchase_intent alone.
 
 Usage:
     python -m eval.ablations.no_distinctiveness
@@ -17,12 +9,8 @@ Usage:
 
 from __future__ import annotations
 
-import json
-from pathlib import Path
-
 import typer
 
-from common.db import connection
 from common.logging import get_logger
 
 log = get_logger(__name__)
@@ -38,12 +26,15 @@ DEFAULT_OCCASIONS = [
 
 
 def _rerank_no_distinctiveness(candidates, *, predictor, embedder, top_k=None):
-    """Rerank by saleability alone, ignoring distinctiveness."""
+    """Rerank by purchase_intent alone, ignoring distinctiveness."""
     from pipeline.rerank import rerank as _rerank
     ranked = _rerank(candidates, predictor=predictor, embedder=embedder)
-    # Re-sort ignoring distinctiveness (saleability_calibrated only)
+    for c in ranked:
+        if c.scores:
+            pi = c.scores.get("purchase_intent_calibrated", c.scores.get("purchase_intent", 0.0))
+            c.scores["saleability_calibrated"] = pi
     ranked.sort(
-        key=lambda c: c.scores.get("saleability_calibrated", c.scores.get("saleability", 0.0)),
+        key=lambda c: c.scores.get("saleability_calibrated", 0.0),
         reverse=True,
     )
     return ranked[:top_k] if top_k else ranked
@@ -68,9 +59,9 @@ def run(
                 condition_tag=CONDITION_TAG,
             )
             ranked = generate({"occasion": occ, "tone": "warm-sincere"}, cfg)
-            scores = [c.scores.get("saleability_calibrated", 0) for c in ranked if c.scores]
+            scores = [c.scores["saleability_calibrated"] for c in ranked if c.scores]
             mean_s = sum(scores) / len(scores) if scores else 0
-            log.info(f"no_distinctiveness {occ}: mean_saleability={mean_s:.3f}")
+            log.info(f"no_distinctiveness {occ}: mean_sale={mean_s:.3f} (PI only, no dist)")
 
 
 if __name__ == "__main__":

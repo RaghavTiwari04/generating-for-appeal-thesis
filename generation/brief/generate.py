@@ -8,10 +8,9 @@ versioned under `prompts/brief_v*.txt`.
 from __future__ import annotations
 
 import json
-import re
 from pathlib import Path
 
-from common.config import settings
+from common.llm import call_llm, extract_json
 from common.logging import get_logger
 from generation.brief.market_signals import gather, render_for_prompt
 from generation.brief.schema import Brief, BriefRequest, validate_request
@@ -36,58 +35,13 @@ def _render_template(req: BriefRequest) -> str:
     )
 
 
-def _call_anthropic(prompt: str) -> str:
-    from anthropic import Anthropic
-
-    client = Anthropic(api_key=settings.anthropic_api_key)
-    response = client.messages.create(
-        model=settings.llm_model,
-        max_tokens=1024,
-        messages=[{"role": "user", "content": prompt}],
-    )
-    return "".join(block.text for block in response.content if block.type == "text")
-
-
-def _call_openai(prompt: str) -> str:
-    from openai import OpenAI
-
-    client = OpenAI(api_key=settings.openai_api_key)
-    response = client.chat.completions.create(
-        model=settings.llm_model,
-        messages=[{"role": "user", "content": prompt}],
-        temperature=0.7,
-        max_tokens=1024,
-    )
-    return response.choices[0].message.content or ""
-
-
-def _extract_json(text: str) -> dict:
-    # Tolerate stray prose around the JSON body
-    text = text.strip()
-    if text.startswith("```"):
-        text = re.sub(r"^```(?:json)?\s*", "", text)
-        text = re.sub(r"\s*```\s*$", "", text)
-    start = text.find("{")
-    end = text.rfind("}")
-    if start == -1 or end == -1 or end <= start:
-        raise ValueError(f"No JSON object found in LLM response: {text[:200]}")
-    return json.loads(text[start : end + 1])
-
-
 def generate_brief(request: dict | BriefRequest) -> Brief:
     req = request if isinstance(request, BriefRequest) else validate_request(request)
     prompt = _render_template(req)
     log.debug(f"Brief prompt ({PROMPT_VERSION}, occasion={req.occasion})")
 
-    provider = settings.llm_provider.lower()
-    if provider == "anthropic":
-        raw = _call_anthropic(prompt)
-    elif provider == "openai":
-        raw = _call_openai(prompt)
-    else:
-        raise ValueError(f"Unknown LLM provider: {provider}")
-
-    payload = _extract_json(raw)
+    raw = call_llm(prompt)
+    payload = extract_json(raw)
     return Brief.model_validate(payload)
 
 

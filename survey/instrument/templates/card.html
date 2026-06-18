@@ -23,33 +23,29 @@
                   letter-spacing: 0.05em; margin-bottom: 0.4rem; }
   .context { flex: 1; min-width: 280px; }
   .context-box { background: #fffbeb; border: 1px solid #fde68a; border-radius: 6px;
-                 padding: 0.9rem 1rem; margin-bottom: 1.2rem; font-size: 0.95rem; }
-  .questions { display: grid; gap: 1.1rem; }
-  .likert-row { display: flex; flex-direction: column; gap: 0.4rem; }
-  .likert-row label { font-weight: 600; font-size: 0.92rem; }
-  .likert-scale { display: flex; gap: 0.3rem; align-items: center; flex-wrap: wrap; }
-  .likert-scale .anchor { font-size: 0.75rem; color: #666; white-space: nowrap; }
-  .likert-scale input[type=radio] { display: none; }
-  .likert-scale input[type=radio] + label {
-    width: 2.2rem; height: 2.2rem; border: 2px solid #cbd5e1; border-radius: 50%;
-    display: flex; align-items: center; justify-content: center; cursor: pointer;
-    font-size: 0.8rem; transition: all 0.1s; color: #555; }
-  .likert-scale input[type=radio]:checked + label {
-    background: #3b82f6; border-color: #3b82f6; color: white; font-weight: 700; }
-  .likert-scale input[type=radio] + label:hover { border-color: #93c5fd; }
-  .price-row label { font-weight: 600; font-size: 0.92rem; display: block; margin-bottom: 0.3rem; }
-  .price-row input[type=range] { width: 100%; }
-  .price-display { font-size: 1.1rem; font-weight: 700; color: #3b82f6; }
-  .freetext label { font-weight: 600; font-size: 0.92rem; display: block; margin-bottom: 0.3rem; }
-  .freetext textarea { width: 100%; border: 1px solid #cbd5e1; border-radius: 6px;
-                       padding: 0.6rem; font-size: 0.9rem; resize: vertical; }
-  .attention { background: #fef2f2; border: 1px solid #fca5a5; border-radius: 6px;
-               padding: 0.9rem; font-size: 0.9rem; margin-bottom: 1rem; }
-  .submit-btn { margin-top: 1.5rem; width: 100%; padding: 0.85rem; background: #3b82f6;
-                color: white; border: none; border-radius: 8px; font-size: 1rem;
-                font-weight: 600; cursor: pointer; transition: background 0.15s; }
-  .submit-btn:hover { background: #2563eb; }
-  .submit-btn:disabled { background: #93c5fd; cursor: default; }
+                 padding: 0.9rem 1rem; margin-bottom: 1.5rem; font-size: 0.95rem; }
+
+  /* Two-step rating instructions */
+  .steps { display: grid; gap: 1rem; }
+  .step { display: flex; gap: 0.9rem; align-items: flex-start;
+          background: white; border-radius: 8px; padding: 1rem 1.1rem;
+          box-shadow: 0 1px 4px rgba(0,0,0,0.07); }
+  .step-num { flex: 0 0 2rem; height: 2rem; background: #3b82f6; color: white;
+              border-radius: 50%; display: flex; align-items: center;
+              justify-content: center; font-weight: 700; font-size: 0.9rem; }
+  .step-body { flex: 1; }
+  .step-body p { font-size: 0.9rem; color: #555; margin-top: 0.25rem; }
+  .btn { display: inline-block; padding: 0.75rem 1.4rem; border-radius: 8px;
+         font-size: 0.95rem; font-weight: 600; text-decoration: none;
+         border: none; cursor: pointer; transition: background 0.15s; margin-top: 0.7rem; }
+  .btn-primary { background: #3b82f6; color: white; }
+  .btn-primary:hover { background: #2563eb; }
+  .btn-secondary { background: #22c55e; color: white; }
+  .btn-secondary:hover { background: #16a34a; }
+  .btn-disabled { background: #cbd5e1; color: #64748b; cursor: default; }
+
+  .no-forms-notice { background: #fef2f2; border: 1px solid #fca5a5; border-radius: 6px;
+                     padding: 0.9rem 1rem; font-size: 0.9rem; }
 </style>
 </head>
 <body>
@@ -57,98 +53,81 @@
   <div class="progress">Card {{ card_number }} of {{ total_cards }}</div>
   <div class="progress-bar"><div class="progress-bar-fill"></div></div>
 
-  <form method="POST" action="/rate/{{ session_token }}" id="rateForm">
-    <input type="hidden" name="card_key" value="{{ card_key }}">
-    <input type="hidden" name="response_time_ms" id="responseTime" value="0">
-
-    <div class="card-layout">
-      <div style="flex: 0 0 340px;">
-        <div class="card-image">
-          <img src="{{ image_url }}" alt="Greeting card cover" loading="lazy">
-        </div>
-        {% if headline %}
-        <div class="card-text">
-          <h4>Headline</h4>
-          <p>{{ headline }}</p>
-        </div>
-        {% endif %}
-        {% if inside_message %}
-        <div class="card-text" style="margin-top: 0.5rem;">
-          <h4>Inside message</h4>
-          <p style="white-space: pre-line;">{{ inside_message }}</p>
-        </div>
-        {% endif %}
+  <div class="card-layout">
+    <!-- Left column: card image and text -->
+    <div style="flex: 0 0 340px;">
+      <div class="card-image">
+        <img src="{{ image_url }}" alt="Greeting card cover" loading="lazy">
       </div>
-
-      <div class="context">
-        <div class="context-box">
-          🛒 <strong>Scenario:</strong> Imagine you are shopping for a
-          <strong>{{ occasion_display }}</strong> card.
-          Rate how suitable this card would be.
-        </div>
-
-        {% if is_attention_check %}
-        <div class="attention">
-          ⚠️ <strong>Attention check:</strong> For this question only, please select
-          <strong>"Strongly disagree"</strong> for the <em>Purchase intent</em> question,
-          regardless of the card.
-        </div>
-        <input type="hidden" name="attention_answer" id="attentionAnswer" value="">
-        {% endif %}
-
-        <div class="questions">
-
-          {% for field, label, lo, hi in [
-            ("purchase_intent",    "How likely would you be to buy this card?", "Very unlikely", "Very likely"),
-            ("occasion_fit",       "How well does it fit the occasion?",         "Poor fit",      "Perfect fit"),
-            ("aesthetic",          "How visually appealing is this card?",        "Not appealing", "Very appealing"),
-            ("emotional_resonance","How well does it capture the right feeling?", "Not at all",    "Perfectly"),
-            ("distinctiveness",    "How original or distinctive is this card?",   "Very generic",  "Very distinctive"),
-          ] %}
-          <div class="likert-row">
-            <label>{{ label }}</label>
-            <div class="likert-scale">
-              <span class="anchor">{{ lo }}</span>
-              {% for v in range(1, 8) %}
-              <input type="radio" name="{{ field }}" id="{{ field }}_{{ v }}" value="{{ v }}" required
-                {% if field == "purchase_intent" and is_attention_check %}
-                  onclick="document.getElementById('attentionAnswer').value = this.nextElementSibling.textContent.trim().toLowerCase();"
-                {% endif %}
-              >
-              <label for="{{ field }}_{{ v }}">{{ v }}</label>
-              {% endfor %}
-              <span class="anchor">{{ hi }}</span>
-            </div>
-          </div>
-          {% endfor %}
-
-          <div class="price-row">
-            <label>Maximum price you'd pay: <span class="price-display" id="priceLabel">£3.00</span></label>
-            <input type="range" name="max_price_gbp" min="1" max="15" step="0.5" value="3"
-                   oninput="document.getElementById('priceLabel').textContent = '£' + parseFloat(this.value).toFixed(2)">
-          </div>
-
-          <div class="freetext">
-            <label>Optional: What works or doesn't work about this card? <small>(skip if you prefer)</small></label>
-            <textarea name="free_text" rows="2" maxlength="500" placeholder="Brief comment..."></textarea>
-          </div>
-
-        </div>
-
-        <button type="submit" class="submit-btn" id="submitBtn">
-          {% if card_number < total_cards %}Next card →{% else %}Finish survey{% endif %}
-        </button>
+      {% if headline %}
+      <div class="card-text">
+        <h4>Headline</h4>
+        <p>{{ headline }}</p>
       </div>
+      {% endif %}
+      {% if inside_message %}
+      <div class="card-text" style="margin-top: 0.5rem;">
+        <h4>Inside message</h4>
+        <p style="white-space: pre-line;">{{ inside_message }}</p>
+      </div>
+      {% endif %}
     </div>
-  </form>
-</div>
 
-<script>
-  const t0 = Date.now();
-  document.getElementById("rateForm").addEventListener("submit", function() {
-    document.getElementById("responseTime").value = Date.now() - t0;
-    document.getElementById("submitBtn").disabled = true;
-  });
-</script>
+    <!-- Right column: context + rating steps -->
+    <div class="context">
+      <div class="context-box">
+        🛒 <strong>Scenario:</strong> Imagine you are shopping for a
+        <strong>{{ occasion_display }}</strong> card.
+        Rate how suitable this card would be.
+      </div>
+
+      {% if forms_configured %}
+      <div class="steps">
+
+        <div class="step">
+          <div class="step-num">1</div>
+          <div class="step-body">
+            <strong>Rate this card on Google Forms</strong>
+            <p>The form opens in a new tab. Your participant ID and card details
+               are pre-filled — do not change them.</p>
+            <a href="{{ form_url }}" target="_blank" rel="noopener noreferrer"
+               class="btn btn-primary" id="formLink">
+              Open rating form ↗
+            </a>
+          </div>
+        </div>
+
+        <div class="step">
+          <div class="step-num">2</div>
+          <div class="step-body">
+            <strong>After submitting the form, continue here</strong>
+            <p>Come back to this tab and click the button below to move to the
+               next card.</p>
+            <a href="{{ next_url }}" class="btn btn-secondary" id="continueBtn">
+              {% if card_number < total_cards %}
+                I've submitted my rating — next card →
+              {% else %}
+                I've submitted my rating — finish survey →
+              {% endif %}
+            </a>
+          </div>
+        </div>
+
+      </div>
+
+      {% else %}
+      <div class="no-forms-notice">
+        ⚠️ Google Forms is not configured. Set <code>GOOGLE_FORMS_ID</code> and
+        related env vars, then restart the server.
+        <br><br>
+        <a href="{{ next_url }}" class="btn btn-secondary" style="display: inline-block;">
+          Skip to next card (dev mode)
+        </a>
+      </div>
+      {% endif %}
+
+    </div>
+  </div>
+</div>
 </body>
 </html>

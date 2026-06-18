@@ -32,7 +32,6 @@ from pathlib import Path
 
 import typer
 
-from common.db import connection
 from common.logging import get_logger
 from data.scrapers.base import ParsedListing, upsert_listing
 

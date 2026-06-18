@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 import pytest
 
-from common.fx_rates import _FALLBACK, get_rate, to_gbp, normalise_price_column
+from common.fx_rates import get_rate, normalise_price_column, to_gbp
 
 
 class TestGetRate:

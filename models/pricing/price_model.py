@@ -12,13 +12,11 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable
 
+import joblib
 import lightgbm as lgb
 import numpy as np
 import pandas as pd
-import joblib
-
 
 BANDS = (
     ("budget", 0.0, 3.0),
@@ -50,7 +48,7 @@ class PriceModelBundle:
         )
 
     @classmethod
-    def load(cls, dir_path: str | Path) -> "PriceModelBundle":
+    def load(cls, dir_path: str | Path) -> PriceModelBundle:
         d = Path(dir_path)
         meta = json.loads((d / "meta.json").read_text())
         return cls(

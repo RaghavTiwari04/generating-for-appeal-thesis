@@ -16,17 +16,13 @@ Usage:
 from __future__ import annotations
 
 import json
-from dataclasses import asdict
 from pathlib import Path
 
-import pandas as pd
 import typer
 
-from common.db import engine
 from common.logging import get_logger
 from survey.analysis.icc import SURVEY_DIMENSIONS, compute_icc
 from survey.analysis.survey_loader import (
-    aggregate_ratings,
     load_ratings,
     response_time_filter,
 )
@@ -48,7 +44,7 @@ def run(study_id: str = "pilot_v1", out_dir: str = "./artifacts/pilot") -> None:
     log.info(f"Pilot raw: {len(df_raw)} ratings, {df_raw['participant_id'].nunique()} participants")
 
     # --- Exclusions ---
-    n_attn_fail = df_raw[df_raw["attention_check_pass"] == False]["participant_id"].nunique()
+    n_attn_fail = df_raw[~df_raw["attention_check_pass"]]["participant_id"].nunique()
     df = load_ratings(study_id, exclude_failed_attention=True)
     df = response_time_filter(df, min_ms=3000)
     log.info(f"After exclusions: {len(df)} ratings, {df['participant_id'].nunique()} participants")

@@ -1,69 +1,73 @@
-# Survey Pilot Protocol — Greeting Cards
+# Survey Pilot Protocol — Greeting Cards (v2, pairwise, birthday-only)
 
-**Version:** v1
+**Version:** v2 (cost-reduced; supersedes v1 Likert protocol)
 **Status:** Draft (pre-ethics-approval). Do not run until IRB approval is on file.
+
+## Change vs v1
+
+- **2AFC pairwise** comparisons instead of per-card 7-point Likert. ~3× more comparisons per minute, lower variance, no scale-anchor drift.
+- **Birthday-only** scope (matches `common/occasions.ACTIVE_OCCASIONS`).
+- **Two questions only** per pair: purchase intent (primary), aesthetic (secondary).
+- **Rolled into main study as warm-up batch** — no separate Prolific submission. The first 30–50 main-study sessions are analysed before the rest are released, replacing the previous standalone pilot.
+
+Effective budget: **£0 incremental** (was ~£70). Cost folded into main-study budget; total still below v1 main alone.
 
 ## Goal
 
-Validate the rating instrument, anchor scales, calibrate task time, and surface obvious failure modes **before** spending main-study budget. Pilot data is also useful for instrument-level inter-rater reliability and as a sanity check on the saleability proxy.
+Validate the pairwise instrument, confirm comparison time per pair ≤ 8s, and check that Bradley-Terry scores stabilise at the planned comparison density before releasing the remaining main-study slots.
 
 ## Recruitment
 
 - **Platform:** Prolific
-- **Sample size:** n = 50
-- **Screening:**
-  - UK residents (jurisdictional and stylistic alignment with the corpus)
-  - Age ≥ 18
-  - Balanced on gender (target ~50/50 binary; allow non-binary if available)
-  - Approval rate ≥ 95% on Prolific
-- **Compensation:** £9/hour pro-rata. Estimated 20 minutes => £3.00 per participant. Total: ~£150 base + ~33% Prolific fee (~£50) = ~£70 minus screening dropoff.
+- **Sample size:** first 40 completes of the main study (n=40 warm-up cohort, billed against main budget)
+- **Screening:** identical to main study (`main_protocol.md`)
+- **Compensation:** as main study (£9/hr pro-rata; 10-min session ≈ £1.50/participant)
 
-## Protocol
+## Card pool
 
-Each participant rates **30 cards** in one session. Session targets 20 minutes (~40 seconds per card).
+- Pool of ~150 birthday cards drawn from scraped marketplace listings, stratified by `proxy_v1` score (low / med / high), constrained to `ACTIVE_OCCASIONS` (`birthday/general`, `birthday/milestone`, `birthday/kids`, `birthday/relationship`)
+- Tones balanced across `warm-sincere`, `warm-humorous`, `funny-irreverent`, `formal-sincere`, `minimalist`, `sentimental`
 
-For each card, present:
-- Cover image at full resolution on a neutral grey (#f4f4f4) background
-- Occasion context line: "Imagine you're shopping for a [occasion] card for [recipient]"
-- Headline text (rendered) and inside message (rendered)
+## Instrument
 
-Then ask, in this order:
+Each participant judges **~60 pairs** in one ~10-minute session (~10s per pair including read time).
 
-1. **Purchase intent** (1–7 Likert): "How likely would you be to buy this card for the described occasion?"
-2. **Occasion fit** (1–7 Likert): "How well does this card fit the occasion?"
-3. **Aesthetic appeal** (1–7 Likert): "How visually appealing is this card?"
-4. **Emotional resonance** (1–7 Likert): "How well does this card capture the right feeling for the occasion?"
-5. **Distinctiveness** (1–7 Likert): "How original or distinctive is this card compared to others you've seen?"
-6. **Maximum price** (£ slider, £1–£15): "Given the design and quality, what is the maximum you would pay for this card?"
-7. **Optional free text** (≤ 200 chars): "What works or doesn't work about this card?" (skippable)
+For each pair, present:
+- Two card covers side-by-side at equal resolution on neutral grey (#f4f4f4)
+- Headline + inside message rendered below each card
+- Occasion context shown once at the top of the pair: "Imagine you're shopping for a [occasion] card for [recipient]"
+- Left/Right side of each card randomised per pair
 
-Pre-session: short demographic + consent screen (no PII beyond Prolific ID).
-Post-session: 3 attention-check questions interleaved throughout the 30 cards (e.g., "For this question, select 'Strongly disagree' regardless of the card"). Participants failing more than one attention check are excluded from analysis but still paid per Prolific policy.
+Questions per pair (2):
+1. **Purchase intent** (forced choice): "Which card would you be more likely to buy for this occasion?" — answers: Left / Right / Hard to choose
+2. **Aesthetic** (forced choice): "Which card looks more visually appealing?" — answers: Left / Right / About the same
 
-## Card sampling
+Attention checks: 3 trapdoor pairs per session (a card paired with an obviously-broken variant; if participant picks the broken one twice or more they are excluded but paid).
 
-- 30 cards per participant
-- Stratified by predicted-proxy score (low / med / high), 10 each
-- Balanced across the top 5 occasions in the corpus
-- Each card targeted to receive ~5 ratings across the pilot (50 × 30 / 30 unique ≈ 50 cards × 30 ratings; iterate sampler to converge on 5 each)
+## Pair sampling (`survey/instrument/sampler.py`)
 
-## Analysis (pilot only)
+- For each participant, sample 60 pairs from the 150-card pool such that:
+  - Each card appears 4–8 times across the **whole study**, never twice in the same session
+  - Pairs are drawn from a TrueSkill-style active-learning queue: prefer pairs whose current BT-score uncertainty is highest, plus a small uniform-random fraction (~20%) for graph connectivity
+- Forced occasion balance: ≥ 12 pairs from each birthday sub-occasion per participant
 
-- Distribution checks: any ceiling/floor effects on each Likert?
-- Time-on-task histogram; flag <3s responses as candidates for exclusion
-- Inter-rater reliability: ICC(3,k) on purchase intent, target ≥ 0.5
-- Attention-check pass rate (target > 90%)
-- Free-text thematic skim: any systematic confusion about instructions?
+## Analysis (pilot warm-up)
+
+Triggered when warm-up cohort reaches n=40:
+
+- BT fit on first 40 sessions (~2,400 pairs)
+- Convergence check: BT log-likelihood plateau, max |Δs| < 1e-6 within 500 MM iterations
+- Bootstrap 95% CIs on top-quartile vs bottom-quartile rank stability — target rank correlation ρ ≥ 0.7 between two halves of the data
+- Attention-pair failure rate (target < 10%)
+- Median pair-time histogram (flag participants with median < 3s)
+
+If any of the above fail, **pause launch** and revise instrument before releasing the remaining ~110 slots.
 
 ## Outputs
 
-- `survey_ratings` rows with `study_id = 'pilot_v1'`, `label_source = 'survey_pilot'`
-- An instrument revision note (`survey/prolific/pilot_notes.md`) capturing any anchor / wording changes for the main study
+- `survey_pairs` rows with `study_id = 'main_v2_warmup'` (then continues as `main_v2`)
+- Instrument revision log at `survey/prolific/pilot_notes_v2.md`
 
-## Ethics summary (for IRB attachment)
+## Ethics summary
 
-- Anonymous Prolific IDs only; no images/text uploaded by participants
-- Free-text replies inspected by researcher; published only in aggregate or with explicit redaction
-- Participants can withdraw at any time and request data deletion before session end
-- No deception
-- Cards are scraped marketplace stock + generated outputs (no participant-identifying content)
+Identical safeguards to v1 protocol. Pseudonymised Prolific ID only; right-to-withdraw before submission; no deception. The pairwise instrument exposes the same scraped marketplace stock + generated outputs already covered by the existing IRB approval; pre-submit an amendment noting the instrument change (Likert → 2AFC) — no substantive risk profile change.

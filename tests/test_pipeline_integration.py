@@ -9,19 +9,16 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any
 from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pytest
-import torch
 from PIL import Image
 
 from generation.brief.schema import Brief
-from generation.message.generate import InsideMessage
 from generation.layout.compose import ComposedCard
+from generation.message.generate import InsideMessage
 from models.predictor.architecture import HEAD_NAMES
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -47,7 +44,7 @@ def dummy_cover() -> Image.Image:
 
 @pytest.fixture
 def dummy_scores() -> dict[str, float]:
-    return {name: 0.5 for name in HEAD_NAMES} | {"saleability_calibrated": 0.72}
+    return {name: 0.5 for name in HEAD_NAMES} | {"purchase_intent_calibrated": 0.72, "saleability_calibrated": 0.72}
 
 
 # ---------------------------------------------------------------------------
@@ -56,7 +53,7 @@ def dummy_scores() -> dict[str, float]:
 
 class TestBriefGenerator:
     def test_generate_brief_calls_llm_and_parses(self, dummy_brief: Brief) -> None:
-        with patch("generation.brief.generate._call_anthropic", return_value=json.dumps(dummy_brief.model_dump())):
+        with patch("common.llm.call_llm", return_value=json.dumps(dummy_brief.model_dump())):
             with patch("generation.brief.market_signals.gather", return_value=MagicMock(
                 top_tropes=[], coverage_gaps=[], longevity_caution="avoid dated refs"
             )):
@@ -78,9 +75,9 @@ class TestBriefGenerator:
 
 class TestLayoutCompose:
     def test_mask_bbox_within_image(self, dummy_cover: Image.Image) -> None:
-        from generation.image.controlnet import LayoutMaskSpec, build_headline_mask
+        from generation.image.headline_mask import LayoutMaskSpec, build_headline_mask
         spec = LayoutMaskSpec(width=1024, height=1024)
-        mask, bbox = build_headline_mask(spec)
+        _mask, bbox = build_headline_mask(spec)
         x0, y0, x1, y1 = bbox
         assert 0 <= x0 < x1 <= 1024
         assert 0 <= y0 < y1 <= 1024
@@ -111,7 +108,7 @@ class TestReranker:
         ]
 
     def test_rerank_orders_by_saleability(self, dummy_scores: dict) -> None:
-        from pipeline.rerank import rerank, Candidate
+        from pipeline.rerank import rerank
 
         candidates = self._make_candidates(4)
         # Assign varying saleability to each candidate manually
@@ -147,6 +144,36 @@ class TestReranker:
     def test_rerank_empty_input(self) -> None:
         from pipeline.rerank import rerank
         result = rerank([], predictor=MagicMock(), embedder=MagicMock())
+        assert result == []
+
+    def test_rerank_llm_calls_scorer_and_sorts(self) -> None:
+        from pipeline.rerank import rerank_llm
+
+        candidates = self._make_candidates(3)
+        mock_scores = [
+            {"occasion_fit": 0.7, "aesthetic": 0.8, "emotional_resonance": 0.6,
+             "distinctiveness": 0.5, "purchase_intent": 0.6, "purchase_intent_calibrated": 0.6},
+            {"occasion_fit": 0.9, "aesthetic": 0.9, "emotional_resonance": 0.8,
+             "distinctiveness": 0.8, "purchase_intent": 0.9, "purchase_intent_calibrated": 0.9},
+            {"occasion_fit": 0.3, "aesthetic": 0.4, "emotional_resonance": 0.3,
+             "distinctiveness": 0.2, "purchase_intent": 0.3, "purchase_intent_calibrated": 0.3},
+        ]
+        mock_scorer = MagicMock()
+        mock_scorer.score_one.side_effect = mock_scores
+        mock_scorer.provider = "anthropic"
+        mock_scorer.model = "test-model"
+
+        with patch("pipeline.llm_scorer.LLMScorer", return_value=mock_scorer):
+            ranked = rerank_llm(candidates, top_k=2)
+
+        assert len(ranked) == 2
+        assert mock_scorer.score_one.call_count == 3
+        saleabilities = [c.scores["saleability_calibrated"] for c in ranked]
+        assert saleabilities == sorted(saleabilities, reverse=True)
+
+    def test_rerank_llm_empty_input(self) -> None:
+        from pipeline.rerank import rerank_llm
+        result = rerank_llm([])
         assert result == []
 
 
@@ -203,10 +230,10 @@ class TestOrchestrator:
              patch("pipeline.orchestrator.generate_message", return_value=InsideMessage(
                  primary="Happy Birthday", alternatives=[]
              )), \
-             patch("pipeline.orchestrator.PredictorRunner", return_value=MagicMock(
+             patch("models.predictor.infer.PredictorRunner", return_value=MagicMock(
                  score=MagicMock(return_value=[dummy_scores] * 2)
              )), \
-             patch("pipeline.orchestrator.CLIPEmbedder", return_value=MagicMock(
+             patch("data.features.clip_embed.CLIPEmbedder", return_value=MagicMock(
                  embed_images=MagicMock(return_value=np.zeros((2, 768))),
                  embed_texts=MagicMock(return_value=np.zeros((2, 768))),
              )), \

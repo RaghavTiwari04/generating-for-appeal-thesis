@@ -9,12 +9,12 @@
 
 # %%
 import warnings
+
 warnings.filterwarnings("ignore")
 
-import numpy as np
-import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
+import pandas as pd
 
 from common.db import engine
 
@@ -64,7 +64,7 @@ df_price["price_gbp"] = df_price["price_minor_units"] / 100.0
 fig, axes = plt.subplots(1, len(df_price["source"].unique()), figsize=(12, 3), sharey=False)
 for ax, (src, grp) in zip(
     axes if hasattr(axes, "__len__") else [axes],
-    df_price.groupby("source")
+    df_price.groupby("source"), strict=False
 ):
     ax.hist(grp["price_gbp"], bins=30, edgecolor="white", linewidth=0.5)
     ax.set_title(src)

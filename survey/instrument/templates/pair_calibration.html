@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pair {{ pair_number }} of {{ total_pairs }} — Calibration</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+         background: #f4f4f4; color: #222; min-height: 100vh; padding: 1.25rem; }
+  .container { max-width: 980px; margin: 0 auto; }
+  .progress { font-size: 0.85rem; color: #666; margin-bottom: 0.5rem; }
+  .progress-bar { width: 100%; height: 6px; background: #ddd; border-radius: 3px;
+                  margin-bottom: 1.25rem; }
+  .progress-bar-fill { height: 100%; background: #3b82f6; border-radius: 3px;
+                       width: {{ (pair_number / total_pairs * 100) | round }}%; }
+  .context-box { background: #fffbeb; border: 1px solid #fde68a; border-radius: 6px;
+                 padding: 0.85rem 1rem; margin-bottom: 1.25rem; font-size: 0.95rem; }
+  .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 1.25rem; margin-bottom: 1.25rem; }
+  @media (max-width: 720px) { .pair { grid-template-columns: 1fr; } }
+  .side { background: white; border-radius: 8px; padding: 0.9rem;
+          box-shadow: 0 1px 4px rgba(0,0,0,0.07); }
+  .side img { width: 100%; height: auto; display: block; border-radius: 4px;
+              background: #fafafa; max-height: 420px; object-fit: contain; }
+  .side .label { font-size: 0.7rem; color: #aaa; text-transform: uppercase;
+                 letter-spacing: 0.05em; margin-bottom: 0.4rem; }
+  .side h4 { font-size: 0.75rem; text-transform: uppercase; color: #888;
+             letter-spacing: 0.05em; margin: 0.65rem 0 0.25rem; }
+  .side p { font-size: 0.88rem; color: #333; }
+  .question { background: white; border-radius: 8px; padding: 1.1rem;
+              box-shadow: 0 1px 4px rgba(0,0,0,0.07); margin-bottom: 0.85rem; }
+  .question h3 { font-size: 0.95rem; margin-bottom: 0.5rem; }
+  .question .hint { font-size: 0.8rem; color: #888; margin-bottom: 0.5rem; }
+  .choice-row { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+  .choice-btn { flex: 1; min-width: 100px; padding: 0.6rem 0.8rem; border: 2px solid #ddd;
+                background: white; border-radius: 8px; cursor: pointer; font-size: 0.9rem;
+                font-weight: 600; transition: all 0.15s; text-align: center; }
+  .choice-btn:hover { border-color: #3b82f6; background: #eff6ff; }
+  .choice-btn.selected { border-color: #3b82f6; background: #3b82f6; color: white; }
+  .submit-row { text-align: center; margin-top: 1.25rem; }
+  .btn { display: inline-block; padding: 0.85rem 2rem; border-radius: 8px;
+         font-size: 1rem; font-weight: 600; border: none; cursor: pointer;
+         transition: background 0.15s; }
+  .btn-primary { background: #22c55e; color: white; }
+  .btn-primary:hover:not(:disabled) { background: #16a34a; }
+  .btn-primary:disabled { background: #cbd5e1; color: #64748b; cursor: not-allowed; }
+  .divider { border: none; border-top: 1px solid #e5e7eb; margin: 0.25rem 0; }
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="progress">Pair {{ pair_number }} of {{ total_pairs }}</div>
+  <div class="progress-bar"><div class="progress-bar-fill"></div></div>
+
+  <div class="context-box">
+    🎂 <strong>Scenario:</strong> Both of these are <strong>birthday</strong> greeting cards.
+    Compare them on the five questions below. Choose whichever card is better
+    on each dimension, or "About the same" if you genuinely can't decide.
+  </div>
+
+  <div class="pair">
+    <div class="side">
+      <div class="label">Card A</div>
+      <img src="{{ left_image_url }}" alt="Greeting card A" loading="lazy"
+           onerror="this.src='/static/placeholder.png'; this.alt='Image unavailable';">
+      {% if left_headline %}
+      <h4>Title</h4><p>{{ left_headline }}</p>
+      {% endif %}
+    </div>
+    <div class="side">
+      <div class="label">Card B</div>
+      <img src="{{ right_image_url }}" alt="Greeting card B" loading="lazy"
+           onerror="this.src='/static/placeholder.png'; this.alt='Image unavailable';">
+      {% if right_headline %}
+      <h4>Title</h4><p>{{ right_headline }}</p>
+      {% endif %}
+    </div>
+  </div>
+
+  <form id="pairForm" method="POST" action="{{ submit_url }}">
+    <input type="hidden" name="pair_index" value="{{ pair_number }}">
+    <input type="hidden" name="t_start_ms" id="tStart">
+
+    <div class="question">
+      <h3>1. Which card better fits a birthday occasion?</h3>
+      <p class="hint">Consider imagery, text, and overall theme.</p>
+      <div class="choice-row" data-name="occasion_fit">
+        <button type="button" class="choice-btn" data-value="L">Card A</button>
+        <button type="button" class="choice-btn" data-value="R">Card B</button>
+        <button type="button" class="choice-btn" data-value="T">About the same</button>
+      </div>
+      <input type="hidden" name="winner_occasion_fit" id="qOccasionFit" required>
+    </div>
+
+    <div class="question">
+      <h3>2. Which card looks more visually appealing?</h3>
+      <p class="hint">Composition, colours, typography, overall design quality.</p>
+      <div class="choice-row" data-name="aesthetic">
+        <button type="button" class="choice-btn" data-value="L">Card A</button>
+        <button type="button" class="choice-btn" data-value="R">Card B</button>
+        <button type="button" class="choice-btn" data-value="T">About the same</button>
+      </div>
+      <input type="hidden" name="winner_aesthetic" id="qAesthetic" required>
+    </div>
+
+    <div class="question">
+      <h3>3. Which card evokes a stronger emotional response?</h3>
+      <p class="hint">Warmth, joy, humour, sentiment — which makes you feel more?</p>
+      <div class="choice-row" data-name="emotional_resonance">
+        <button type="button" class="choice-btn" data-value="L">Card A</button>
+        <button type="button" class="choice-btn" data-value="R">Card B</button>
+        <button type="button" class="choice-btn" data-value="T">About the same</button>
+      </div>
+      <input type="hidden" name="winner_emotional_resonance" id="qEmotional" required>
+    </div>
+
+    <div class="question">
+      <h3>4. Which card is more unique or distinctive?</h3>
+      <p class="hint">Originality vs looking like a generic template.</p>
+      <div class="choice-row" data-name="distinctiveness">
+        <button type="button" class="choice-btn" data-value="L">Card A</button>
+        <button type="button" class="choice-btn" data-value="R">Card B</button>
+        <button type="button" class="choice-btn" data-value="T">About the same</button>
+      </div>
+      <input type="hidden" name="winner_distinctiveness" id="qDistinctiveness" required>
+    </div>
+
+    <div class="submit-row">
+      <button type="submit" class="btn btn-primary" id="submitBtn" disabled>
+        {% if pair_number < total_pairs %}
+          Next pair →
+        {% else %}
+          Finish survey →
+        {% endif %}
+      </button>
+    </div>
+  </form>
+</div>
+
+<script>
+  document.getElementById('tStart').value = Date.now().toString();
+
+  const DIMS = ['occasion_fit', 'aesthetic', 'emotional_resonance', 'distinctiveness'];
+  const INPUT_IDS = ['qOccasionFit', 'qAesthetic', 'qEmotional', 'qDistinctiveness'];
+
+  DIMS.forEach((dim, i) => wireGroup(dim, INPUT_IDS[i]));
+
+  function wireGroup(groupName, hiddenInputId) {
+    const row = document.querySelector(`[data-name="${groupName}"]`);
+    const input = document.getElementById(hiddenInputId);
+    row.querySelectorAll('.choice-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        row.querySelectorAll('.choice-btn').forEach(b => b.classList.remove('selected'));
+        btn.classList.add('selected');
+        input.value = btn.dataset.value;
+        checkComplete();
+      });
+    });
+  }
+  function checkComplete() {
+    const allAnswered = INPUT_IDS.every(id => document.getElementById(id).value);
+    document.getElementById('submitBtn').disabled = !allAnswered;
+  }
+</script>
+</body>
+</html>

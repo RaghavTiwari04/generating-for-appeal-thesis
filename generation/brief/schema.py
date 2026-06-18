@@ -6,11 +6,11 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-from common.occasions import OCCASIONS, RELATIONSHIPS, TONES
+from common.occasions import ACTIVE_OCCASIONS, RELATIONSHIPS, TONES
 
 
 class BriefRequest(BaseModel):
-    occasion: Literal[OCCASIONS] = Field(..., description="From the canonical taxonomy")  # type: ignore[valid-type]
+    occasion: Literal[ACTIVE_OCCASIONS] = Field(..., description="From the canonical taxonomy")  # type: ignore[valid-type]
     relationship: str | None = Field(None, description="e.g. 'mum', 'partner', 'friend'")
     tone: str = Field(..., description="From TONES")
     constraints: dict = Field(default_factory=dict)

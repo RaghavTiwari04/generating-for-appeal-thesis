@@ -11,26 +11,22 @@ calibrated saleability score.
 from __future__ import annotations
 
 import io
-import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
 from psycopg.types.json import Jsonb
 
-from common.config import settings
 from common.db import connection
 from common.logging import get_logger
 from common.storage import put_image
-from data.features.clip_embed import CLIPEmbedder
-from generation.brief.generate import PROMPT_VERSION as BRIEF_VERSION, generate_brief
+from generation.brief.generate import PROMPT_VERSION as BRIEF_VERSION
+from generation.brief.generate import generate_brief
 from generation.brief.schema import Brief
-from generation.image.controlnet import LayoutMaskSpec, build_headline_mask
 from generation.image.diffusion import get_runner as get_diffusion_runner
+from generation.image.headline_mask import LayoutMaskSpec, build_headline_mask
 from generation.layout.compose import compose
 from generation.message.generate import generate_message
-from models.predictor.infer import PredictorRunner
-from pipeline.rerank import Candidate, rerank
+from pipeline.rerank import Candidate, rerank, rerank_llm
 
 log = get_logger(__name__)
 
@@ -45,6 +41,7 @@ class OrchestratorConfig:
     predictor_calib: Path | None = Path("./artifacts/predictor/isotonic.joblib")
     image_seed_base: int | None = None
     condition_tag: str = "C_pipeline_rerank"
+    scorer: str = "predictor"  # "predictor" | "llm"
 
 
 def generate(request: dict, cfg: OrchestratorConfig | None = None) -> list[Candidate]:
@@ -66,7 +63,7 @@ def generate(request: dict, cfg: OrchestratorConfig | None = None) -> list[Candi
         occasion=request["occasion"],
         seed=cfg.image_seed_base,
         n=cfg.n_candidates,
-        controlnet_image=mask_image,
+        mask_image=mask_image,
     )
 
     inside = generate_message(
@@ -96,9 +93,17 @@ def generate(request: dict, cfg: OrchestratorConfig | None = None) -> list[Candi
             )
         )
 
-    predictor = PredictorRunner(cfg.predictor_ckpt, cfg.predictor_calib)
-    embedder = CLIPEmbedder()
-    ranked = rerank(candidates, predictor=predictor, embedder=embedder, top_k=cfg.top_k)
+    if cfg.scorer == "llm":
+        ranked = rerank_llm(candidates, top_k=cfg.top_k)
+    else:
+        from data.features.clip_embed import CLIPEmbedder
+        from models.predictor.infer import PredictorRunner
+
+        predictor = PredictorRunner(cfg.predictor_ckpt, cfg.predictor_calib)
+        embedder = CLIPEmbedder()
+        ranked = rerank(
+            candidates, predictor=predictor, embedder=embedder, top_k=cfg.top_k
+        )
 
     _persist(ranked, request=request, cfg=cfg, brief=brief, inside_alternatives=inside.alternatives)
     return ranked
@@ -164,10 +169,11 @@ if __name__ == "__main__":
         relationship: str | None = None,
         n: int = 8,
         top_k: int = 3,
+        scorer: str = "predictor",
     ) -> None:
         ranked = generate(
             {"occasion": occasion, "tone": tone, "relationship": relationship},
-            OrchestratorConfig(n_candidates=n, top_k=top_k),
+            OrchestratorConfig(n_candidates=n, top_k=top_k, scorer=scorer),
         )
         for i, c in enumerate(ranked):
             sale = (c.scores or {}).get("saleability_calibrated", float("nan"))

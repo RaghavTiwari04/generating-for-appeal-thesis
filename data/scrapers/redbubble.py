@@ -9,15 +9,29 @@ TOS review required before production run.
 from __future__ import annotations
 
 import re
-from typing import AsyncIterator
-from urllib.parse import quote_plus, urljoin
+from collections.abc import AsyncIterator
+from urllib.parse import quote_plus
 
 from selectolax.parser import HTMLParser
 
 from data.scrapers.base import ParsedListing, Scraper
 from data.scrapers.etsy import (
-    _attr, _extract_jsonld, _parse_price, _text, _to_float, _to_int,
+    _attr,
+    _extract_jsonld,
+    _parse_price,
+    _text,
+    _to_float,
+    _to_int,
 )
+
+
+def _flat_image_url(url: str) -> str:
+    """Rewrite Redbubble mockup URLs (papergc = tilted 3D) to flat artwork."""
+    return re.sub(
+        r"/papergc,[^/]+\.jpg",
+        "/flat,600x600,075,f.jpg",
+        url,
+    )
 
 
 class RedbubbleScraper(Scraper):
@@ -41,9 +55,10 @@ class RedbubbleScraper(Scraper):
             except Exception:
                 return
             tree = HTMLParser(resp.text)
+            # Redbubble product links use /i/ pattern (e.g. /i/greeting-card/...)
             links = {
                 a.attributes.get("href", "")
-                for a in tree.css("a[href*='/works/']")
+                for a in tree.css("a[href*='/i/greeting-card']")
                 if a.attributes.get("href")
             }
             if not links:
@@ -58,7 +73,8 @@ class RedbubbleScraper(Scraper):
 
     def parse(self, html: str, url: str) -> ParsedListing:
         tree = HTMLParser(html)
-        id_match = re.search(r"/works/(\d+)", url)
+        # Product URLs: /i/greeting-card/Title-by-Artist/12345678/qjsu
+        id_match = re.search(r"/(\d{6,})", url)
         source_listing_id = id_match.group(1) if id_match else url
 
         # Primary: JSON-LD
@@ -83,7 +99,7 @@ class RedbubbleScraper(Scraper):
                 offers = offers[0] if offers else {}
             if isinstance(offers, dict):
                 try:
-                    price_minor = int(round(float(str(offers.get("price", ""))) * 100))
+                    price_minor = round(float(str(offers.get("price", ""))) * 100)
                 except (ValueError, TypeError):
                     pass
                 currency = str(offers.get("priceCurrency", "")).upper() or None
@@ -96,7 +112,10 @@ class RedbubbleScraper(Scraper):
             imgs = ld.get("image") or []
             if isinstance(imgs, str):
                 imgs = [imgs]
-            image_urls = [i for i in imgs if isinstance(i, str) and i.startswith("http")]
+            image_urls = [
+                _flat_image_url(i) for i in imgs
+                if isinstance(i, str) and i.startswith("http")
+            ]
 
         # Fallbacks
         if not title:
@@ -125,7 +144,7 @@ class RedbubbleScraper(Scraper):
                 for img in tree.css("img[src*='ih1.redbubble.net'], img[src*='rdbl.co']")
                 if img.attributes
             ]
-            image_urls = [u for u in image_urls if u.startswith("http")]
+            image_urls = [_flat_image_url(u) for u in image_urls if u.startswith("http")]
 
         return ParsedListing(
             source_listing_id=source_listing_id,

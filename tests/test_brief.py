@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 import json
+
 import pytest
 
-from generation.brief.generate import _extract_json
-from generation.brief.schema import validate_request, Brief
-
+from common.llm import extract_json as _extract_json
+from generation.brief.schema import Brief, validate_request
 
 _VALID_BRIEF_JSON = {
     "concept": "Wildflowers and a cup of tea",
@@ -51,7 +51,7 @@ def test_brief_validate_valid() -> None:
 
 def test_brief_headline_max_length() -> None:
     data = {**_VALID_BRIEF_JSON, "headline": "x" * 91}
-    with pytest.raises(Exception):
+    with pytest.raises(ValueError):
         Brief.model_validate(data)
 
 

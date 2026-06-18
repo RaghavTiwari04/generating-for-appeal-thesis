@@ -20,7 +20,6 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 import pandas as pd
-import numpy as np
 
 from common.logging import get_logger
 from survey.analysis.survey_loader import LIKERT_DIMENSIONS

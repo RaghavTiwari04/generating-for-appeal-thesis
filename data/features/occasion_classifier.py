@@ -22,7 +22,6 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Iterable
 
 import numpy as np
 import torch
@@ -32,7 +31,7 @@ from transformers import AutoModel, AutoTokenizer
 
 from common.db import connection
 from common.logging import get_logger
-from common.occasions import OCCASIONS
+from common.occasions import ACTIVE_OCCASIONS as OCCASIONS
 
 log = get_logger(__name__)
 
@@ -40,7 +39,6 @@ app = typer.Typer()
 
 MODEL_ID = "distilbert-base-uncased"
 CKPT_PATH = Path("./artifacts/occasion_classifier.pt")
-THRESHOLD = 0.4
 
 OCCASION_TO_IDX = {o: i for i, o in enumerate(OCCASIONS)}
 IDX_TO_OCCASION = {i: o for i, o in enumerate(OCCASIONS)}
@@ -129,6 +127,7 @@ def train(
 ) -> None:
     import pandas as pd
     from torch.utils.data import DataLoader, TensorDataset
+
     from common.db import engine
 
     df = pd.read_sql(
@@ -149,9 +148,9 @@ def train(
         if not lbls:
             continue
         vec = [0.0] * len(OCCASIONS)
-        for l in lbls:
-            if l in OCCASION_TO_IDX:
-                vec[OCCASION_TO_IDX[l]] = 1.0
+        for lbl in lbls:
+            if lbl in OCCASION_TO_IDX:
+                vec[OCCASION_TO_IDX[lbl]] = 1.0
         ys.append(vec)
         keep.append(i)
 
@@ -232,7 +231,7 @@ def infer(limit: int = 2000, ckpt: Path = CKPT_PATH, batch: int = 64) -> None:
         probs = probs.cpu().numpy()
 
         with connection() as conn, conn.cursor() as cur:
-            for r, prob_vec in zip(chunk, probs):
+            for r, prob_vec in zip(chunk, probs, strict=True):
                 top_idx = int(np.argmax(prob_vec))
                 cur.execute(
                     _UPSERT,

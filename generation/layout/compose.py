@@ -26,7 +26,7 @@ from PIL import Image, ImageDraw, ImageFont
 from skimage import color
 
 from common.logging import get_logger
-from generation.image.controlnet import LayoutMaskSpec, build_headline_mask
+from generation.image.headline_mask import LayoutMaskSpec, build_headline_mask
 from generation.layout.font_palette import FontSpec, select_fonts
 
 log = get_logger(__name__)

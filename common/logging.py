@@ -8,7 +8,6 @@ from rich.logging import RichHandler
 
 from common.config import settings
 
-
 _CONFIGURED = False
 
 

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import torch
-import pytest
 
 from models.predictor.architecture import (
     HEAD_NAMES,
@@ -47,11 +46,11 @@ def test_no_nan() -> None:
         assert not torch.isnan(tensor).any(), f"NaN in {name}"
 
 
-def test_head_loss_weights_saleability_doubled() -> None:
-    weights = head_loss_weights(saleability_factor=2.0)
-    assert weights["saleability"] == 2.0
+def test_head_loss_weights_purchase_intent_doubled() -> None:
+    weights = head_loss_weights(purchase_intent_factor=2.0)
+    assert weights["purchase_intent"] == 2.0
     for k, v in weights.items():
-        if k != "saleability":
+        if k != "purchase_intent":
             assert v == 1.0
 
 
@@ -60,7 +59,7 @@ def test_different_seeds_different_output() -> None:
     model = SaleabilityPredictor()
     b1 = _dummy_batch(bs=2)
     b2 = _dummy_batch(bs=2)
-    o1 = model(**b1)["saleability"]
-    o2 = model(**b2)["saleability"]
+    o1 = model(**b1)["purchase_intent"]
+    o2 = model(**b2)["purchase_intent"]
     # Different random inputs should produce different outputs (almost certainly)
     assert not torch.allclose(o1, o2)

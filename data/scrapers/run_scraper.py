@@ -11,12 +11,11 @@ from __future__ import annotations
 
 import asyncio
 import time
-from typing import Optional
 
 import typer
 
 from common.logging import get_logger
-from common.occasions import OCCASIONS
+from common.occasions import ACTIVE_OCCASIONS as OCCASIONS
 
 log = get_logger(__name__)
 app = typer.Typer()
@@ -60,18 +59,18 @@ async def _run(
                 if parsed is not None:
                     count += 1
                     total += 1
-            log.info(f"[{source}] query={query!r} → {count} listings")
+            log.info(f"[{source}] query={query!r} -> {count} listings")
     return total
 
 
 @app.command()
 def run(
     source: str = typer.Option(..., help="etsy | redbubble | zazzle | greetings_island"),
-    queries: Optional[str] = typer.Option(
+    queries: str | None = typer.Option(
         None,
         help="Comma-separated search queries. Defaults to all canonical occasions.",
     ),
-    occasions: Optional[str] = typer.Option(
+    occasions: str | None = typer.Option(
         None,
         help="Comma-separated subset of OCCASIONS taxonomy (alternative to --queries).",
     ),

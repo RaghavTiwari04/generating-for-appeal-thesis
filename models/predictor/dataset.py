@@ -1,7 +1,19 @@
 """Cached-feature Dataset for predictor training.
 
 Pulls a flat training table from Postgres + cached CLIP embeddings, then
-serves (image_emb, text_emb, occasion_idx, price_rel, targets) tuples.
+serves (image_emb, text_emb, occasion_idx, price_rel, targets, mask) tuples.
+
+Label sources:
+  - Heads 1-4 (VLM): saleability_labels.label_source = 'vlm_4head_v1'
+    → ~2,377 cards with scores for occasion_fit, aesthetic,
+      emotional_resonance, distinctiveness.
+  - Head 5 (human): saleability_labels.label_source LIKE 'survey_%_bt_purchase_intent'
+    → ~500-card subsample with Bradley-Terry purchase_intent scores
+      from Prolific 2AFC study.
+
+Masked multi-task loss: mask[i]=1 only where label exists for that head.
+Head 5 mask is 0 on ~80% of cards → loss only backprops purchase_intent
+on the labelled subsample (Ruder 2017).
 
 Splits are by `seller_id` to avoid style leakage (§4.4).
 """
@@ -10,7 +22,6 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from typing import Iterable
 
 import numpy as np
 import pandas as pd
@@ -18,9 +29,8 @@ import torch
 from torch.utils.data import Dataset
 
 from common.db import engine
-from common.occasions import OCCASIONS
-from models.predictor.architecture import HEAD_NAMES
-
+from common.occasions import ACTIVE_OCCASIONS as OCCASIONS
+from models.predictor.architecture import HEAD_NAMES, VLM_HEADS
 
 OCCASION_TO_IDX: dict[str, int] = {occ: i for i, occ in enumerate(OCCASIONS)}
 
@@ -34,15 +44,24 @@ SELECT
     lf.occasion,
     lf.clip_embedding,
     lf.extracted_text,
-    sl_proxy.score AS proxy_score,
-    sl_survey.score AS survey_score,
-    sl_survey.raw   AS survey_raw
+    -- VLM 4-head labels
+    sl_vlm.raw  AS vlm_raw,
+    sl_vlm.score AS vlm_composite,
+    -- VLM 5-head labels (includes purchase_intent from LLM)
+    sl_vlm5.raw AS vlm5_raw,
+    -- Human BT purchase_intent (available for ~500-card subsample)
+    sl_bt_pi.score AS bt_purchase_intent
 FROM listings l
 JOIN listing_features lf USING (listing_id)
-LEFT JOIN saleability_labels sl_proxy
-       ON sl_proxy.listing_id = l.listing_id AND sl_proxy.label_source = 'proxy_v1'
-LEFT JOIN saleability_labels sl_survey
-       ON sl_survey.listing_id = l.listing_id AND sl_survey.label_source LIKE 'survey_%%'
+LEFT JOIN saleability_labels sl_vlm
+       ON sl_vlm.listing_id = l.listing_id
+      AND sl_vlm.label_source = 'vlm_4head_v1'
+LEFT JOIN saleability_labels sl_vlm5
+       ON sl_vlm5.listing_id = l.listing_id
+      AND sl_vlm5.label_source = 'vlm_5head_v1'
+LEFT JOIN saleability_labels sl_bt_pi
+       ON sl_bt_pi.listing_id = l.listing_id
+      AND sl_bt_pi.label_source LIKE 'survey_%%_bt_purchase_intent'
 WHERE lf.clip_embedding IS NOT NULL
   AND lf.occasion IS NOT NULL;
 """
@@ -60,6 +79,13 @@ def load_training_frame() -> pd.DataFrame:
     if df.empty:
         return df
 
+    import json as _json
+    def _parse_embedding(val):
+        if isinstance(val, str):
+            return _json.loads(val)
+        return val
+    df["clip_embedding"] = df["clip_embedding"].apply(_parse_embedding)
+
     # Price-relative-to-occasion-median (log scale)
     df["log_price"] = np.log1p(df["price_minor_units"].fillna(0).astype(float) / 100.0)
     medians = df.groupby("occasion")["log_price"].transform("median")
@@ -73,7 +99,13 @@ def split_by_seller(df: pd.DataFrame, cfg: SplitConfig | None = None) -> dict[st
     """Partition listings by `seller_id` to avoid style leakage."""
     cfg = cfg or SplitConfig()
     rng = np.random.default_rng(cfg.seed)
-    sellers = df["seller_id"].dropna().unique().tolist()
+    # Give NULL-seller rows a unique synthetic seller each so they enter splits
+    null_mask = df["seller_id"].isna()
+    df = df.copy()
+    df.loc[null_mask, "seller_id"] = [
+        f"__null_{i}" for i in range(null_mask.sum())
+    ]
+    sellers = df["seller_id"].unique().tolist()
     rng.shuffle(sellers)
     n = len(sellers)
     n_train = math.floor(n * cfg.train_frac)
@@ -143,44 +175,50 @@ class PredictorDataset(Dataset):
         }
 
 
+def _parse_raw(val) -> dict:
+    if not val:
+        return {}
+    if isinstance(val, str):
+        import json
+        try:
+            return json.loads(val)
+        except Exception:
+            return {}
+    return val
+
+
 def _build_targets(row: pd.Series) -> tuple[list[float], list[float]]:
     """Map row → (targets, mask) aligned with HEAD_NAMES order.
 
-    Targets are the per-head supervision signal in [0, 1]. Mask = 1 where a
-    target exists, 0 otherwise.
+    Label priority per head:
+      heads 1-4: VLM 5-head > VLM 4-head
+      head 5 (purchase_intent): human BT > VLM 5-head
+
+    Masked multi-task loss: mask[i]=0 where no label → head gets zero
+    gradient for that sample (Ruder 2017).
     """
     targets = [0.0] * len(HEAD_NAMES)
     mask = [0.0] * len(HEAD_NAMES)
 
-    survey_raw = row.get("survey_raw") or {}
-    if isinstance(survey_raw, str):
-        import json
+    def _set(head_name: str, val: float) -> None:
+        i = HEAD_NAMES.index(head_name)
+        targets[i] = max(0.0, min(1.0, val))
+        mask[i] = 1.0
 
-        try:
-            survey_raw = json.loads(survey_raw)
-        except Exception:
-            survey_raw = {}
+    # Merge VLM sources: 5-head takes priority over 4-head
+    vlm_raw = _parse_raw(row.get("vlm_raw"))
+    vlm5_raw = _parse_raw(row.get("vlm5_raw"))
+    merged_vlm = {**vlm_raw, **vlm5_raw}
 
-    survey_to_head = {
-        "occasion_fit": "occasion_fit",
-        "aesthetic": "aesthetic",
-        "emotional_resonance": "emotional",
-        "distinctiveness": "distinctiveness",
-        "purchase_intent": "saleability",
-    }
-    for survey_key, head_name in survey_to_head.items():
-        if survey_key in survey_raw:
-            head_i = HEAD_NAMES.index(head_name)
-            val = float(survey_raw[survey_key])
-            # 1..7 Likert → 0..1
-            targets[head_i] = max(0.0, min(1.0, (val - 1.0) / 6.0))
-            mask[head_i] = 1.0
+    for head_name in VLM_HEADS:
+        if head_name in merged_vlm:
+            _set(head_name, float(merged_vlm[head_name]))
 
-    # Proxy-only supervision falls onto saleability head if survey absent
-    if not mask[HEAD_NAMES.index("saleability")] and pd.notna(row.get("proxy_score")):
-        head_i = HEAD_NAMES.index("saleability")
-        targets[head_i] = float(row["proxy_score"])
-        mask[head_i] = 1.0
+    # purchase_intent: human BT > VLM 5-head
+    if pd.notna(row.get("bt_purchase_intent")):
+        _set("purchase_intent", float(row["bt_purchase_intent"]))
+    elif "purchase_intent" in merged_vlm:
+        _set("purchase_intent", float(merged_vlm["purchase_intent"]))
 
     return targets, mask
 

@@ -137,7 +137,7 @@ class ProlificClient:
         data = self._get(f"/studies/{study_id}/submissions/")
         return data.get("results", [])
 
-    def export_submissions(self, study_id: str) -> "pd.DataFrame":
+    def export_submissions(self, study_id: str) -> pd.DataFrame:  # noqa: F821
         import pandas as pd
         subs = self.list_submissions(study_id)
         return pd.DataFrame(subs)

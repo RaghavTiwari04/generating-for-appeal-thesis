@@ -13,7 +13,6 @@ Usage:
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 import numpy as np
@@ -38,10 +37,9 @@ def _dataset_to_features(ds: PredictorDataset, embedder: CLIPEmbedder) -> tuple[
     list[CardFeatures], np.ndarray, dict[str, np.ndarray]
 ]:
     """Convert dataset rows → CardFeatures + survey targets."""
-    from common.occasions import OCCASIONS
+    from common.occasions import ACTIVE_OCCASIONS as OCCASIONS
 
-    OCCASION_TO_IDX = {o: i for i, o in enumerate(OCCASIONS)}
-    IDX_TO_OCCASION = {i: o for i, o in enumerate(OCCASIONS)}
+    idx_to_occasion = {i: o for i, o in enumerate(OCCASIONS)}
 
     features: list[CardFeatures] = []
     pi_targets: list[float] = []
@@ -54,12 +52,12 @@ def _dataset_to_features(ds: PredictorDataset, embedder: CLIPEmbedder) -> tuple[
         features.append(CardFeatures(
             image_emb=item["image_emb"].numpy(),
             text_emb=item["text_emb"].numpy(),
-            occasion=IDX_TO_OCCASION.get(occ_idx, "birthday/general"),
+            occasion=idx_to_occasion.get(occ_idx, "birthday/general"),
             price_rel=float(item["price_rel"].item()),
         ))
         tgts = item["targets"].numpy()
         mask = item["mask"].numpy()
-        pi_idx = HEAD_NAMES.index("saleability")
+        pi_idx = HEAD_NAMES.index("purchase_intent")
         pi_targets.append(float(tgts[pi_idx]) if mask[pi_idx] else float("nan"))
         for j, name in enumerate(HEAD_NAMES):
             head_targets[name].append(float(tgts[j]) if mask[j] else float("nan"))
@@ -113,17 +111,12 @@ def run(
     log.info("Extracting features...")
     features, pi_targets, head_targets = _dataset_to_features(ds, embedder)
 
-    # Load proxy scores for test set
-    proxy_scores = test_df["proxy_score"].fillna(0.5).to_numpy() \
-        if "proxy_score" in test_df.columns else np.zeros(len(features))
-
     # Filter to rows with survey PI labels
     pi_mask = ~np.isnan(pi_targets)
     log.info(f"Cards with survey PI labels: {pi_mask.sum()} / {len(features)}")
 
-    features_pi = [f for f, m in zip(features, pi_mask) if m]
+    features_pi = [f for f, m in zip(features, pi_mask, strict=False) if m]
     pi_valid = pi_targets[pi_mask]
-    proxy_valid = proxy_scores[pi_mask]
 
     from eval.predictor_eval import evaluate
 
@@ -131,7 +124,6 @@ def run(
         predictor=predictor,
         features=features_pi,
         survey_purchase_intent=pi_valid,
-        proxy_scores=proxy_valid,
         per_head_targets={
             name: vals[pi_mask]
             for name, vals in head_targets.items()
@@ -143,7 +135,6 @@ def run(
     log.info(
         f"\nResults:\n"
         f"  Spearman vs purchase intent : {report.spearman_purchase_intent:.3f}\n"
-        f"  Spearman vs proxy           : {report.spearman_proxy:.3f}\n"
         f"  AUC top-quartile            : {report.auc_top_quartile:.3f}\n"
         f"  ECE                         : {report.ece:.3f}\n"
         f"  Random baseline rho         : {report.baselines.get('random_spearman', float('nan')):.3f}"
@@ -151,8 +142,9 @@ def run(
 
     # Generate reliability plot if matplotlib available
     try:
-        from eval.reports.figures import fig4_reliability
         import json as _json
+
+        from eval.reports.figures import fig4_reliability
         cal = _json.loads((out_dir / "calibration.json").read_text())
         fig4_reliability(cal, out_dir / "reliability.png")
         log.info("Reliability plot saved")

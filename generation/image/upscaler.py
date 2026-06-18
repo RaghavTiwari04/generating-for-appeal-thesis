@@ -16,7 +16,6 @@ Usage:
 
 from __future__ import annotations
 
-import io
 from pathlib import Path
 from typing import Literal
 
@@ -59,19 +58,19 @@ def _upscale_realesrgan(img: Image.Image, target_w: int, target_h: int) -> Image
             pre_pad=0,
             half=torch.cuda.is_available(),
         )
-        import numpy as np
         import cv2
+        import numpy as np
         arr = cv2.cvtColor(np.asarray(img), cv2.COLOR_RGB2BGR)
         out_arr, _ = upsampler.enhance(arr, outscale=scale)
         out_rgb = cv2.cvtColor(out_arr, cv2.COLOR_BGR2RGB)
         upscaled = Image.fromarray(out_rgb)
         return upscaled.resize((target_w, target_h), Image.LANCZOS)
 
-    except ImportError:
+    except ImportError as err:
         raise ImportError(
             "realesrgan / basicsr not installed. "
             "pip install realesrgan  or use backend='lanczos'."
-        )
+        ) from err
 
 
 def _upscale_lanczos(img: Image.Image, target_w: int, target_h: int) -> Image.Image:

@@ -1,7 +1,13 @@
 """Train the multi-head saleability predictor.
 
-Loss: weighted MSE per head with the saleability head weighted 2x. Mask
-out heads with no ground truth on a given sample.
+Loss: masked weighted MSE per head. Heads 1-4 (VLM-labelled) train on
+all ~2,377 cards. Head 5 (purchase_intent, human BT) trains only on
+the ~500-card subsample. Purchase-intent head weighted 2× to compensate
+for smaller label set.
+
+This is the standard masked multi-task loss approach (Ruder 2017):
+mask[head][sample] = 1 where label exists, 0 otherwise. Zero-masked
+samples contribute zero gradient to that head.
 
 Optimiser: AdamW, lr 1e-4, weight decay 1e-2, cosine schedule.
 Backbone frozen; only the trunk + heads train (features are pre-cached).
@@ -21,6 +27,7 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
+import pandas as pd
 import torch
 import typer
 from scipy.stats import spearmanr
@@ -28,7 +35,11 @@ from torch.utils.data import DataLoader
 
 from common.config import settings
 from common.logging import get_logger
-from models.predictor.architecture import HEAD_NAMES, PredictorConfig, SaleabilityPredictor, head_loss_weights
+from models.predictor.architecture import (
+    HEAD_NAMES,
+    SaleabilityPredictor,
+    head_loss_weights,
+)
 from models.predictor.dataset import (
     PredictorDataset,
     SplitConfig,
@@ -46,7 +57,7 @@ class TrainConfig:
     batch_size: int = 64
     lr: float = 1e-4
     weight_decay: float = 1e-2
-    saleability_loss_factor: float = 2.0
+    purchase_intent_loss_factor: float = 2.0
     early_stop_patience: int = 5
     seed: int = 42
     out_dir: str = "./artifacts/predictor"
@@ -66,16 +77,18 @@ def masked_mse(
     mask: torch.Tensor,
     head_weights: dict[str, float],
 ) -> torch.Tensor:
-    total = pred[HEAD_NAMES[0]].new_zeros(())
-    denom = pred[HEAD_NAMES[0]].new_zeros(())
+    total = torch.zeros((), device=targets.device, dtype=targets.dtype)
+    denom = 0.0
     for i, name in enumerate(HEAD_NAMES):
         m = mask[:, i]
         if m.sum() == 0:
             continue
         diff = (pred[name] - targets[:, i]) ** 2 * m
         total = total + head_weights[name] * diff.sum()
-        denom = denom + head_weights[name] * m.sum()
-    return total / denom.clamp_min(1.0)
+        denom += float(head_weights[name] * m.sum())
+    if denom == 0.0:
+        return (pred[HEAD_NAMES[0]] * 0.0).sum()
+    return total / denom
 
 
 @torch.inference_mode()
@@ -108,8 +121,22 @@ def evaluate(
             metrics[f"spearman_{name}"] = float(rho or 0.0)
         else:
             metrics[f"spearman_{name}"] = float("nan")
-    metrics["spearman_primary"] = metrics.get("spearman_saleability", float("nan"))
+    metrics["spearman_primary"] = metrics.get("spearman_purchase_intent", float("nan"))
     return metrics
+
+
+def _log_mask_coverage(df: pd.DataFrame, split_name: str) -> None:
+    """Log how many samples have labels per head. Confirms masking works."""
+    from models.predictor.dataset import _build_targets
+
+    n = len(df)
+    counts = {name: 0 for name in HEAD_NAMES}
+    for _, row in df.iterrows():
+        _, mask = _build_targets(row)
+        for i, name in enumerate(HEAD_NAMES):
+            counts[name] += int(mask[i])
+    parts = [f"{name}={counts[name]}/{n}" for name in HEAD_NAMES]
+    log.info(f"[{split_name}] label coverage: {', '.join(parts)}")
 
 
 def train(
@@ -117,7 +144,7 @@ def train(
     batch_size: int = 64,
     lr: float = 1e-4,
     weight_decay: float = 1e-2,
-    saleability_loss_factor: float = 2.0,
+    purchase_intent_loss_factor: float = 2.0,
     trunk_hidden: int = 512,
     head_hidden: int = 128,
     dropout: float = 0.1,
@@ -129,12 +156,12 @@ def train(
     cfg = TrainConfig(
         epochs=epochs, batch_size=batch_size, lr=lr,
         weight_decay=weight_decay,
-        saleability_loss_factor=saleability_loss_factor,
+        purchase_intent_loss_factor=purchase_intent_loss_factor,
         seed=seed, out_dir=out_dir, wandb_enabled=wandb,
     )
     # Apply arch overrides so W&B sweep can vary model size
-    from models.predictor.architecture import PredictorConfig as _PC
-    _arch_cfg = _PC(
+    from models.predictor.architecture import PredictorConfig
+    _arch_cfg = PredictorConfig(
         trunk_hidden=trunk_hidden,
         head_hidden=head_hidden,
         dropout=dropout,
@@ -159,6 +186,10 @@ def train(
     val_ds = PredictorDataset(splits["val"])
     test_ds = PredictorDataset(splits["test"])
 
+    # Log label coverage per head — confirms masked multi-task setup
+    _log_mask_coverage(splits["train"], "train")
+    _log_mask_coverage(splits["val"], "val")
+
     sampler = make_occasion_sampler(splits["train"])
     train_loader = DataLoader(train_ds, batch_size=cfg.batch_size, sampler=sampler)
     val_loader = DataLoader(val_ds, batch_size=cfg.batch_size)
@@ -168,7 +199,7 @@ def train(
     model = SaleabilityPredictor(_arch_cfg).to(device)
     opt = torch.optim.AdamW(model.parameters(), lr=cfg.lr, weight_decay=cfg.weight_decay)
     sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=cfg.epochs)
-    weights = head_loss_weights(cfg.saleability_loss_factor)
+    weights = head_loss_weights(cfg.purchase_intent_loss_factor)
 
     best_metric = -float("inf")
     epochs_since_improvement = 0
@@ -199,7 +230,7 @@ def train(
         val_metrics = evaluate(model, val_loader, device)
         log.info(
             f"epoch={epoch:02d} train_loss={train_loss:.4f} "
-            f"val_saleability_rho={val_metrics['spearman_saleability']:.3f}"
+            f"val_pi_rho={val_metrics['spearman_purchase_intent']:.3f}"
         )
         if wandb_run is not None:
             wandb_run.log({"train_loss": train_loss, "epoch": epoch, **val_metrics})

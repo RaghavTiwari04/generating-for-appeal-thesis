@@ -1,64 +1,106 @@
 """Greetings Island scraper (~5k cards). TOS review required.
 
-Primary: JSON-LD. Secondary: meta tags. Fallback: CSS.
-Greetings Island is a free ecards + print site — pricing may not always
-be present (free tier cards have no price).
+Greetings Island is a free ecards + print site. Category pages are
+server-rendered and contain /preview/cards/ links. Individual card
+pages have JSON-LD and meta tags. Plain httpx works (no JS needed).
+
+Note: many cards are free — pricing may be absent or zero.
 """
 
 from __future__ import annotations
 
 import re
-from typing import AsyncIterator
-from urllib.parse import quote_plus, urljoin
+from collections.abc import AsyncIterator
+from urllib.parse import urljoin
 
 from selectolax.parser import HTMLParser
 
+from common.logging import get_logger
 from data.scrapers.base import ParsedListing, Scraper
 from data.scrapers.etsy import (
-    _extract_jsonld, _parse_price, _text, _to_float, _to_int,
+    _extract_jsonld,
+    _parse_price,
+    _text,
+    _to_float,
+    _to_int,
 )
+
+log = get_logger(__name__)
+
+# Birthday subcategories to crawl for broad coverage
+_BIRTHDAY_PATHS = [
+    "/cards/birthday",
+    "/cards/birthday/kids",
+    "/cards/birthday/funny",
+    "/cards/birthday/milestone",
+    "/cards/birthday/family",
+    "/cards/birthday/for-her",
+    "/cards/birthday/for-him",
+]
 
 
 class GreetingsIslandScraper(Scraper):
     source = "greetings_island"
+    use_playwright = False  # Static HTML works
     BASE = "https://www.greetingsisland.com"
 
     async def discover(  # type: ignore[override]
         self, *, query: str, max_results: int = 100
     ) -> AsyncIterator[str]:
-        assert self._client is not None
-        page, emitted = 1, 0
-        while emitted < max_results:
-            url = (
-                f"{self.BASE}/cards/all?"
-                f"search={quote_plus(query)}&page={page}"
-            )
-            await self.rate_limiter.acquire()
-            try:
-                resp = await self._client.get(url)
-                resp.raise_for_status()
-            except Exception:
+        """Crawl birthday category pages for /preview/cards/ links."""
+        emitted = 0
+        seen: set[str] = set()
+
+        # Use category browsing instead of search (more reliable)
+        paths = list(_BIRTHDAY_PATHS)
+        # Also try search as fallback
+        from urllib.parse import quote_plus
+        search_url = f"{self.BASE}/cards/all?search={quote_plus(query)}"
+        paths.append(search_url)
+
+        for path in paths:
+            if emitted >= max_results:
                 return
-            tree = HTMLParser(resp.text)
-            links = {
-                urljoin(self.BASE, a.attributes.get("href", ""))
-                for a in tree.css("a[href*='/cards/']")
-                if a.attributes.get("href")
-                and "/cards/" in a.attributes.get("href", "")
-                and "search" not in a.attributes.get("href", "")
-            }
-            if not links:
-                return
-            for link in links:
-                if emitted >= max_results:
-                    return
-                emitted += 1
-                yield link
-            page += 1
+            url = path if path.startswith("http") else self.BASE + path
+            page_num = 1
+            while emitted < max_results:
+                page_url = f"{url}/{page_num}" if page_num > 1 else url
+                try:
+                    html = await self._fetch(page_url)
+                except Exception as e:
+                    log.debug(f"GI page failed: {page_url}: {e}")
+                    break
+                tree = HTMLParser(html)
+                links = tree.css("a[href*='/preview/cards/']")
+                if not links:
+                    break
+                new_count = 0
+                for a in links:
+                    href = a.attributes.get("href", "")
+                    if not href:
+                        continue
+                    full = urljoin(self.BASE, href)
+                    full = re.sub(r"\?.*", "", full)
+                    if full in seen:
+                        continue
+                    seen.add(full)
+                    new_count += 1
+                    emitted += 1
+                    yield full
+                    if emitted >= max_results:
+                        return
+                if new_count == 0:
+                    break
+                page_num += 1
+                if page_num > 10:
+                    break
 
     def parse(self, html: str, url: str) -> ParsedListing:
         tree = HTMLParser(html)
-        id_match = re.search(r"/cards/[^/]+/([^/?#]+)", url)
+        # URL pattern: /preview/cards/{slug}/{category}-{id}
+        id_match = re.search(r"/(\d+[-\d]*)$", url.rstrip("/"))
+        if not id_match:
+            id_match = re.search(r"/([^/]+)$", url.rstrip("/"))
         source_listing_id = id_match.group(1) if id_match else url
 
         # Primary: JSON-LD
@@ -78,7 +120,7 @@ class GreetingsIslandScraper(Scraper):
                 offers = offers[0] if offers else {}
             if isinstance(offers, dict):
                 try:
-                    price_minor = int(round(float(str(offers.get("price", ""))) * 100))
+                    price_minor = round(float(str(offers.get("price", ""))) * 100)
                 except (ValueError, TypeError):
                     pass
                 currency = str(offers.get("priceCurrency", "")).upper() or None
@@ -91,7 +133,7 @@ class GreetingsIslandScraper(Scraper):
                 imgs = [imgs]
             image_urls = [i for i in imgs if isinstance(i, str) and i.startswith("http")]
 
-        # Meta tag fallback (OG tags are very common)
+        # Meta tag fallback (OG tags)
         if not title:
             title = _meta(tree, "og:title") or _text(tree.css_first("h1"))
         if not description:
@@ -123,7 +165,7 @@ class GreetingsIslandScraper(Scraper):
             url=url,
             title=title,
             description=description,
-            seller_id=None,
+            seller_id=None,  # GI doesn't have individual sellers
             price_minor_units=price_minor,
             currency=currency,
             review_count=review_count,
@@ -131,7 +173,7 @@ class GreetingsIslandScraper(Scraper):
             favourite_count=None,
             is_bestseller=False,
             image_urls=image_urls,
-            raw_metadata={"parse_strategy": "jsonld+meta+css", "selectors_version": "v2"},
+            raw_metadata={"parse_strategy": "jsonld+meta+css", "selectors_version": "v3"},
         )
 
 

@@ -1,4 +1,4 @@
-"""Per-occasion LoRA fine-tuning script (rank 8-16, ~1000 steps).
+"""Per-occasion LoRA fine-tuning on Flux.1-dev (rank 8-16, ~1000 steps).
 
 Trains a small LoRA on the top-saleability images for a single occasion.
 PEFT-based; meant to run on a rented A100 in a training sprint. Saves LoRA
@@ -18,16 +18,17 @@ Usage (rented A100):
 
 from __future__ import annotations
 
+import io
 import json
 from pathlib import Path
 
+import numpy as np
 import typer
 from PIL import Image
 
 from common.db import engine
 from common.logging import get_logger
 from common.storage import get_object
-from data.features.clip_embed import EMBED_DIM  # noqa: F401 — ensures shared imports work
 
 log = get_logger(__name__)
 
@@ -37,15 +38,56 @@ SELECT li.storage_path
 FROM listings l
 JOIN listing_features lf USING (listing_id)
 JOIN listing_images li ON li.listing_id = l.listing_id AND li.is_primary
-JOIN saleability_labels sl
-  ON sl.listing_id = l.listing_id AND sl.label_source = 'proxy_v1'
+LEFT JOIN saleability_labels sl
+  ON sl.listing_id = l.listing_id AND sl.label_source = 'vlm_4head_v1'
 WHERE lf.occasion = %(occasion)s
-ORDER BY sl.score DESC
+ORDER BY COALESCE(sl.score, 0) DESC
 LIMIT %(limit)s;
 """
 
 
-def _materialise_training_images(occasion: str, limit: int, dest: Path) -> list[Path]:
+def _erase_text_regions(img: Image.Image) -> Image.Image:
+    """Detect text bounding boxes via Tesseract and inpaint them out.
+
+    Builds a binary mask from OCR word-level bboxes (dilated slightly to cover
+    serifs/shadows), then uses OpenCV Telea inpainting to fill those regions
+    with surrounding texture. This prevents LoRA from learning text-as-texture
+    artifacts from marketplace card images.
+    """
+    import cv2
+    import pytesseract
+
+    img_cv = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
+    ocr_data = pytesseract.image_to_data(img, output_type=pytesseract.Output.DICT)
+
+    mask = np.zeros(img_cv.shape[:2], dtype=np.uint8)
+    for i, conf in enumerate(ocr_data["conf"]):
+        try:
+            c = float(conf)
+        except (TypeError, ValueError):
+            continue
+        if c < 10:
+            continue
+        x, y, w, h = ocr_data["left"][i], ocr_data["top"][i], ocr_data["width"][i], ocr_data["height"][i]
+        if w < 5 or h < 5:
+            continue
+        pad = max(4, int(0.15 * max(w, h)))
+        x0 = max(0, x - pad)
+        y0 = max(0, y - pad)
+        x1 = min(img_cv.shape[1], x + w + pad)
+        y1 = min(img_cv.shape[0], y + h + pad)
+        mask[y0:y1, x0:x1] = 255
+
+    if mask.sum() == 0:
+        return img
+
+    inpainted = cv2.inpaint(img_cv, mask, inpaintRadius=7, flags=cv2.INPAINT_TELEA)
+    return Image.fromarray(cv2.cvtColor(inpainted, cv2.COLOR_BGR2RGB))
+
+
+def _materialise_training_images(
+    occasion: str, limit: int, dest: Path, *, erase_text: bool = True,
+) -> list[Path]:
     import pandas as pd
 
     df = pd.read_sql(_TOP_FOR_OCC_SQL, engine(), params={"occasion": occasion, "limit": limit})
@@ -54,7 +96,9 @@ def _materialise_training_images(occasion: str, limit: int, dest: Path) -> list[
     for i, row in df.iterrows():
         try:
             data = get_object(row["storage_path"])
-            img = Image.open(__import__("io").BytesIO(data)).convert("RGB")
+            img = Image.open(io.BytesIO(data)).convert("RGB")
+            if erase_text:
+                img = _erase_text_regions(img)
             out = dest / f"{i:04d}.png"
             img.save(out)
             paths.append(out)
@@ -70,15 +114,14 @@ def train(
     steps: int = 1000,
     lr: float = 1e-4,
     n_images: int = 150,
-    base_model: str = "stabilityai/stable-diffusion-xl-base-1.0",
+    erase_text: bool = typer.Option(True, help="Inpaint text regions out of training images"),
+    base_model: str = "black-forest-labs/FLUX.1-dev",
     out_root: Path = Path(__file__).parent,
 ) -> None:
-    """Train a single occasion LoRA.
+    """Train a single occasion LoRA on Flux.1-dev via DreamBooth.
 
-    NOTE: this calls into diffusers' `train_dreambooth_lora_sdxl.py`-style
-    training loop. The actual training code is deliberately delegated to the
-    official diffusers example script for reproducibility — we drive it as a
-    subprocess and only handle data prep + bookkeeping here.
+    Delegates to diffusers' official train_dreambooth_lora_flux.py for
+    reproducibility — we handle data prep + bookkeeping here.
     """
     import subprocess
 
@@ -87,14 +130,14 @@ def train(
     out_dir = out_root / occasion.replace("/", "_")
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    _materialise_training_images(occasion, n_images, image_dir)
+    _materialise_training_images(occasion, n_images, image_dir, erase_text=erase_text)
 
     instance_prompt = f"a greeting card for {occasion.replace('_', ' ').replace('/', ' ')}"
     cmd = [
         "accelerate",
         "launch",
-        "--mixed_precision=fp16",
-        "diffusers/examples/dreambooth/train_dreambooth_lora_sdxl.py",
+        "--mixed_precision=bf16",
+        "diffusers/examples/dreambooth/train_dreambooth_lora_flux.py",
         f"--pretrained_model_name_or_path={base_model}",
         f"--instance_data_dir={image_dir}",
         f"--output_dir={out_dir}",

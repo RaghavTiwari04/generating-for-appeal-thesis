@@ -17,7 +17,6 @@ Or target one source:
 from __future__ import annotations
 
 import asyncio
-from typing import Any
 
 import typer
 
@@ -83,9 +82,9 @@ def run(
     url: str | None = typer.Option(None, help="Override URL for testing"),
 ) -> None:
     from data.scrapers.etsy import EtsyScraper
+    from data.scrapers.greetings_island import GreetingsIslandScraper
     from data.scrapers.redbubble import RedbubbleScraper
     from data.scrapers.zazzle import ZazzleScraper
-    from data.scrapers.greetings_island import GreetingsIslandScraper
 
     scraper_map = {
         "etsy":              EtsyScraper(),

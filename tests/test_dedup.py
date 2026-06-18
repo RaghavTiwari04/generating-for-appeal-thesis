@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import numpy as np
-import pytest
 from PIL import Image
 
 from data.features.dedup import (
@@ -29,7 +28,6 @@ def test_phash_identical_images() -> None:
 def test_phash_very_different_images() -> None:
     # Solid images have no frequency content → similar pHash regardless of colour.
     # Use texturally-opposite images: noise vs uniform grey.
-    import numpy as np
     rng = np.random.default_rng(0)
     noise_arr = rng.integers(0, 255, (128, 128), dtype=np.uint8)
     noise_img = Image.fromarray(noise_arr).convert("RGB")

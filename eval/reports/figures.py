@@ -70,6 +70,8 @@ def fig1_condition_means(
     means: dict[str, float],
     stderr: dict[str, float],
     out: Path,
+    *,
+    scale: str = "likert",
 ) -> None:
     conds = [c for c in CONDITIONS_ORDER if c in means]
     mu = [means[c] for c in conds]
@@ -79,14 +81,22 @@ def fig1_condition_means(
 
     fig, ax = _fig_ax(3.5, 2.8)
     x = np.arange(len(conds))
-    bars = ax.bar(x, mu, color=colours, width=0.55, zorder=3)
+    ax.bar(x, mu, color=colours, width=0.55, zorder=3)
     ax.errorbar(x, mu, yerr=se, fmt="none", color="black", capsize=4, linewidth=1.2, zorder=4)
     ax.set_xticks(x)
     ax.set_xticklabels(labels, rotation=15, ha="right")
-    ax.set_ylabel("Mean purchase intent (1–7)")
-    ax.set_ylim(1, 7)
-    ax.yaxis.set_major_locator(mticker.MultipleLocator(1))
-    ax.axhline(4.0, ls="--", color="#6b7280", linewidth=0.8, label="Neutral (4)")
+
+    if scale == "bt":
+        ax.set_ylabel("Mean BT saleability [0, 1]")
+        ax.set_ylim(0, 1)
+        ax.yaxis.set_major_locator(mticker.MultipleLocator(0.2))
+        ax.axhline(0.5, ls="--", color="#6b7280", linewidth=0.8, label="Chance (0.5)")
+    else:
+        ax.set_ylabel("Mean purchase intent (1–7)")
+        ax.set_ylim(1, 7)
+        ax.yaxis.set_major_locator(mticker.MultipleLocator(1))
+        ax.axhline(4.0, ls="--", color="#6b7280", linewidth=0.8, label="Neutral (4)")
+
     ax.set_title("Purchase intent by condition")
     ax.legend(loc="lower right")
     fig.tight_layout()
@@ -98,8 +108,7 @@ def fig1_condition_means(
 # Fig 2: Per-occasion breakdown
 # ---------------------------------------------------------------------------
 
-def fig2_per_occasion(per_occasion: pd.DataFrame, out: Path) -> None:
-    # per_occasion: index=occasion, columns=condition_tags
+def fig2_per_occasion(per_occasion: pd.DataFrame, out: Path, *, scale: str = "likert") -> None:
     conds = [c for c in CONDITIONS_ORDER if c in per_occasion.columns]
     occs = per_occasion.index.tolist()
 
@@ -115,8 +124,14 @@ def fig2_per_occasion(per_occasion: pd.DataFrame, out: Path) -> None:
     ax.set_xticks(x + width * (len(conds) - 1) / 2)
     occ_labels = [o.replace("/", "\n").replace("_", " ") for o in occs]
     ax.set_xticklabels(occ_labels, fontsize=7)
-    ax.set_ylabel("Mean purchase intent (1–7)")
-    ax.set_ylim(1, 7)
+
+    if scale == "bt":
+        ax.set_ylabel("Mean BT saleability [0, 1]")
+        ax.set_ylim(0, 1)
+    else:
+        ax.set_ylabel("Mean purchase intent (1–7)")
+        ax.set_ylim(1, 7)
+
     ax.set_title("Purchase intent by occasion and condition")
     ax.legend(loc="lower right", fontsize=7)
     fig.tight_layout()
@@ -160,7 +175,8 @@ def fig4_reliability(calibration_json: dict, out: Path) -> None:
     )
     ax.set_xlabel("Mean predicted score")
     ax.set_ylabel("Mean observed score")
-    ax.set_xlim(0, 1); ax.set_ylim(0, 1)
+    ax.set_xlim(0, 1)
+    ax.set_ylim(0, 1)
     ax.set_title("Reliability diagram — saleability head")
     ax.legend()
     fig.tight_layout()
@@ -212,22 +228,41 @@ def generate_all(
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
 
-    # System eval report
+    # System eval report — prefer BT (pairwise main study), fall back to Likert (pilot)
+    bt_report_path = arts / "system_eval_bt" / "report.json"
     sys_report_path = arts / "system_eval" / "report.json"
+
+    if bt_report_path.exists():
+        bt_report = json.loads(bt_report_path.read_text())
+        fig1_condition_means(
+            bt_report["condition_means"],
+            bt_report["condition_stderr"],
+            out / "fig1_condition_means.pdf",
+            scale="bt",
+        )
+        print("fig1 (BT) ✓")
+
+        bt_per_occ = arts / "system_eval_bt" / "per_occasion.csv"
+        if bt_per_occ.exists():
+            per_occ = pd.read_csv(bt_per_occ, index_col=0)
+            fig2_per_occasion(per_occ, out / "fig2_per_occasion.pdf", scale="bt")
+            print("fig2 (BT) ✓")
+
     if sys_report_path.exists():
         sys_report = json.loads(sys_report_path.read_text())
+        suffix = "_likert" if bt_report_path.exists() else ""
         fig1_condition_means(
             sys_report["condition_means"],
             sys_report["condition_stderr"],
-            out / "fig1_condition_means.pdf",
+            out / f"fig1_condition_means{suffix}.pdf",
         )
-        print("fig1 ✓")
+        print("fig1 (Likert) ✓")
 
         per_occ_path = arts / "system_eval" / "per_occasion.csv"
         if per_occ_path.exists():
             per_occ = pd.read_csv(per_occ_path, index_col=0)
-            fig2_per_occasion(per_occ, out / "fig2_per_occasion.pdf")
-            print("fig2 ✓")
+            fig2_per_occasion(per_occ, out / f"fig2_per_occasion{suffix}.pdf")
+            print("fig2 (Likert) ✓")
 
     # Best-of-N
     bon_path = arts / "ablations" / "best_of_n_curve.json"

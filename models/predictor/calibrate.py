@@ -1,6 +1,6 @@
-"""Calibrate the saleability head via isotonic regression.
+"""Calibrate the purchase_intent head via isotonic regression.
 
-Fit on validation set predictions vs. ground-truth survey purchase intent.
+Fit on validation set predictions vs. ground-truth human BT purchase intent.
 Report Expected Calibration Error and a reliability diagram.
 """
 

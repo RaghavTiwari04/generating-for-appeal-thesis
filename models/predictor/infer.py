@@ -13,7 +13,7 @@ from pathlib import Path
 import numpy as np
 import torch
 
-from common.occasions import OCCASIONS
+from common.occasions import ACTIVE_OCCASIONS as OCCASIONS
 from models.predictor.architecture import HEAD_NAMES, PredictorConfig, SaleabilityPredictor
 from models.predictor.calibrate import load as load_isotonic
 
@@ -51,13 +51,13 @@ class PredictorRunner:
 
         out = self.model(image_emb, text_emb, occ_idx, price_rel)
         scores: list[dict[str, float]] = []
-        sale = out["saleability"].cpu().numpy()
+        pi = out["purchase_intent"].cpu().numpy()
         if self.isotonic is not None:
-            sale_cal = self.isotonic.predict(sale)
+            pi_cal = self.isotonic.predict(pi)
         else:
-            sale_cal = sale
+            pi_cal = pi
         for i in range(len(features)):
             row = {name: float(out[name][i].cpu()) for name in HEAD_NAMES}
-            row["saleability_calibrated"] = float(sale_cal[i])
+            row["purchase_intent_calibrated"] = float(pi_cal[i])
             scores.append(row)
         return scores

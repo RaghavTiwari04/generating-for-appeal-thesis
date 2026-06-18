@@ -9,7 +9,6 @@ Three signals:
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
 
 import numpy as np
@@ -17,7 +16,6 @@ import pandas as pd
 from sklearn.cluster import KMeans
 
 from common.db import engine
-
 
 LONGEVITY_CAUTION = (
     "Avoid current-events references, brand mentions, or anything that will "
@@ -36,11 +34,11 @@ _TOP_BY_OCCASION_SQL = """
 SELECT lf.listing_id, lf.clip_embedding, COALESCE(lf.extracted_text, l.title) AS headline_text
 FROM listing_features lf
 JOIN listings l USING (listing_id)
-JOIN saleability_labels sl
-  ON sl.listing_id = lf.listing_id AND sl.label_source = 'proxy_v1'
+LEFT JOIN saleability_labels sl
+  ON sl.listing_id = lf.listing_id AND sl.label_source = 'vlm_4head_v1'
 WHERE lf.occasion = %(occasion)s
   AND lf.clip_embedding IS NOT NULL
-ORDER BY sl.score DESC
+ORDER BY COALESCE(sl.score, 0) DESC
 LIMIT %(limit)s;
 """
 

@@ -17,18 +17,15 @@ Usage:
 
 from __future__ import annotations
 
-import json
-
-from psycopg.types.json import Jsonb
 from dataclasses import dataclass
 
 import pandas as pd
 import typer
+from psycopg.types.json import Jsonb
 
-from common.db import connection, engine
+from common.db import connection
 from common.logging import get_logger
 from survey.analysis.survey_loader import (
-    LIKERT_DIMENSIONS,
     aggregate_ratings,
     load_ratings,
     response_time_filter,
@@ -37,11 +34,11 @@ from survey.analysis.survey_loader import (
 log = get_logger(__name__)
 
 HEAD_SURVEY_MAP = {
-    "saleability":   "purchase_intent",
-    "occasion_fit":  "occasion_fit",
-    "aesthetic":     "aesthetic",
-    "emotional":     "emotional_resonance",
-    "distinctiveness": "distinctiveness",
+    "purchase_intent": "purchase_intent",
+    "occasion_fit":    "occasion_fit",
+    "aesthetic":       "aesthetic",
+    "emotional_resonance": "emotional_resonance",
+    "distinctiveness":     "distinctiveness",
 }
 
 

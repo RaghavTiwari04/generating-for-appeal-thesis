@@ -23,7 +23,7 @@ log = get_logger(__name__)
 
 _CACHE_PATH = Path(".cache/fx_rates.json")
 _CACHE_TTL_SEC = 86_400  # 24 hours
-_API_URL = "https://api.exchangerate.host/latest?base=GBP"
+_API_URL = "https://api.frankfurter.app/latest?base=GBP"  # free, open-source ECB data
 
 # Fallback rates (GBP base, rough 2024 values — updated by live fetch)
 _FALLBACK: dict[str, float] = {
@@ -107,9 +107,8 @@ def normalise_price_column(df, minor_col: str = "price_minor_units",
                             currency_col: str = "currency",
                             out_col: str = "price_gbp") -> None:
     """Add `out_col` (GBP float) to df in-place."""
-    import pandas as pd
 
     df[out_col] = [
         to_gbp(m, c)
-        for m, c in zip(df[minor_col], df[currency_col])
+        for m, c in zip(df[minor_col], df[currency_col], strict=False)
     ]

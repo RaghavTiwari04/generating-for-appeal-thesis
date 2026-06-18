@@ -21,10 +21,10 @@ import io
 import json
 import time
 import uuid
+from collections.abc import AsyncIterator
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from pathlib import Path
-from typing import AsyncIterator
 
 from fastapi import BackgroundTasks, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -33,7 +33,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from common.logging import get_logger
-from common.occasions import OCCASIONS, RELATIONSHIPS, TONES
+from common.occasions import ACTIVE_OCCASIONS, RELATIONSHIPS, TONES
 
 log = get_logger(__name__)
 
@@ -74,6 +74,7 @@ class GenerateRequest(BaseModel):
     n_candidates: int = 8
     top_k: int = 3
     constraints: dict = {}
+    scorer: str = "predictor"  # "predictor" | "llm"
 
 
 class GenerateResponse(BaseModel):
@@ -101,6 +102,7 @@ def _run_pipeline(job: Job, request: dict) -> None:
         cfg = OrchestratorConfig(
             n_candidates=request.get("n_candidates", 8),
             top_k=request.get("top_k", 3),
+            scorer=request.get("scorer", "predictor"),
         )
 
         # Monkey-patch orchestrator's generate_brief to emit progress
@@ -178,7 +180,7 @@ async def index():
 @app.get("/api/occasions")
 async def list_occasions():
     return {
-        "occasions": list(OCCASIONS),
+        "occasions": list(ACTIVE_OCCASIONS),
         "relationships": list(RELATIONSHIPS),
         "tones": list(TONES),
     }
@@ -186,7 +188,7 @@ async def list_occasions():
 
 @app.post("/api/generate", response_model=GenerateResponse)
 async def start_generate(req: GenerateRequest, background_tasks: BackgroundTasks):
-    if req.occasion not in OCCASIONS:
+    if req.occasion not in ACTIVE_OCCASIONS:
         raise HTTPException(400, f"Unknown occasion: {req.occasion!r}")
     if req.tone not in TONES:
         raise HTTPException(400, f"Unknown tone: {req.tone!r}")

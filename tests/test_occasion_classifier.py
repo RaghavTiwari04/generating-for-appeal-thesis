@@ -2,17 +2,16 @@
 
 from __future__ import annotations
 
-import numpy as np
 import pytest
 import torch
 
 from data.features.occasion_classifier import (
-    OccasionClassifier,
     _RULES,
-    weak_label,
-    OCCASION_TO_IDX,
     IDX_TO_OCCASION,
+    OCCASION_TO_IDX,
     OCCASIONS,
+    OccasionClassifier,
+    weak_label,
 )
 
 
@@ -58,6 +57,7 @@ class TestOccasionClassifierModel:
     def model(self):
         """Build classifier with a tiny random DistilBERT-shaped encoder (no download)."""
         from unittest.mock import MagicMock, patch
+
         import torch.nn as nn
 
         # Stub the HuggingFace encoder with a minimal 2-layer transformer

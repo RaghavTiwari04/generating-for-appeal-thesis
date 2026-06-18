@@ -13,19 +13,18 @@ Steps:
   7. clf-train   — train occasion classifier on weak labels
   8. clf-infer   — run occasion classifier on unlabelled listings
   9. dedup       — cluster duplicates
-  10. proxy      — compute saleability proxy labels
 
 Usage:
     python -m data.pipeline_runner              # all steps
     python -m data.pipeline_runner --from embed # skip scrape + download
-    python -m data.pipeline_runner --only proxy # just one step
+    python -m data.pipeline_runner --only dedup # just one step
     python -m data.pipeline_runner --dry-run    # print what would run
 """
 
 from __future__ import annotations
 
 import time
-from typing import Callable
+from collections.abc import Callable
 
 import typer
 from rich.console import Console
@@ -54,13 +53,14 @@ def _step(name: str, description: str):
 @_step("scrape", "Scrape Etsy, Redbubble, Zazzle, Greetings Island")
 def step_scrape(limit: int) -> int:
     import asyncio
+
+    from common.occasions import ACTIVE_OCCASIONS
     from data.scrapers.run_scraper import _run
-    from common.occasions import OCCASIONS
 
     def _occasion_query(o: str) -> str:
         return o.replace("/", " ").replace("_", " ") + " greeting card"
 
-    queries = [_occasion_query(o) for o in OCCASIONS]
+    queries = [_occasion_query(o) for o in ACTIVE_OCCASIONS]
     sources = ["etsy", "redbubble", "zazzle", "greetings_island"]
     total = 0
     for src in sources:
@@ -75,6 +75,7 @@ def step_scrape(limit: int) -> int:
 @_step("download", "Download listing images → MinIO")
 def step_download(limit: int) -> int:
     import asyncio
+
     from data.scrapers.image_downloader import download_batch
     return asyncio.run(download_batch(limit))
 
@@ -105,7 +106,8 @@ def step_complexity(limit: int) -> int:
 
 @_step("clf-train", "Train occasion classifier (DistilBERT, weak labels)")
 def step_clf_train(limit: int) -> int:
-    import subprocess, sys
+    import subprocess
+    import sys
     result = subprocess.run(
         [sys.executable, "-m", "data.features.occasion_classifier", "train", "--epochs", "5"],
         check=False,
@@ -115,7 +117,8 @@ def step_clf_train(limit: int) -> int:
 
 @_step("clf-infer", "Occasion classifier inference on unlabelled listings")
 def step_clf_infer(limit: int) -> int:
-    import subprocess, sys
+    import subprocess
+    import sys
     result = subprocess.run(
         [sys.executable, "-m", "data.features.occasion_classifier", "infer", f"--limit={limit}"],
         check=False,
@@ -130,10 +133,10 @@ def step_dedup(limit: int) -> int:
     return stats.duplicates
 
 
-@_step("proxy", "Compute saleability proxy labels")
-def step_proxy(limit: int) -> int:
-    from data.labels.proxy import run
-    return run()
+@_step("score-listings", "Score listings with trained predictor (per-head scores)")
+def step_score_listings(limit: int) -> int:
+    from data.features.predictor_scores import run
+    return run(limit=limit)
 
 
 # ---------------------------------------------------------------------------
@@ -160,7 +163,8 @@ def run_pipeline(
         steps_to_run = STEPS[start_idx:]
 
     table = Table(title="Pipeline steps to run", show_lines=True)
-    table.add_column("Step"); table.add_column("Description")
+    table.add_column("Step")
+    table.add_column("Description")
     for n, d, _ in steps_to_run:
         table.add_row(n, d)
     console.print(table)
@@ -185,7 +189,9 @@ def run_pipeline(
             log.exception(f"Step {name} failed")
 
     summary = Table(title="Pipeline summary", show_lines=True)
-    summary.add_column("Step"); summary.add_column("Result"); summary.add_column("Time")
+    summary.add_column("Step")
+    summary.add_column("Result")
+    summary.add_column("Time")
     for name, t, r in results:
         summary.add_row(name, str(r), f"{t:.1f}s")
     console.print(summary)

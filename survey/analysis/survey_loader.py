@@ -9,12 +9,10 @@ Provides two main outputs:
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
 
-from psycopg.types.json import Jsonb
-
 import pandas as pd
+from psycopg.types.json import Jsonb
 
 from common.db import connection, engine
 from common.logging import get_logger

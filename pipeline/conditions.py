@@ -1,8 +1,8 @@
 """Generate cards for all four evaluation conditions.
 
 Conditions:
-  A  Naive AI        — SDXL + naive occasion prompt, no LoRA, no layout, naive LLM message
-  B  Pipeline no-rerank — full pipeline (LoRA + ControlNet + layout + LLM message), N=1
+  A  Naive AI        — Flux + naive occasion prompt + headline overlay, no LoRA, no brief LLM
+  B  Pipeline no-rerank — full pipeline (LoRA + inpainting mask + layout + LLM message), N=1
   C  Pipeline + rerank  — full pipeline, predictor best-of-N (N=8)
   D  Human bestsellers  — pulled from `listings` table (no generation)
 
@@ -13,15 +13,11 @@ Conditions:
 
 from __future__ import annotations
 
-import json
 import random
+from dataclasses import dataclass
 
 from psycopg.types.json import Jsonb
-from dataclasses import dataclass
-from pathlib import Path
-from typing import Iterable
 
-from common.config import settings
 from common.db import connection
 from common.logging import get_logger
 from common.storage import put_image
@@ -53,22 +49,40 @@ class EvalCard:
 # Condition A — naive AI
 # ---------------------------------------------------------------------------
 def _generate_naive(occasion: str, seed: int) -> EvalCard:
-    """SDXL with bare occasion prompt. No LoRA, no layout module, naive message."""
+    """Naive prompt + headline mask + typography overlay, no LoRA, no brief LLM.
+
+    Uses the same inpainting mask and layout composer as B/C so the only
+    difference is prompt quality and LoRA — not card format.
+    """
     from generation.image.diffusion import DiffusionConfig, DiffusionRunner
+    from generation.image.headline_mask import LayoutMaskSpec, build_headline_mask
+    from generation.layout.compose import compose
 
     naive_prompt = f"a greeting card for {occasion.replace('/', ' ').replace('_', ' ')}, digital art"
+    headline = f"Happy {occasion.replace('_', ' ').replace('/', ' ').title()}"
+
     cfg = DiffusionConfig()
     runner = DiffusionRunner(cfg)
+    mask_spec = LayoutMaskSpec()
+    mask_image, _ = build_headline_mask(mask_spec)
+
     images = runner.generate(
         prompt=naive_prompt,
         occasion=None,     # no LoRA
         seed=seed,
         n=1,
+        mask_image=mask_image,
     )
-    img = images[0]
+
+    result = compose(
+        cover=images[0], headline=headline,
+        tone="warm-sincere", style_tags=[], mask_spec=mask_spec,
+    )
+    composed = result.image
+
     import io
     buf = io.BytesIO()
-    img.save(buf, format="PNG")
+    composed.save(buf, format="PNG")
     _, storage_path = put_image(buf.getvalue(), content_type="image/png")
 
     from generation.message.generate import generate_message
@@ -76,7 +90,7 @@ def _generate_naive(occasion: str, seed: int) -> EvalCard:
         occasion=occasion,
         tone="warm-sincere",
         concept=f"A card for {occasion}",
-        headline=f"Happy {occasion.replace('_', ' ').title()}",
+        headline=headline,
     )
 
     return EvalCard(
@@ -84,7 +98,7 @@ def _generate_naive(occasion: str, seed: int) -> EvalCard:
         condition_tag=CONDITION_TAGS["A"],
         occasion=occasion,
         cover_path=storage_path,
-        headline=f"Happy {occasion.replace('_', ' ').title()}",
+        headline=headline,
         inside_message=msg.primary,
         predicted_scores={},
     )
@@ -148,10 +162,9 @@ SELECT l.listing_id, li.storage_path, l.title, lf.occasion
 FROM listings l
 JOIN listing_features lf USING (listing_id)
 JOIN listing_images li ON li.listing_id = l.listing_id AND li.is_primary
-JOIN saleability_labels sl ON sl.listing_id = l.listing_id AND sl.label_source = 'proxy_v1'
 WHERE lf.occasion = %(occasion)s
   AND l.is_bestseller = TRUE
-ORDER BY sl.score DESC
+ORDER BY COALESCE(l.review_count, 0) + COALESCE(l.favourite_count, 0) DESC
 LIMIT %(limit)s;
 """
 
@@ -251,7 +264,6 @@ def generate_eval_set(
 if __name__ == "__main__":
     import typer
 
-    from common.occasions import OCCASIONS
 
     def cli(
         occasions: str = "birthday/general,christmas/general,mothers_day,valentines_day,sympathy/bereavement,thank_you,graduation,anniversary/general",

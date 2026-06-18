@@ -6,13 +6,13 @@
 
 # %%
 import warnings
+
 warnings.filterwarnings("ignore")
 
 from pathlib import Path
-import numpy as np
-import pandas as pd
+
 import matplotlib.pyplot as plt
-from scipy.stats import spearmanr
+import pandas as pd
 
 plt.rcParams.update({"figure.dpi": 120, "axes.spines.top": False, "axes.spines.right": False})
 
@@ -23,6 +23,7 @@ ARTIFACTS = Path("../../artifacts/predictor")
 
 # %%
 import json
+
 metrics_path = ARTIFACTS / "test_metrics.json"
 if metrics_path.exists():
     metrics = json.loads(metrics_path.read_text())
@@ -56,7 +57,6 @@ else:
 # %%
 try:
     from common.db import engine
-    from models.predictor.architecture import HEAD_NAMES
 
     df_survey = pd.read_sql("""
         SELECT sr.listing_id, sr.occasion_shown,

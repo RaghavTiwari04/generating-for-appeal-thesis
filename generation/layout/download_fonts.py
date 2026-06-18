@@ -6,8 +6,6 @@ Run once at setup: `python -m generation.layout.download_fonts`
 
 from __future__ import annotations
 
-import io
-import zipfile
 from pathlib import Path
 
 import httpx

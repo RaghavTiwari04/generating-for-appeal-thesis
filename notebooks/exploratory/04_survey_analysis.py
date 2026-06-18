@@ -6,17 +6,17 @@
 
 # %%
 import warnings
+
 warnings.filterwarnings("ignore")
 
-import numpy as np
-import pandas as pd
 import matplotlib.pyplot as plt
+import pandas as pd
 
 from common.db import engine
-from survey.analysis.icc import compute_icc, SURVEY_DIMENSIONS
+from survey.analysis.icc import SURVEY_DIMENSIONS, compute_icc
 from survey.analysis.survey_loader import (
-    load_ratings,
     aggregate_ratings,
+    load_ratings,
     response_time_filter,
 )
 

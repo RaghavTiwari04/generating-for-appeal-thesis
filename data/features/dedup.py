@@ -16,14 +16,12 @@ from collections import defaultdict
 from dataclasses import dataclass
 
 import imagehash
-import numpy as np
 from PIL import Image
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 
 from common.db import connection
 from common.logging import get_logger
-from common.storage import get_object
 
 log = get_logger(__name__)
 
@@ -95,7 +93,7 @@ def tfidf_duplicates(rows: list[tuple[str, str]], threshold: float = TFIDF_THRES
     mat = vec.transform(texts)
     sim = cosine_similarity(mat, dense_output=False)
     rows_, cols_ = sim.nonzero()
-    for r, c in zip(rows_, cols_):
+    for r, c in zip(rows_, cols_, strict=False):
         if r >= c:
             continue
         s = sim[r, c]
@@ -162,10 +160,12 @@ def run_dedup(limit: int | None = None) -> DedupStats:
         for a, b, _ in tfidf_duplicates(text_rows):
             uf.union(a, b)
 
-        # Materialise clusters
+        # Materialise clusters — must use ALL listings ever added to the union-find,
+        # not just the pHash rows (which excludes image-less listings processed only
+        # in CLIP or TF-IDF stages).
         clusters: dict[str, list[str]] = defaultdict(list)
-        for lid in set(r["listing_id"] for r in rows):
-            clusters[uf.find(str(lid))].append(str(lid))
+        for lid in uf.parent:
+            clusters[uf.find(lid)].append(lid)
 
         # Cluster id = stable UUID derived from canonical member
         # Canonical = max engagement (review_count + favourite_count NULLs as 0)
@@ -193,7 +193,7 @@ def run_dedup(limit: int | None = None) -> DedupStats:
                 duplicate_cluster_size = EXCLUDED.duplicate_cluster_size,
                 computed_at            = NOW();
             """,
-            [(cid, sz, lid) for (cid, sz, lid) in updates],
+            [(lid, cid, sz) for (cid, sz, lid) in updates],
         )
 
     duplicates = sum(1 for u in updates if u[1] > 1)

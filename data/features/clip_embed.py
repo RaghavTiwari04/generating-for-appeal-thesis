@@ -11,9 +11,9 @@ default — better text-image alignment per evals.
 from __future__ import annotations
 
 import os
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable
 
 import numpy as np
 import torch
@@ -57,7 +57,8 @@ class CLIPEmbedder:
         for i in range(0, len(imgs), self.cfg.batch_size):
             batch = imgs[i : i + self.cfg.batch_size]
             inputs = self.processor(images=batch, return_tensors="pt").to(self.cfg.device)
-            feats = self.model.get_image_features(**inputs)
+            vision_out = self.model.vision_model(**inputs)
+            feats = vision_out.pooler_output
             feats = torch.nn.functional.normalize(feats, dim=-1)
             out.append(feats.float().cpu().numpy())
         return np.concatenate(out, axis=0)
@@ -72,7 +73,8 @@ class CLIPEmbedder:
             inputs = self.processor(
                 text=batch, return_tensors="pt", padding=True, truncation=True
             ).to(self.cfg.device)
-            feats = self.model.get_text_features(**inputs)
+            text_out = self.model.text_model(**inputs)
+            feats = text_out.pooler_output
             feats = torch.nn.functional.normalize(feats, dim=-1)
             out.append(feats.float().cpu().numpy())
         return np.concatenate(out, axis=0)

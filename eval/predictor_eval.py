@@ -2,7 +2,6 @@
 
 Metrics:
 - Spearman ρ vs held-out survey purchase intent  (primary)
-- Spearman ρ vs held-out proxy score             (secondary)
 - AUC top-quartile classification
 - Per-head Spearman vs corresponding survey dimension
 - Calibration: ECE + reliability plot
@@ -41,7 +40,6 @@ log = get_logger(__name__)
 @dataclass
 class PredictorEvalReport:
     spearman_purchase_intent: float
-    spearman_proxy: float
     auc_top_quartile: float
     per_head_spearman: dict[str, float]
     ece: float
@@ -61,7 +59,6 @@ def evaluate(
     features: list[CardFeatures],
     *,
     survey_purchase_intent: np.ndarray,
-    proxy_scores: np.ndarray,
     per_head_targets: dict[str, np.ndarray],
     baseline_features: pd.DataFrame | None = None,
     out_dir: str | Path = "./artifacts/predictor_eval",
@@ -71,11 +68,10 @@ def evaluate(
 
     scored = predictor.score(features)
     sale_pred = np.array(
-        [s.get("saleability_calibrated", s["saleability"]) for s in scored], dtype=np.float64
+        [s.get("purchase_intent_calibrated", s["purchase_intent"]) for s in scored], dtype=np.float64
     )
 
     rho_pi, _ = spearmanr(sale_pred, survey_purchase_intent)
-    rho_proxy, _ = spearmanr(sale_pred, proxy_scores)
     auc = _top_quartile_auc(sale_pred, survey_purchase_intent)
 
     per_head: dict[str, float] = {}
@@ -104,7 +100,6 @@ def evaluate(
 
     report = PredictorEvalReport(
         spearman_purchase_intent=float(rho_pi or 0.0),
-        spearman_proxy=float(rho_proxy or 0.0),
         auc_top_quartile=auc,
         per_head_spearman=per_head,
         ece=cal_report.ece,
@@ -114,7 +109,6 @@ def evaluate(
         json.dumps(
             {
                 "spearman_purchase_intent": report.spearman_purchase_intent,
-                "spearman_proxy": report.spearman_proxy,
                 "auc_top_quartile": report.auc_top_quartile,
                 "per_head_spearman": report.per_head_spearman,
                 "ece": report.ece,

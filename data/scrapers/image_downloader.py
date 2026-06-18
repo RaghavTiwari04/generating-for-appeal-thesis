@@ -17,7 +17,6 @@ Run after every scrape batch:
 from __future__ import annotations
 
 import asyncio
-import hashlib
 import io
 from collections import defaultdict
 from typing import Any

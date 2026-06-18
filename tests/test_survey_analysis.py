@@ -4,15 +4,13 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
-import pytest
 
-from survey.analysis.icc import compute_icc, ICCResult
+from survey.analysis.icc import ICCResult, compute_icc
 from survey.analysis.survey_loader import (
+    LIKERT_DIMENSIONS,
     aggregate_ratings,
     response_time_filter,
-    LIKERT_DIMENSIONS,
 )
-
 
 # ---------------------------------------------------------------------------
 # Fixtures

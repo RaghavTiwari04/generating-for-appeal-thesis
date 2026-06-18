@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
 from PIL import Image
 
 from generation.image.upscaler import (

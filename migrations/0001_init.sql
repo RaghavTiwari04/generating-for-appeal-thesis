@@ -80,6 +80,7 @@ CREATE TABLE IF NOT EXISTS listing_features (
     image_complexity    NUMERIC,
     duplicate_cluster_id UUID,
     duplicate_cluster_size INTEGER,
+    predictor_scores    JSONB,
     feature_version     TEXT NOT NULL DEFAULT 'v1',
     computed_at         TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );

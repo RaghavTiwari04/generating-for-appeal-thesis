@@ -13,14 +13,14 @@ Usage:
 
 from __future__ import annotations
 
-from pathlib import Path
 from unittest.mock import patch
 
 import typer
 from PIL import Image, ImageDraw, ImageFont
 
 from common.logging import get_logger
-from generation.layout.compose import ComposedCard, LayoutMaskSpec
+from generation.image.headline_mask import LayoutMaskSpec
+from generation.layout.compose import ComposedCard
 
 log = get_logger(__name__)
 CONDITION_TAG = "ablation_no_layout"

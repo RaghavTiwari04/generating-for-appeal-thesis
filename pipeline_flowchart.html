@@ -1,0 +1,697 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pipeline Flowchart — AI Greeting Card Generation with Learned Saleability Prediction</title>
+<style>
+  :root {
+    --bg: #fafafa;
+    --card: #ffffff;
+    --border: #d1d5db;
+    --text: #1f2937;
+    --muted: #6b7280;
+    --accent: #2563eb;
+    --accent-light: #dbeafe;
+    --green: #16a34a;
+    --green-light: #dcfce7;
+    --orange: #ea580c;
+    --orange-light: #fff7ed;
+    --purple: #7c3aed;
+    --purple-light: #ede9fe;
+    --red: #dc2626;
+    --red-light: #fef2f2;
+    --teal: #0d9488;
+    --teal-light: #ccfbf1;
+    --amber: #d97706;
+    --amber-light: #fffbeb;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.5;
+    padding: 2rem 1rem;
+  }
+
+  .container {
+    max-width: 1100px;
+    margin: 0 auto;
+  }
+
+  h1 {
+    font-size: 1.5rem;
+    font-weight: 700;
+    text-align: center;
+    margin-bottom: 0.25rem;
+  }
+
+  .subtitle {
+    text-align: center;
+    color: var(--muted);
+    font-size: 0.875rem;
+    margin-bottom: 2rem;
+  }
+
+  /* Phase headers */
+  .phase {
+    margin-bottom: 2rem;
+  }
+
+  .phase-header {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-bottom: 1rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 2px solid var(--border);
+  }
+
+  .phase-number {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2rem;
+    height: 2rem;
+    border-radius: 50%;
+    font-weight: 700;
+    font-size: 0.875rem;
+    color: white;
+    flex-shrink: 0;
+  }
+
+  .phase-title {
+    font-size: 1.1rem;
+    font-weight: 600;
+  }
+
+  .phase-desc {
+    font-size: 0.8rem;
+    color: var(--muted);
+    margin-left: auto;
+    text-align: right;
+  }
+
+  /* Node cards */
+  .node {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1rem 1.25rem;
+    margin-bottom: 0.75rem;
+    position: relative;
+    transition: box-shadow 0.15s;
+  }
+
+  .node:hover {
+    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+  }
+
+  .node-title {
+    font-weight: 600;
+    font-size: 0.95rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 0.35rem;
+  }
+
+  .node-what {
+    font-size: 0.85rem;
+    color: var(--text);
+    margin-bottom: 0.35rem;
+  }
+
+  .node-why {
+    font-size: 0.8rem;
+    color: var(--muted);
+    font-style: italic;
+    border-left: 3px solid var(--border);
+    padding-left: 0.75rem;
+    margin-top: 0.35rem;
+  }
+
+  .node-tech {
+    font-size: 0.75rem;
+    color: var(--muted);
+    margin-top: 0.35rem;
+  }
+
+  .tag {
+    display: inline-block;
+    font-size: 0.65rem;
+    font-weight: 600;
+    padding: 0.1rem 0.4rem;
+    border-radius: 3px;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    vertical-align: middle;
+  }
+
+  .tag-data { background: var(--accent-light); color: var(--accent); }
+  .tag-model { background: var(--purple-light); color: var(--purple); }
+  .tag-gen { background: var(--green-light); color: var(--green); }
+  .tag-eval { background: var(--orange-light); color: var(--orange); }
+  .tag-human { background: var(--red-light); color: var(--red); }
+  .tag-llm { background: var(--teal-light); color: var(--teal); }
+  .tag-label { background: var(--amber-light); color: var(--amber); }
+
+  /* Arrows between nodes */
+  .arrow {
+    display: flex;
+    justify-content: center;
+    padding: 0.25rem 0;
+    color: var(--muted);
+    font-size: 1.1rem;
+    line-height: 1;
+  }
+
+  .arrow-label {
+    font-size: 0.7rem;
+    color: var(--muted);
+    text-align: center;
+    margin-top: -0.15rem;
+    margin-bottom: 0.15rem;
+  }
+
+  /* Parallel branches */
+  .parallel {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.75rem;
+  }
+
+  .parallel-3 {
+    grid-template-columns: 1fr 1fr 1fr;
+  }
+
+  .branch-label {
+    font-size: 0.7rem;
+    font-weight: 600;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    text-align: center;
+    margin-bottom: 0.35rem;
+  }
+
+  /* Merge point */
+  .merge {
+    text-align: center;
+    padding: 0.5rem;
+    font-size: 0.8rem;
+    color: var(--muted);
+    border: 1px dashed var(--border);
+    border-radius: 6px;
+    margin: 0.5rem 0;
+  }
+
+  /* Loop indicator */
+  .loop-badge {
+    font-size: 0.65rem;
+    background: var(--accent-light);
+    color: var(--accent);
+    padding: 0.1rem 0.4rem;
+    border-radius: 3px;
+    font-weight: 600;
+  }
+
+  /* Legend */
+  .legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    justify-content: center;
+    margin-bottom: 1.5rem;
+    padding: 0.75rem;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+  }
+
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    font-size: 0.75rem;
+    color: var(--muted);
+  }
+
+  /* File reference */
+  .file {
+    font-family: 'Cascadia Code', 'Fira Code', monospace;
+    font-size: 0.7rem;
+    color: var(--accent);
+    background: var(--accent-light);
+    padding: 0.05rem 0.3rem;
+    border-radius: 3px;
+  }
+
+  /* Condition grid for eval */
+  .condition-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 0.5rem;
+    margin-top: 0.5rem;
+  }
+
+  .condition-card {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 0.5rem;
+    font-size: 0.75rem;
+    text-align: center;
+  }
+
+  .condition-card strong {
+    display: block;
+    font-size: 0.85rem;
+    margin-bottom: 0.25rem;
+  }
+
+  @media (max-width: 768px) {
+    .parallel, .parallel-3 { grid-template-columns: 1fr; }
+    .condition-grid { grid-template-columns: 1fr 1fr; }
+    .phase-desc { display: none; }
+  }
+</style>
+</head>
+<body>
+<div class="container">
+
+<h1>AI Greeting Card Generation with Learned Saleability Prediction</h1>
+<p class="subtitle">End-to-end pipeline flowchart &mdash; from marketplace scraping to human evaluation</p>
+
+<div class="legend">
+  <div class="legend-item"><span class="tag tag-data">Data</span> Data collection &amp; features</div>
+  <div class="legend-item"><span class="tag tag-label">Label</span> Saleability labelling</div>
+  <div class="legend-item"><span class="tag tag-model">Model</span> Predictor training</div>
+  <div class="legend-item"><span class="tag tag-llm">LLM</span> Language model call</div>
+  <div class="legend-item"><span class="tag tag-gen">Gen</span> Image / card generation</div>
+  <div class="legend-item"><span class="tag tag-eval">Eval</span> Evaluation</div>
+  <div class="legend-item"><span class="tag tag-human">Human</span> Human judgement</div>
+</div>
+
+<!-- ====== PHASE 1: DATA ====== -->
+<div class="phase">
+  <div class="phase-header">
+    <span class="phase-number" style="background:var(--accent)">1</span>
+    <span class="phase-title">Data Collection &amp; Feature Extraction</span>
+    <span class="phase-desc">Build the training corpus from live marketplaces</span>
+  </div>
+
+  <div class="node">
+    <div class="node-title"><span class="tag tag-data">Data</span> Marketplace Scraping</div>
+    <div class="node-what">Scrape greeting card listings from <strong>Etsy</strong>, <strong>Redbubble</strong>, <strong>Zazzle</strong>, and <strong>Greetings Island</strong>. Extract title, description, price, review/favourite counts, images, and structured metadata via JSON-LD + CSS selectors.</div>
+    <div class="node-why">Justification: real marketplace cards represent what consumers actually buy. Multi-source sampling reduces platform bias. ~2,377 cards across 27 occasion types.</div>
+    <div class="node-tech"><span class="file">data/scrapers/</span> &rarr; <span class="file">data/pipeline_runner.py</span> steps: scrape, download</div>
+  </div>
+
+  <div class="arrow">&darr;</div>
+
+  <div class="parallel">
+    <div>
+      <div class="node">
+        <div class="node-title"><span class="tag tag-data">Data</span> CLIP Embedding</div>
+        <div class="node-what">Compute normalised CLIP ViT-L/14 image + text embeddings (768-d) for every listing. Cached in DB for reuse.</div>
+        <div class="node-why">Justification: frozen backbone features feed the predictor (no end-to-end fine-tuning = reproducible + cheap). Also used for deduplication and market signal clustering.</div>
+        <div class="node-tech"><span class="file">data/features/clip_embed.py</span></div>
+      </div>
+    </div>
+    <div>
+      <div class="node">
+        <div class="node-title"><span class="tag tag-data">Data</span> OCR + Palette + Complexity</div>
+        <div class="node-what"><strong>OCR:</strong> Tesseract extracts headline text from card images.<br><strong>Palette:</strong> Dominant LAB colour palette.<br><strong>Complexity:</strong> Edge density score.</div>
+        <div class="node-why">Justification: OCR provides text features for the predictor's text embedding input. Palette and complexity are used by the brief generator's market signals.</div>
+        <div class="node-tech"><span class="file">data/features/ocr.py</span>, <span class="file">palette.py</span>, <span class="file">image_complexity.py</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="arrow">&darr;</div>
+
+  <div class="parallel">
+    <div>
+      <div class="node">
+        <div class="node-title"><span class="tag tag-data">Data</span> Occasion Classification</div>
+        <div class="node-what">Fine-tuned <strong>DistilBERT</strong> multi-label classifier (27 classes) trained on keyword-matched weak labels. Assigns occasion tags to all listings.</div>
+        <div class="node-why">Justification: marketplace search terms are noisy. Classifier standardises occasion labels so LoRA training, market signals, and evaluation conditions sample correct occasion subsets.</div>
+        <div class="node-tech"><span class="file">data/features/occasion_classifier.py</span> &mdash; steps: clf-train, clf-infer</div>
+      </div>
+    </div>
+    <div>
+      <div class="node">
+        <div class="node-title"><span class="tag tag-data">Data</span> Deduplication</div>
+        <div class="node-what">Three-signal duplicate detection: <strong>pHash</strong> (perceptual hash), <strong>CLIP cosine</strong> similarity, <strong>TF-IDF</strong> title similarity. Union-find clustering marks duplicates.</div>
+        <div class="node-why">Justification: marketplaces host re-listings and template variants. Duplicates inflate apparent variety and bias training. Aggressive dedup ensures each LoRA training image contributes unique style signal.</div>
+        <div class="node-tech"><span class="file">data/features/dedup.py</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ====== PHASE 2: LABELLING ====== -->
+<div class="phase">
+  <div class="phase-header">
+    <span class="phase-number" style="background:var(--amber)">2</span>
+    <span class="phase-title">Saleability Labelling</span>
+    <span class="phase-desc">Two complementary label sources: VLM (all cards) + human BT (subsample)</span>
+  </div>
+
+  <div class="parallel">
+    <div>
+      <div class="branch-label">All ~2,377 cards</div>
+      <div class="node">
+        <div class="node-title"><span class="tag tag-label">Label</span> VLM 4-Head Labels</div>
+        <div class="node-what">Send each card image to <strong>Claude Sonnet / GPT-4o</strong> with a structured scoring prompt. VLM returns four perceptual-quality scores:</div>
+        <div class="node-what" style="margin-top:0.25rem">
+          <strong>occasion_fit</strong> &mdash; does imagery match occasion?<br>
+          <strong>aesthetic</strong> &mdash; visual quality, composition, typography<br>
+          <strong>emotional_resonance</strong> &mdash; does it evoke warmth/joy?<br>
+          <strong>distinctiveness</strong> &mdash; original vs generic template
+        </div>
+        <div class="node-why">Justification: VLMs can reliably assess perceptual quality at scale (all cards) but cannot predict what people would actually buy. Inter-model agreement (Claude vs GPT-4o) validates consistency. These four heads provide dense supervision for the predictor's perceptual pathway.</div>
+        <div class="node-tech"><span class="file">data/labels/vlm_labels.py</span> &rarr; stored as <code>vlm_4head_v1</code></div>
+      </div>
+    </div>
+    <div>
+      <div class="branch-label">~500-card subsample</div>
+      <div class="node">
+        <div class="node-title"><span class="tag tag-human">Human</span> Prolific 2AFC Survey</div>
+        <div class="node-what">Recruit participants on <strong>Prolific</strong> for a <strong>pairwise two-alternative forced-choice (2AFC)</strong> study. Participants see two cards and choose which they'd buy. Active-learning pair sampler selects maximally informative pairs.</div>
+        <div class="node-why">Justification: purchase intent is fundamentally a human judgement &mdash; no VLM can reliably predict it. 2AFC avoids Likert scale calibration issues across participants. ~500 cards is sufficient for Bradley-Terry convergence.</div>
+        <div class="node-tech"><span class="file">survey/instrument/app.py</span> (pairwise mode) &rarr; <code>survey_pairs</code> table</div>
+      </div>
+      <div class="arrow">&darr;</div>
+      <div class="node">
+        <div class="node-title"><span class="tag tag-model">Model</span> Bradley-Terry Scaling</div>
+        <div class="node-what">Fit <strong>Bradley-Terry model</strong> via MM algorithm (Hunter 2004) on pairwise comparison data. Recovers per-card log-odds scores, normalised to [0,1] via logistic transform.</div>
+        <div class="node-why">Justification: BT converts ordinal pair preferences to interval-scale scores suitable for regression. Prior-regularised to handle cards with few comparisons. This produces the <strong>purchase_intent</strong> ground truth for predictor head 5.</div>
+        <div class="node-tech"><span class="file">survey/analysis/bradley_terry.py</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ====== PHASE 3: PREDICTOR ====== -->
+<div class="phase">
+  <div class="phase-header">
+    <span class="phase-number" style="background:var(--purple)">3</span>
+    <span class="phase-title">Saleability Predictor</span>
+    <span class="phase-desc">Multi-head MLP trained on cached CLIP features &mdash; predicts saleability from card embeddings</span>
+  </div>
+
+  <div class="node">
+    <div class="node-title"><span class="tag tag-model">Model</span> Multi-Head Predictor Architecture</div>
+    <div class="node-what">
+      <strong>Inputs:</strong> CLIP image emb (768-d) + CLIP text emb (768-d) + occasion embedding (32-d) + log-price (1-d)<br>
+      <strong>Trunk:</strong> 2-layer MLP (1569 &rarr; 512 &rarr; 512) with GELU + dropout<br>
+      <strong>Heads:</strong> 5 independent heads (512 &rarr; 128 &rarr; 1 &rarr; sigmoid), one per quality dimension
+    </div>
+    <div class="node-why">Justification: frozen backbone + MLP avoids GPU-heavy fine-tuning. Multi-head architecture shares a trunk for efficiency while allowing per-dimension specialisation. Backbone is not loaded at training time &mdash; embeddings are pre-cached for speed and reproducibility.</div>
+    <div class="node-tech"><span class="file">models/predictor/architecture.py</span></div>
+  </div>
+
+  <div class="arrow">&darr;</div>
+
+  <div class="node">
+    <div class="node-title"><span class="tag tag-model">Model</span> Masked Multi-Task Training</div>
+    <div class="node-what">
+      <strong>Loss:</strong> weighted masked MSE. Heads 1&ndash;4 (VLM) train on all ~2,377 cards. Head 5 (purchase_intent) trains only on the ~500-card BT-labelled subsample.<br>
+      <strong>Masking:</strong> each head only backpropagates on samples where its label exists (Ruder 2017).<br>
+      <strong>Weighting:</strong> purchase_intent head weighted 2&times; to compensate for smaller label set.<br>
+      <strong>Optimiser:</strong> AdamW (lr=1e-4, wd=1e-2), cosine schedule, early stopping (patience=5).<br>
+      <strong>Split:</strong> by <code>seller_id</code> 70/15/15 to prevent data leakage from same-seller card families.
+    </div>
+    <div class="node-why">Justification: masked loss elegantly handles the two-tiered label regime. VLM heads provide rich gradients for the shared trunk even where human labels are absent, improving purchase_intent generalisation through multi-task transfer.</div>
+    <div class="node-tech"><span class="file">models/predictor/train.py</span></div>
+  </div>
+
+  <div class="arrow">&darr;</div>
+
+  <div class="node">
+    <div class="node-title"><span class="tag tag-model">Model</span> Isotonic Calibration</div>
+    <div class="node-what">Fit <strong>isotonic regression</strong> on validation-set purchase_intent predictions vs. BT ground truth. Maps raw sigmoid outputs to calibrated probabilities.</div>
+    <div class="node-why">Justification: sigmoid outputs of neural nets are rarely calibrated. Isotonic regression is non-parametric and monotone &mdash; it corrects the mapping without changing rank order. Calibrated scores are directly interpretable as "probability of being preferred in a pairwise comparison."</div>
+    <div class="node-tech"><span class="file">models/predictor/calibrate.py</span> &rarr; <code>purchase_intent_calibrated</code></div>
+  </div>
+</div>
+
+<!-- ====== PHASE 4: LORA ====== -->
+<div class="phase">
+  <div class="phase-header">
+    <span class="phase-number" style="background:var(--green)">4</span>
+    <span class="phase-title">Per-Occasion LoRA Training</span>
+    <span class="phase-desc">Style specialisation on Flux.1-dev via DreamBooth</span>
+  </div>
+
+  <div class="node">
+    <div class="node-title"><span class="tag tag-gen">Gen</span> Text Erasure Preprocessing</div>
+    <div class="node-what">Before LoRA training, erase baked-in text from marketplace card images using <strong>Tesseract OCR</strong> (word-level bbox detection, conf &ge; 10) + <strong>OpenCV Telea inpainting</strong> (radius=7). Dilates bboxes by 15% to catch serifs and shadows.</div>
+    <div class="node-why">Justification: marketplace cards have printed greetings. Without erasure, LoRA learns text-as-texture artifacts &mdash; the model would reproduce garbled letterforms in generated images, interfering with the clean typography overlay step.</div>
+    <div class="node-tech"><span class="file">generation/image/loras/train_lora.py</span> &rarr; <code>_erase_text_regions()</code></div>
+  </div>
+
+  <div class="arrow">&darr;</div>
+
+  <div class="node">
+    <div class="node-title"><span class="tag tag-gen">Gen</span> DreamBooth LoRA Fine-Tuning</div>
+    <div class="node-what">
+      For each active occasion (e.g. birthday/general), select top ~150 images by VLM saleability score. Train a <strong>LoRA</strong> (rank 8&ndash;16, ~1000 steps) on <strong>Flux.1-dev</strong> via diffusers DreamBooth.<br>
+      Instance prompt: <code>"a greeting card for {occasion}"</code><br>
+      Config: bf16 mixed precision, gradient accumulation 4, lr=1e-4, constant schedule.
+    </div>
+    <div class="node-why">Justification: LoRA adapts Flux to the visual vocabulary of each occasion (birthday cakes, Christmas trees, sympathy florals) without full fine-tuning. Training on top-saleability images biases the generator toward commercially successful styles. Separate LoRA per occasion prevents cross-contamination.</div>
+    <div class="node-tech"><span class="file">generation/image/loras/train_lora.py</span> &rarr; weights saved to <code>generation/image/loras/{occasion}/</code></div>
+  </div>
+</div>
+
+<!-- ====== PHASE 5: GENERATION ====== -->
+<div class="phase">
+  <div class="phase-header">
+    <span class="phase-number" style="background:var(--teal)">5</span>
+    <span class="phase-title">Card Generation Pipeline</span>
+    <span class="phase-desc">Request &rarr; brief &rarr; image &rarr; layout &rarr; message &rarr; rerank</span>
+  </div>
+
+  <div class="node">
+    <div class="node-title"><span class="tag tag-llm">LLM</span> Brief Generation</div>
+    <div class="node-what">
+      Given a request (occasion, tone, relationship), query <strong>market signals</strong> (top tropes via CLIP KMeans clustering, coverage gaps, longevity caution) then prompt <strong>Claude / GPT-4</strong> with a structured template. LLM returns a <code>Brief</code>:<br>
+      <code>concept</code>, <code>headline</code> (&le;90 chars), <code>inside_message</code>, <code>visual_prompt</code>, <code>negative_prompt</code>, <code>style_tags</code> (&le;4), <code>target_price_band</code>
+    </div>
+    <div class="node-why">Justification: market signals inject data-driven trends into the creative brief, steering the LLM away from generic prompts. The structured schema ensures downstream steps have all required fields. Longevity caution prevents time-bound references that age poorly.</div>
+    <div class="node-tech"><span class="file">generation/brief/generate.py</span> + <span class="file">market_signals.py</span></div>
+  </div>
+
+  <div class="arrow">&darr;</div>
+
+  <div class="parallel">
+    <div>
+      <div class="node">
+        <div class="node-title"><span class="tag tag-gen">Gen</span> Headline Mask</div>
+        <div class="node-what">Build a binary mask image reserving a rectangular region (default: top-left, 55% &times; 25% of canvas) for headline text. Feathered edge (24px Gaussian blur) for smooth transitions.</div>
+        <div class="node-why">Justification: if the diffusion model fills the entire canvas with complex imagery, text becomes illegible. The mask ensures a low-detail region exists for typography overlay. This is purely geometric &mdash; no neural network needed.</div>
+        <div class="node-tech"><span class="file">generation/image/headline_mask.py</span></div>
+      </div>
+    </div>
+    <div>
+      <div class="node">
+        <div class="node-title"><span class="tag tag-gen">Gen</span> Flux.1 Image Generation <span class="loop-badge">&times;N</span></div>
+        <div class="node-what">Generate <strong>N candidate images</strong> (default N=8) using <strong>Flux.1-dev</strong> with occasion-specific LoRA loaded. If mask provided, uses <strong>Flux Fill</strong> (native inpainting) to keep the masked region low-detail. 30 inference steps, guidance 7.0.</div>
+        <div class="node-why">Justification: Flux.1 outperforms SDXL on text rendering, fine detail, and prompt adherence (Black Forest Labs, 2024). Flux Fill handles inpainting natively without a separate ControlNet. Generating N candidates enables best-of-N reranking.</div>
+        <div class="node-tech"><span class="file">generation/image/diffusion.py</span> &mdash; base: <code>FLUX.1-dev</code>, inpaint: <code>FLUX.1-Fill-dev</code></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="arrow">&darr;</div>
+
+  <div class="node">
+    <div class="node-title"><span class="tag tag-gen">Gen</span> Typography Composition <span class="loop-badge">&times;N</span></div>
+    <div class="node-what">
+      For each of the N generated images:<br>
+      1. <strong>Font selection</strong> &mdash; rule-based mapping from (tone, style_tags) to curated Google Fonts<br>
+      2. <strong>Binary-search sizing</strong> &mdash; find largest font size that fits bbox after natural-phrase line breaks<br>
+      3. <strong>Contrast colour</strong> &mdash; pick black or white based on mean LAB luminance of the bbox patch<br>
+      4. <strong>Render</strong> &mdash; Pillow text drawing with subpixel anti-aliasing
+    </div>
+    <div class="node-why">Justification: rule-based typography is deliberately boring &mdash; predictable, controllable layouts are better for thesis evaluation than a learned layout model with unpredictable failures. Binary search guarantees the text fits. Contrast check ensures readability on any background.</div>
+    <div class="node-tech"><span class="file">generation/layout/compose.py</span> + <span class="file">generation/layout/font_palette.py</span></div>
+  </div>
+
+  <div class="arrow">&darr;</div>
+
+  <div class="node">
+    <div class="node-title"><span class="tag tag-llm">LLM</span> Inside Message Generation</div>
+    <div class="node-what">Prompt LLM with occasion, tone, concept, and headline to generate the <strong>inside message</strong> (what you read when you open the card). Returns a primary message + up to 3 alternatives. Prompt includes a clich&eacute; blacklist to avoid generic phrases.</div>
+    <div class="node-why">Justification: the inside message is a separate creative artefact from the cover. Generating it after the brief and cover ensures coherence with the chosen concept and headline. Clich&eacute; avoidance pushes toward distinctive messages (which the distinctiveness head rewards).</div>
+    <div class="node-tech"><span class="file">generation/message/generate.py</span></div>
+  </div>
+
+  <div class="arrow">&darr;</div>
+
+  <div class="node" style="border-color:var(--purple);border-width:2px">
+    <div class="node-title"><span class="tag tag-model">Model</span> Best-of-N Reranking</div>
+    <div class="node-what">
+      Score all N candidates with the <strong>5-head predictor</strong> (via cached CLIP embeddings). Compute composite saleability:<br>
+      <code style="font-size:0.85rem">saleability_calibrated = 0.7 &times; purchase_intent_calibrated + 0.3 &times; distinctiveness</code><br>
+      Sort by composite. Return top-k (default k=1 for eval, k=3 for production).
+    </div>
+    <div class="node-why">Justification: best-of-N selection is the core thesis contribution &mdash; it uses the learned predictor to filter out low-quality candidates before they reach users. The 0.7/0.3 weighting ensures purchase intent dominates but distinctiveness breaks ties, promoting variety. The distinctiveness component is tested via ablation (removing it = the no_distinctiveness ablation).</div>
+    <div class="node-tech"><span class="file">pipeline/rerank.py</span> + <span class="file">models/predictor/infer.py</span></div>
+  </div>
+
+  <div class="arrow">&darr;</div>
+
+  <div class="node">
+    <div class="node-title"><span class="tag tag-data">Data</span> Persist to DB</div>
+    <div class="node-what">Store the top-k cards in <code>generated_cards</code> table with: pipeline version, condition tag, full brief JSON, cover image path (MinIO), inside message, headline text, all predicted scores, seed.</div>
+    <div class="node-why">Justification: full provenance enables reproducibility. Condition tags partition cards for evaluation. Seeds allow exact regeneration of any card.</div>
+    <div class="node-tech"><span class="file">pipeline/orchestrator.py</span> &rarr; <code>generated_cards</code> table</div>
+  </div>
+</div>
+
+<!-- ====== PHASE 6: EVAL ====== -->
+<div class="phase">
+  <div class="phase-header">
+    <span class="phase-number" style="background:var(--orange)">6</span>
+    <span class="phase-title">Evaluation</span>
+    <span class="phase-desc">Four conditions, human 2AFC study, ablations, failure analysis</span>
+  </div>
+
+  <div class="node">
+    <div class="node-title"><span class="tag tag-eval">Eval</span> Four Evaluation Conditions</div>
+    <div class="node-what">Generate cards under controlled conditions to isolate each pipeline component's contribution:</div>
+    <div class="condition-grid">
+      <div class="condition-card">
+        <strong>A: Naive AI</strong>
+        Flux + generic prompt + headline mask + typography.<br>
+        <em>No LoRA, no brief LLM.</em>
+      </div>
+      <div class="condition-card">
+        <strong>B: Pipeline (N=1)</strong>
+        Full pipeline (LoRA + mask + layout + LLM message), single candidate.<br>
+        <em>No reranking.</em>
+      </div>
+      <div class="condition-card" style="border-color:var(--accent)">
+        <strong>C: Pipeline + Rerank</strong>
+        Full pipeline, N=8 candidates, predictor-based best-of-N selection.<br>
+        <em>Primary system.</em>
+      </div>
+      <div class="condition-card">
+        <strong>D: Human Bestsellers</strong>
+        Real cards from marketplace, sorted by review + favourite count.<br>
+        <em>No generation.</em>
+      </div>
+    </div>
+    <div class="node-why">Justification: A&rarr;B isolates LoRA + LLM brief. B&rarr;C isolates the reranking contribution (core thesis claim). C&harr;D benchmarks against real products. Condition A uses the same mask + typography as B/C so the only ablated variable is prompt quality and LoRA.</div>
+    <div class="node-tech"><span class="file">pipeline/conditions.py</span></div>
+  </div>
+
+  <div class="arrow">&darr;</div>
+
+  <div class="node">
+    <div class="node-title"><span class="tag tag-human">Human</span> Prolific Pairwise 2AFC Study (Main)</div>
+    <div class="node-what">
+      Participants on <strong>Prolific</strong> see two cards side-by-side (from any two conditions) and choose which they'd buy. Active-learning sampler selects maximally informative pairs.<br>
+      <strong>Analysis:</strong> Fit Bradley-Terry model across all cards. Group BT sale_scores by condition. Test pre-registered hypotheses via Holm-corrected Mann-Whitney U pairwise tests:<br>
+      <strong>H1:</strong> C > A &nbsp;&nbsp; <strong>H2:</strong> C > B &nbsp;&nbsp; <strong>H3:</strong> C &asymp; D
+    </div>
+    <div class="node-why">Justification: 2AFC avoids Likert calibration issues. BT scaling recovers interval-scale scores from ordinal pairs. H1 tests whether the full pipeline beats naive generation. H2 tests whether reranking adds value. H3 tests whether AI cards approach human-designed quality.</div>
+    <div class="node-tech"><span class="file">eval/system_eval_bt.py</span> + <span class="file">survey/analysis/bradley_terry.py</span></div>
+  </div>
+
+  <div class="arrow">&darr;</div>
+
+  <div class="parallel parallel-3">
+    <div>
+      <div class="node">
+        <div class="node-title"><span class="tag tag-eval">Eval</span> Predictor Evaluation</div>
+        <div class="node-what">Per-head <strong>Spearman &rho;</strong> vs. held-out human labels. Calibration reliability diagram + ECE. Ridge regression baseline comparison.</div>
+        <div class="node-why">Justification: validates that the predictor actually learned meaningful quality signals, not noise.</div>
+        <div class="node-tech"><span class="file">eval/predictor_eval.py</span></div>
+      </div>
+    </div>
+    <div>
+      <div class="node">
+        <div class="node-title"><span class="tag tag-eval">Eval</span> Ablation Studies</div>
+        <div class="node-what">
+          <strong>no_lora:</strong> patches LoRA loading to noop<br>
+          <strong>no_layout:</strong> replaces composer with naive Arial@36pt<br>
+          <strong>no_distinctiveness:</strong> reranks by PI only (removes 0.3&times;dist)<br>
+          <strong>best_of_N curve:</strong> saleability vs N={1,2,4,8,16}
+        </div>
+        <div class="node-why">Justification: each ablation isolates one component's contribution. Best-of-N curve shows diminishing returns.</div>
+        <div class="node-tech"><span class="file">eval/ablations/</span></div>
+      </div>
+    </div>
+    <div>
+      <div class="node">
+        <div class="node-title"><span class="tag tag-eval">Eval</span> Failure Analysis</div>
+        <div class="node-what">Pull bottom-20 cards by BT score from condition C. Manual taxonomy coding: occasion misfit, text/image incoherence, tonal mismatch, typography failure, uncanny faces, weird hands.</div>
+        <div class="node-why">Justification: quantitative metrics show the system works on average but miss individual failure modes. Manual coding identifies systematic weaknesses and future work.</div>
+        <div class="node-tech"><span class="file">eval/failure_analysis.py</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="arrow">&darr;</div>
+
+  <div class="node">
+    <div class="node-title"><span class="tag tag-eval">Eval</span> Publication Figures</div>
+    <div class="node-what">
+      Six figures in NeurIPS-style 300 DPI format:<br>
+      fig1: condition means &plusmn; 95% CI &nbsp;|&nbsp;
+      fig2: per-occasion breakdown &nbsp;|&nbsp;
+      fig3: best-of-N saturation curve &nbsp;|&nbsp;
+      fig4: reliability diagram &nbsp;|&nbsp;
+      fig5: per-head Spearman &rho; &nbsp;|&nbsp;
+      fig6: ablation heatmap<br>
+      Supports both Likert (1&ndash;7) and BT [0,1] scales.
+    </div>
+    <div class="node-tech"><span class="file">eval/reports/figures.py</span></div>
+  </div>
+</div>
+
+<!-- ====== PHASE 7: POWER ANALYSIS ====== -->
+<div class="phase">
+  <div class="phase-header">
+    <span class="phase-number" style="background:var(--red)">7</span>
+    <span class="phase-title">Study Design &amp; Power Analysis</span>
+    <span class="phase-desc">Pre-registration support</span>
+  </div>
+
+  <div class="node">
+    <div class="node-title"><span class="tag tag-eval">Eval</span> Monte Carlo Power Simulation</div>
+    <div class="node-what">Simulate BT studies with varying N (participants, pairs per participant, cards) and effect sizes. For each configuration, generate synthetic pair outcomes, fit BT, and compute power = P(reject H0 | H1 true). Outputs the minimum sample size to detect a given effect at &alpha;=0.05, power=0.80.</div>
+    <div class="node-why">Justification: required for Prolific ethics approval and pre-registration. Ensures the study is powered to detect the expected effect size from pilot data. Prevents underpowered studies that waste participant time and funding.</div>
+    <div class="node-tech"><span class="file">eval/sims/bt_power.py</span></div>
+  </div>
+</div>
+
+<!-- Summary -->
+<div style="margin-top:2rem; padding:1.25rem; background:var(--card); border:1px solid var(--border); border-radius:8px;">
+  <div style="font-weight:600; margin-bottom:0.5rem; font-size:0.95rem;">Pipeline Summary</div>
+  <div style="font-size:0.85rem; color:var(--text);">
+    <strong>Core thesis claim:</strong> a learned saleability predictor, used as a best-of-N reranker, measurably improves AI-generated greeting card quality as judged by human purchase intent.<br><br>
+    <strong>Data flow:</strong> Scrape marketplace &rarr; extract features &rarr; VLM + human labels &rarr; train multi-head predictor &rarr; generate N cards with LoRA-adapted Flux &rarr; rerank by composite saleability &rarr; validate via human 2AFC study.<br><br>
+    <strong>Key design choices:</strong><br>
+    &bull; Flux.1 over SDXL &mdash; better prompt adherence and fine detail<br>
+    &bull; LoRA per occasion &mdash; style specialisation without full fine-tuning<br>
+    &bull; Text erasure before LoRA &mdash; prevents text-as-texture artifacts<br>
+    &bull; Masked multi-task loss &mdash; leverages dense VLM labels + sparse human labels<br>
+    &bull; Composite reranking (0.7 PI + 0.3 dist) &mdash; balances quality and variety<br>
+    &bull; 2AFC over Likert &mdash; avoids cross-participant calibration issues<br>
+    &bull; Bradley-Terry scaling &mdash; converts ordinal pairs to interval scores<br>
+    &bull; Condition A with headline mask &mdash; fair ablation (only prompt/LoRA differ)
+  </div>
+</div>
+
+</div>
+</body>
+</html>

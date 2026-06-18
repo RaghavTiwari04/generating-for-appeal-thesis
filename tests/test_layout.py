@@ -2,13 +2,11 @@
 
 from __future__ import annotations
 
-import numpy as np
-import pytest
 from PIL import Image
 
-from generation.layout.compose import _pick_colour, _wrap, _measure_width
-from generation.layout.font_palette import select_fonts, FONTS
-from generation.image.controlnet import LayoutMaskSpec, build_headline_mask
+from generation.image.headline_mask import LayoutMaskSpec, build_headline_mask
+from generation.layout.compose import _pick_colour
+from generation.layout.font_palette import select_fonts
 
 
 def test_headline_mask_shape() -> None:
@@ -48,7 +46,7 @@ def test_select_fonts_fallback() -> None:
 def test_mask_region_top_left() -> None:
     spec = LayoutMaskSpec(width=1024, height=1024, region="top-left")
     _, bbox = build_headline_mask(spec)
-    x0, y0, x1, y1 = bbox
+    x0, y0, _x1, _y1 = bbox
     assert x0 < 1024 // 2
     assert y0 < 1024 // 2
 
@@ -56,5 +54,5 @@ def test_mask_region_top_left() -> None:
 def test_mask_region_bottom() -> None:
     spec = LayoutMaskSpec(width=1024, height=1024, region="bottom")
     _, bbox = build_headline_mask(spec)
-    x0, y0, x1, y1 = bbox
+    _x0, _y0, _x1, y1 = bbox
     assert y1 > 1024 // 2

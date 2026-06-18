@@ -9,7 +9,6 @@ from __future__ import annotations
 import hashlib
 import io
 from pathlib import Path
-from typing import BinaryIO
 
 from minio import Minio
 from minio.error import S3Error

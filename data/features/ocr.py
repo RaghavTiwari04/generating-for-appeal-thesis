@@ -42,7 +42,7 @@ def ocr_image(img: Image.Image | Path | bytes, *, lang: str = "eng") -> OCRResul
     data = pytesseract.image_to_data(img, lang=lang, output_type=pytesseract.Output.DICT)
     words: list[str] = []
     confs: list[float] = []
-    for text, conf in zip(data["text"], data["conf"]):
+    for text, conf in zip(data["text"], data["conf"], strict=False):
         text = (text or "").strip()
         if not text:
             continue

@@ -6,14 +6,14 @@
 
 # %%
 import warnings
+
 warnings.filterwarnings("ignore")
 
-import json
+from pathlib import Path
+
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
-import matplotlib.ticker as mticker
-from pathlib import Path
 
 from common.db import engine
 from common.fx_rates import normalise_price_column
@@ -74,8 +74,8 @@ plt.show()
 # ## 3. Train pricing model
 
 # %%
-from models.pricing.train_pricing import FEATURE_COLS, CAT_COLS
-from models.pricing.price_model import train, predict, _band
+from models.pricing.price_model import _band, predict, train
+from models.pricing.train_pricing import CAT_COLS, FEATURE_COLS
 
 # Fill missing features with defaults
 df["aesthetic_score"] = df["aesthetic_score"].fillna(0.5)

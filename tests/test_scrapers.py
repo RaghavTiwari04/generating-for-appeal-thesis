@@ -4,10 +4,9 @@ from __future__ import annotations
 
 import pytest
 
+from data.scrapers.base import ParsedListing
 from data.scrapers.etsy import EtsyScraper
 from data.scrapers.redbubble import RedbubbleScraper
-from data.scrapers.base import ParsedListing
-
 
 ETSY_URL = "https://www.etsy.com/listing/123456789/happy-birthday-mum"
 REDBUBBLE_URL = "https://www.redbubble.com/people/artshop/works/987654321-birthday-watercolour"

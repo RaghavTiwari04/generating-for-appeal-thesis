@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pair {{ pair_number }} of {{ total_pairs }}</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+         background: #f4f4f4; color: #222; min-height: 100vh; padding: 1.25rem; }
+  .container { max-width: 980px; margin: 0 auto; }
+  .progress { font-size: 0.85rem; color: #666; margin-bottom: 0.5rem; }
+  .progress-bar { width: 100%; height: 6px; background: #ddd; border-radius: 3px;
+                  margin-bottom: 1.25rem; }
+  .progress-bar-fill { height: 100%; background: #3b82f6; border-radius: 3px;
+                       width: {{ (pair_number / total_pairs * 100) | round }}%; }
+  .context-box { background: #fffbeb; border: 1px solid #fde68a; border-radius: 6px;
+                 padding: 0.85rem 1rem; margin-bottom: 1.25rem; font-size: 0.95rem; }
+  .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 1.25rem; margin-bottom: 1.25rem; }
+  @media (max-width: 720px) { .pair { grid-template-columns: 1fr; } }
+  .side { background: white; border-radius: 8px; padding: 0.9rem;
+          box-shadow: 0 1px 4px rgba(0,0,0,0.07); }
+  .side img { width: 100%; height: auto; display: block; border-radius: 4px;
+              background: #fafafa; }
+  .side h4 { font-size: 0.75rem; text-transform: uppercase; color: #888;
+             letter-spacing: 0.05em; margin: 0.65rem 0 0.25rem; }
+  .side p { font-size: 0.88rem; color: #333; }
+  .side .label { font-size: 0.7rem; color: #aaa; text-transform: uppercase;
+                 letter-spacing: 0.05em; margin-bottom: 0.4rem; }
+  .question { background: white; border-radius: 8px; padding: 1.1rem;
+              box-shadow: 0 1px 4px rgba(0,0,0,0.07); margin-bottom: 1rem; }
+  .question h3 { font-size: 1.0rem; margin-bottom: 0.7rem; }
+  .choice-row { display: flex; gap: 0.6rem; flex-wrap: wrap; }
+  .choice-btn { flex: 1; min-width: 110px; padding: 0.7rem 1rem; border: 2px solid #ddd;
+                background: white; border-radius: 8px; cursor: pointer; font-size: 0.95rem;
+                font-weight: 600; transition: all 0.15s; }
+  .choice-btn:hover { border-color: #3b82f6; background: #eff6ff; }
+  .choice-btn.selected { border-color: #3b82f6; background: #3b82f6; color: white; }
+  .submit-row { text-align: center; margin-top: 1.25rem; }
+  .btn { display: inline-block; padding: 0.85rem 2rem; border-radius: 8px;
+         font-size: 1rem; font-weight: 600; border: none; cursor: pointer;
+         transition: background 0.15s; }
+  .btn-primary { background: #22c55e; color: white; }
+  .btn-primary:hover:not(:disabled) { background: #16a34a; }
+  .btn-primary:disabled { background: #cbd5e1; color: #64748b; cursor: not-allowed; }
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="progress">Pair {{ pair_number }} of {{ total_pairs }}</div>
+  <div class="progress-bar"><div class="progress-bar-fill"></div></div>
+
+  <div class="context-box">
+    🛒 <strong>Scenario:</strong> Imagine you are shopping for a
+    <strong>{{ occasion_display }}</strong> card. Compare the two cards below
+    and answer the questions.
+  </div>
+
+  <div class="pair">
+    <div class="side">
+      <div class="label">Card A (left)</div>
+      <img src="{{ left_image_url }}" alt="Greeting card A" loading="lazy">
+      {% if left_headline %}
+      <h4>Headline</h4><p>{{ left_headline }}</p>
+      {% endif %}
+      {% if left_inside_message %}
+      <h4>Inside</h4><p style="white-space: pre-line;">{{ left_inside_message }}</p>
+      {% endif %}
+    </div>
+    <div class="side">
+      <div class="label">Card B (right)</div>
+      <img src="{{ right_image_url }}" alt="Greeting card B" loading="lazy">
+      {% if right_headline %}
+      <h4>Headline</h4><p>{{ right_headline }}</p>
+      {% endif %}
+      {% if right_inside_message %}
+      <h4>Inside</h4><p style="white-space: pre-line;">{{ right_inside_message }}</p>
+      {% endif %}
+    </div>
+  </div>
+
+  <form id="pairForm" method="POST" action="{{ submit_url }}">
+    <input type="hidden" name="pair_index" value="{{ pair_number }}">
+    <input type="hidden" name="t_start_ms" id="tStart">
+
+    <div class="question">
+      <h3>1. Which card would you be more likely to buy for this occasion?</h3>
+      <div class="choice-row" data-name="purchase_intent">
+        <button type="button" class="choice-btn" data-value="L">Card A</button>
+        <button type="button" class="choice-btn" data-value="R">Card B</button>
+        <button type="button" class="choice-btn" data-value="T">Hard to choose</button>
+      </div>
+      <input type="hidden" name="winner_purchase_intent" id="qPurchase" required>
+    </div>
+
+    <div class="question">
+      <h3>2. Which card looks more visually appealing?</h3>
+      <div class="choice-row" data-name="aesthetic">
+        <button type="button" class="choice-btn" data-value="L">Card A</button>
+        <button type="button" class="choice-btn" data-value="R">Card B</button>
+        <button type="button" class="choice-btn" data-value="T">About the same</button>
+      </div>
+      <input type="hidden" name="winner_aesthetic" id="qAesthetic" required>
+    </div>
+
+    <div class="submit-row">
+      <button type="submit" class="btn btn-primary" id="submitBtn" disabled>
+        {% if pair_number < total_pairs %}
+          Next pair →
+        {% else %}
+          Finish survey →
+        {% endif %}
+      </button>
+    </div>
+  </form>
+</div>
+
+<script>
+  // Time stamp at page load (used for response_time_ms on submit)
+  document.getElementById('tStart').value = Date.now().toString();
+
+  function wireGroup(groupName, hiddenInputId) {
+    const row = document.querySelector(`[data-name="${groupName}"]`);
+    const input = document.getElementById(hiddenInputId);
+    row.querySelectorAll('.choice-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        row.querySelectorAll('.choice-btn').forEach(b => b.classList.remove('selected'));
+        btn.classList.add('selected');
+        input.value = btn.dataset.value;
+        checkComplete();
+      });
+    });
+  }
+  function checkComplete() {
+    const purchase = document.getElementById('qPurchase').value;
+    const aesthetic = document.getElementById('qAesthetic').value;
+    document.getElementById('submitBtn').disabled = !(purchase && aesthetic);
+  }
+  wireGroup('purchase_intent', 'qPurchase');
+  wireGroup('aesthetic', 'qAesthetic');
+</script>
+</body>
+</html>

@@ -3,6 +3,12 @@
 Frozen vision-language backbone (consumed via cached CLIP features) +
 occasion embedding + price scalar → MLP trunk → five heads.
 
+Heads 1-4 (occasion_fit, aesthetic, emotional_resonance, distinctiveness)
+are supervised by VLM labels on all ~2,377 cards. Head 5 (purchase_intent)
+is supervised by Bradley-Terry scores from a Prolific 2AFC study on a
+~500-card subsample. Training uses masked multi-task loss so each head
+only backpropagates on samples where its label exists (Ruder 2017).
+
 Backbone is **not** loaded here — embeddings are cached in
 `listing_features.clip_embedding` by `data/features/clip_embed.py`. This module
 operates purely on cached features for speed and reproducibility.
@@ -15,16 +21,21 @@ from dataclasses import dataclass, field
 import torch
 from torch import nn
 
-from common.occasions import OCCASIONS
+from common.occasions import ACTIVE_OCCASIONS as OCCASIONS
 
-
+# Heads 1-4: VLM-labelled perceptual quality (all ~2,377 cards)
+# Head 5: human purchase_intent (Prolific 2AFC, ~500 card subsample)
 HEAD_NAMES: tuple[str, ...] = (
     "occasion_fit",
     "aesthetic",
-    "emotional",
+    "emotional_resonance",
     "distinctiveness",
-    "saleability",
+    "purchase_intent",
 )
+
+# Which heads have VLM labels (all cards) vs human labels (subsample only)
+VLM_HEADS: tuple[str, ...] = ("occasion_fit", "aesthetic", "emotional_resonance", "distinctiveness")
+HUMAN_HEADS: tuple[str, ...] = ("purchase_intent",)
 
 
 @dataclass
@@ -98,6 +109,11 @@ class SaleabilityPredictor(nn.Module):
         return {name: torch.sigmoid(head(z)).squeeze(-1) for name, head in self.heads.items()}
 
 
-def head_loss_weights(saleability_factor: float = 2.0) -> dict[str, float]:
-    """Saleability head weighted 2× by default (§4.4)."""
-    return {name: (saleability_factor if name == "saleability" else 1.0) for name in HEAD_NAMES}
+def head_loss_weights(purchase_intent_factor: float = 2.0) -> dict[str, float]:
+    """Purchase-intent head weighted 2× by default (§4.4).
+
+    Upweight compensates for the smaller label set (~500 vs ~2,377).
+    Masked loss already handles missing labels; this factor controls
+    relative importance in the total loss.
+    """
+    return {name: (purchase_intent_factor if name == "purchase_intent" else 1.0) for name in HEAD_NAMES}

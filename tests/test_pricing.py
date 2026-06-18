@@ -4,10 +4,8 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
-import pytest
 
 from models.pricing.price_model import (
-    BANDS,
     _band,
     predict,
     train,

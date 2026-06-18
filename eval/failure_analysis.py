@@ -24,7 +24,7 @@ from common.logging import get_logger
 log = get_logger(__name__)
 
 
-_QUERY = """
+_QUERY_LIKERT = """
 WITH ratings AS (
     SELECT sr.generated_card_id,
            AVG(sr.purchase_intent) AS mean_pi,
@@ -54,6 +54,18 @@ ORDER BY r.mean_pi ASC
 LIMIT %(top_n)s;
 """
 
+_QUERY_BT = """
+SELECT gc.card_id,
+       gc.condition_tag,
+       gc.headline_text,
+       gc.inside_message,
+       gc.cover_path,
+       gc.predicted_scores,
+       (gc.brief->'request'->>'occasion') AS occasion
+FROM generated_cards gc
+WHERE gc.condition_tag = %(condition)s;
+"""
+
 
 CATEGORY_TEMPLATE = [
     "occasion_misfit",
@@ -66,12 +78,35 @@ CATEGORY_TEMPLATE = [
 ]
 
 
-def run(study_id: str, condition: str = "C_pipeline_rerank", top_n: int = 20, out_dir: str = "./artifacts/failure_analysis") -> Path:
+def run(
+    study_id: str,
+    condition: str = "C_pipeline_rerank",
+    top_n: int = 20,
+    out_dir: str = "./artifacts/failure_analysis",
+    mode: str = "auto",
+) -> Path:
+    """Pull worst cards for manual failure coding.
+
+    mode: "likert" uses survey_ratings, "bt" uses Bradley-Terry scores from
+    survey_pairs, "auto" tries BT first then falls back to Likert.
+    """
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
 
+    if mode in ("bt", "auto"):
+        try:
+            return _run_bt(study_id, condition, top_n, out)
+        except Exception as e:
+            if mode == "bt":
+                raise
+            log.info(f"BT mode failed ({e}), falling back to Likert")
+
+    return _run_likert(study_id, condition, top_n, out)
+
+
+def _run_likert(study_id: str, condition: str, top_n: int, out: Path) -> Path:
     df = pd.read_sql(
-        _QUERY,
+        _QUERY_LIKERT,
         engine(),
         params={"study_id": study_id, "condition": condition, "top_n": top_n},
     )
@@ -79,7 +114,8 @@ def run(study_id: str, condition: str = "C_pipeline_rerank", top_n: int = 20, ou
     coding = pd.DataFrame(
         {
             "card_id": df["card_id"],
-            "mean_pi": df["mean_pi"],
+            "score": df["mean_pi"],
+            "score_type": "likert_mean",
             "n_raters": df["n_raters"],
             "occasion": df["occasion"],
             "headline_text": df["headline_text"],
@@ -94,7 +130,45 @@ def run(study_id: str, condition: str = "C_pipeline_rerank", top_n: int = 20, ou
 
     out_path = out / f"{condition}_bottom{top_n}.csv"
     coding.to_csv(out_path, index=False)
-    log.info(f"Wrote {out_path} ({len(coding)} cards)")
+    log.info(f"Wrote {out_path} ({len(coding)} cards, Likert mode)")
+    return out_path
+
+
+def _run_bt(study_id: str, condition: str, top_n: int, out: Path) -> Path:
+    from survey.analysis.bradley_terry import fit_bradley_terry, load_pairs
+
+    pairs_df = load_pairs(study_id, question_dim="purchase_intent")
+    if pairs_df.empty:
+        raise ValueError("No pairs found")
+
+    bt = fit_bradley_terry(pairs_df)
+    bt_scores = pd.DataFrame({"card_key": bt.card_keys, "bt_sale_score": bt.sale_scores})
+
+    cards_df = pd.read_sql(
+        _QUERY_BT, engine(), params={"condition": condition}
+    )
+    cards_df["card_key"] = cards_df["card_id"].astype(str)
+    merged = cards_df.merge(bt_scores, on="card_key", how="inner")
+    merged = merged.nsmallest(top_n, "bt_sale_score")
+
+    coding = pd.DataFrame(
+        {
+            "card_id": merged["card_id"],
+            "score": merged["bt_sale_score"],
+            "score_type": "bt_sale_score",
+            "occasion": merged["occasion"],
+            "headline_text": merged["headline_text"],
+            "inside_message": merged["inside_message"],
+            "cover_path": merged["cover_path"],
+            "predicted_scores": merged["predicted_scores"].apply(lambda x: json.dumps(x) if x else ""),
+        }
+    )
+    for cat in CATEGORY_TEMPLATE:
+        coding[f"cat_{cat}"] = ""
+
+    out_path = out / f"{condition}_bottom{top_n}_bt.csv"
+    coding.to_csv(out_path, index=False)
+    log.info(f"Wrote {out_path} ({len(coding)} cards, BT mode)")
     return out_path
 
 

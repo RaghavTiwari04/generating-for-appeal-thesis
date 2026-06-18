@@ -1,6 +1,7 @@
 .PHONY: up down reset-db test lint fmt typecheck fonts embed-features \
         proxy-labels occasion-clf dedup snapshot scrape-etsy \
-        train-predictor eval-predictor run-card
+        train-predictor eval-predictor run-card \
+        bt-fit bt-power pseudo-labels
 
 # ── Infrastructure ────────────────────────────────────────────────────────────
 up:
@@ -74,6 +75,9 @@ dedup:
 proxy-labels:
 	python -m data.labels.proxy
 
+vlm-labels-5head:
+	python -m data.labels.vlm_labels label --five-heads
+
 survey-labels:
 	python -m data.labels.survey_labels --study-id main_v1
 
@@ -102,6 +106,23 @@ survey-labels:
 pilot-analysis:
 	python -m survey.analysis.pilot_analysis --study-id pilot_v1
 
+# ── Pairwise (v2) survey targets ──────────────────────────────────────────────
+bt-fit:
+	python -c "from survey.analysis.bradley_terry import load_pairs, fit_bradley_terry, persist_bt_labels; \
+	df=load_pairs('main_v2', question_dim='purchase_intent'); \
+	res=fit_bradley_terry(df, prior_strength=0.1); \
+	n=persist_bt_labels(res, study_id='main_v2', question_dim='purchase_intent'); print(f'wrote {n} BT purchase_intent labels')"
+	python -c "from survey.analysis.bradley_terry import load_pairs, fit_bradley_terry, persist_bt_labels; \
+	df=load_pairs('main_v2', question_dim='aesthetic'); \
+	res=fit_bradley_terry(df, prior_strength=0.1); \
+	n=persist_bt_labels(res, study_id='main_v2', question_dim='aesthetic'); print(f'wrote {n} BT aesthetic labels')"
+
+bt-power:
+	python -m eval.sims.bt_power --n-cards 150 --n-participants 150 --pairs-per-participant 60 --n-sims 200
+
+pseudo-labels:
+	python -m data.labels.pseudo_labels --label-source llm_pseudo_v1
+
 ablation-no-lora:
 	python -m eval.ablations.no_lora
 
@@ -119,6 +140,13 @@ run-card:
 		--occasion birthday/general \
 		--tone warm-humorous \
 		--n 8 --top-k 3
+
+run-card-llm:
+	python -m pipeline.orchestrator \
+		--occasion birthday/general \
+		--tone warm-humorous \
+		--n 4 --top-k 2 \
+		--scorer llm
 
 # ── LoRA training (GPU required — rent A100) ──────────────────────────────────
 train-lora-%:

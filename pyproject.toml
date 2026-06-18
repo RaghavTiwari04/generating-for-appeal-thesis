@@ -44,6 +44,10 @@ dependencies = [
     "selectolax>=0.3",
     "tenacity>=8.2",
     "playwright>=1.43",
+    # Google Forms / Sheets (survey)
+    "google-api-python-client>=2.120",
+    "google-auth>=2.29",
+    "google-auth-httplib2>=0.2",
     # LLM clients
     "anthropic>=0.25",
     "openai>=1.20",
@@ -89,7 +93,18 @@ target-version = "py311"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "W", "B", "UP", "N", "RUF"]
-ignore = ["E501"]
+ignore = [
+    "E501",
+    "RUF001", "RUF002", "RUF003",  # Unicode Greek letters / symbols in stats code
+    "E402",   # notebook-style deferred imports
+    "N803",   # Prolific API params must be uppercase (PROLIFIC_PID etc.)
+    "B008",   # typer.Argument() in defaults is standard pattern
+    "N806",   # uppercase variables (X, B, T) standard in ML code
+    "N814",   # camelcase imports as aliases
+]
+
+[tool.ruff.lint.per-file-ignores]
+"notebooks/**" = ["E402", "F401"]
 
 [tool.mypy]
 python_version = "3.11"

@@ -16,7 +16,6 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
-import numpy as np
 import pandas as pd
 
 from common.db import engine
@@ -102,7 +101,7 @@ def pairwise_holm(df: pd.DataFrame) -> dict[str, float]:
     if not raw_p:
         return {}
     _, p_corrected, _, _ = smm.multipletests(raw_p, alpha=0.05, method="holm")
-    return dict(zip(pairs, [float(p) for p in p_corrected]))
+    return dict(zip(pairs, [float(p) for p in p_corrected], strict=False))
 
 
 def run(study_id: str, out_dir: str | Path = "./artifacts/system_eval") -> SystemEvalReport:

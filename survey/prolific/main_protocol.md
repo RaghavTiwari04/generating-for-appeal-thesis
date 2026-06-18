@@ -1,62 +1,89 @@
-# Survey Main Protocol — Greeting Cards
+# Survey Main Protocol — Greeting Cards (v2, pairwise, birthday-only)
 
-**Version:** v1
-**Status:** Draft. Do not run until IRB approval is on file **and** the pilot has been analysed and instrument refinements landed.
+**Version:** v2 (cost-reduced; supersedes v1 Likert protocol)
+**Status:** Draft. Do not run until IRB approval is on file. The first 40 completes act as the rolled-in pilot warm-up (see `pilot_protocol.md`).
+
+## Change vs v1
+
+| Lever | v1 | v2 | Saving |
+|---|---|---|---|
+| Instrument | 7-point Likert, 7 questions × 30 cards = 210 ratings/session | 2AFC pairwise, 2 questions × 60 pairs = 120 forced choices/session | session 20 → 10 min |
+| Sample size | n = 300 | n = 150 (power-justified — see below) | -50% participants |
+| Scope | full 29-occasion taxonomy | birthday-only (`ACTIVE_OCCASIONS`) | smaller card pool → fewer pairs needed for graph connectivity |
+| Pilot | separate £70 study | rolled into first 40 main completes | -£70 |
+| Per-card labels | 5 Likert means | BT scalar + aesthetic BT scalar | trains saleability head directly; sub-heads come from LLM pseudo-labels |
+| Estimated total | £400 | **~£100** | **-75%** |
 
 ## Goal
 
-Generate ~9,000 ratings on ~600 cards to (a) train the survey-supervised heads of the saleability predictor and (b) provide held-out ground truth for predictor evaluation.
+Produce a Bradley-Terry saleability ranking over a 150-card birthday pool, plus an aesthetic ranking, to train the saleability head and aesthetic head of the predictor. Also provides held-out ground truth for predictor evaluation.
 
-(A separate main *system* evaluation cohort is described in `survey/prolific/system_eval_protocol.md` — that cohort is **disjoint** from this one via Prolific exclusion lists.)
+## Sample size justification (power)
+
+Target: detect Spearman ρ ≥ 0.4 between predictor output and held-out BT ground truth at α=0.05, power=0.8.
+
+- Required pairs per card for stable BT ranking at this card-count: **≥ 5** (Hunter 2004; confirmed via `eval/sims/bt_power.py` Monte Carlo on synthetic data).
+- 150 cards × 6 avg pairs/card / 2 cards-per-pair = **450 pair-instances total**. At 60 pairs/participant this is **n = 8** — but we inflate to **n = 150** to cover:
+  - Per-participant random effects in the mixed-effects analysis (estimated needed cluster count: ~120)
+  - Within-occasion sub-rankings (4 sub-occasions × ~38 cards each → needs higher per-cell density)
+  - Attention-check exclusions (~10%)
+  - Buffer for active-learning convergence on uncertain pairs
+
+Simulation script `eval/sims/bt_power.py` re-runs the calculation at instrument changes.
 
 ## Recruitment
 
-- **Platform:** Prolific
-- **Sample size:** n = 300 (after exclusion of attention-check failures, target an effective n ≈ 270)
+- **Platform:** Prolific (CloudResearch Connect priced as backup; switch if Prolific fees exceed 33%)
+- **Sample size:** n = 150 (effective n ≈ 135 after exclusions)
 - **Screening:**
   - UK residents
   - Age ≥ 18, balanced quotas across 18-34 / 35-54 / 55+
   - Gender balanced ~50/50 (non-binary admitted)
-  - Income brackets balanced where Prolific allows
   - Approval rate ≥ 95%
-  - **Excluded:** anyone in the pilot study, anyone who will later be in the system-eval study (apply this as a Prolific custom exclusion)
-- **Compensation:** £9/hour pro-rata. 20 min/session => £3.00 each. Base £900 + ~33% fee ≈ £400.
+  - **Excluded:** anyone who will later be in the system-eval study (Prolific custom exclusion list)
+- **Compensation:** £9/hour pro-rata. 10 min/session → £1.50 each. Base £225 + ~33% Prolific fee ≈ **£100 total**.
 
-## Protocol
+## Card pool (birthday-only)
 
-Identical instrument to the pilot (see `pilot_protocol.md` §Protocol). Any wording changes adopted from the pilot are documented in `pilot_notes.md` and **frozen** before main launch.
+Total 150 cards, all from `ACTIVE_OCCASIONS`:
 
-## Card sampling
+- **100 marketplace cards** stratified by `proxy_v1` score (low / med / high → ~33 each), balanced across the 4 birthday sub-occasions and 6 tone classes
+- **40 system-generated cards** at different pipeline configurations (these become Phase 7 eval targets)
+- **10 naive baselines** (raw SDXL + naive birthday prompt, no LoRA, no layout module)
 
-The 600-card pool:
+Listings filtered with `is_valid_occasion(occ)` so non-birthday data never enters the survey.
 
-- **400 marketplace cards** stratified by proxy_v1 score (low / med / high), balanced across the canonical occasion taxonomy
-- **150 system-generated cards** at different pipeline configurations (these become eval targets — see Phase 7)
-- **50 naive baselines** (raw SDXL + naive occasion prompt, no LoRA, no layout module)
+## Instrument
 
-Each card receives **15 ratings on average, minimum 8**. Sampler must enforce the minimum.
+Identical to `pilot_protocol.md` §Instrument. Any wording changes adopted from the n=40 warm-up are documented in `pilot_notes_v2.md` and **frozen** before the remaining ~110 slots release.
 
-Per-participant occasion balance: each participant sees ≥3 cards from each of the top 5 occasions plus 15 cards drawn from the long tail.
+## Pair sampling
+
+- 60 pairs per participant
+- Active-learning queue maintained in `survey/instrument/sampler.py`: priority = current BT-score uncertainty (variance from Hessian inverse) + uniform-random anchor pairs (20%) for graph connectivity
+- Each card appears 4–8 times across the whole study; never twice in the same session
+- Per-participant: ≥ 12 pairs from each birthday sub-occasion
 
 ## Attention checks and exclusions
 
-- 3 attention checks interleaved with normal items (one is a directed-response item; one is a low-effort flag; one is a time check)
-- Median response time per participant must exceed 4s; participants under that floor are excluded from analysis (still paid)
-- Participants who fail >1 attention check are excluded
+- 3 trapdoor pairs per session (broken variant pairing)
+- Median pair-time per participant must exceed 3 s; below = excluded (still paid)
+- Participants who fail ≥ 2 trapdoor pairs excluded
 - Pre-register exclusion criteria in OSF before launching
 
 ## Analysis (downstream)
 
-- Aggregate ratings into per-card mean for each dimension; persist as `saleability_labels` with `label_source='survey_main'` (purchase intent) plus per-head survey labels
-- ICC(3,k) reliability per dimension, reported in the predictor chapter
-- Predictor v2 trained on these survey labels + proxy_v1 (see `models/predictor/train.py`)
+- BT fit per question dimension (`purchase_intent`, `aesthetic`) via `survey/analysis/bradley_terry.py`
+- Per-card BT score persisted via `persist_bt_labels()` as `saleability_labels` rows with `label_source='survey_main_v2_bt'`
+- Predictor v2 (`models/predictor/train.py`) trained on BT scores for saleability + aesthetic heads
+- Remaining heads (occasion_fit, emotional_resonance, distinctiveness) trained on **LLM pseudo-labels** from GPT-4V / Claude Sonnet validated against a small (~40 card) human-rated subset embedded as a side-channel in the survey
 
 ## Outputs
 
-- `survey_ratings` rows with `study_id = 'main_v1'`
-- Pre-registration document on OSF including hypotheses, sample size, exclusion criteria, and analysis plan
-- Anonymised CSV released alongside the thesis (Prolific ID → opaque participant code mapping deleted post-payment, per ethics requirement)
+- `survey_pairs` rows with `study_id = 'main_v2'`
+- OSF pre-registration document at `survey/preregistration/main_v2.md` (hypotheses + BT-power calc + exclusion criteria)
+- Anonymised CSV of the pair graph released alongside the thesis
 
 ## Ethics summary
 
-Identical safeguards to pilot; see `pilot_protocol.md`. Data retention: ratings stored for the duration of the thesis + 6 months for revisions, then anonymised version archived and source-bound personal data destroyed.
+Identical safeguards to v1; see `pilot_protocol.md`. IRB amendment must cover the Likert → 2AFC instrument change before launch — no substantive risk profile change, but explicit notification required. Data retention: pairs stored for the thesis + 6 months for revisions; anonymised dataset archived afterwards.
