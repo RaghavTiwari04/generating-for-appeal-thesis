@@ -98,7 +98,10 @@ def _materialise_training_images(
             data = get_object(row["storage_path"])
             img = Image.open(io.BytesIO(data)).convert("RGB")
             if erase_text:
-                img = _erase_text_regions(img)
+                try:
+                    img = _erase_text_regions(img)
+                except Exception as te:
+                    log.debug(f"Text erasure skipped (tesseract unavailable): {te}")
             out = dest / f"{i:04d}.png"
             img.save(out)
             paths.append(out)
