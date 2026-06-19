@@ -133,7 +133,10 @@ def train(
     out_dir = out_root / occasion.replace("/", "_")
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    _materialise_training_images(occasion, n_images, image_dir, erase_text=erase_text)
+    paths = _materialise_training_images(occasion, n_images, image_dir, erase_text=erase_text)
+    if not paths:
+        log.warning(f"No training images for occasion '{occasion}' — skipping LoRA training")
+        return
 
     train_script = Path("diffusers/examples/dreambooth/train_dreambooth_lora_flux.py")
     if not train_script.exists():

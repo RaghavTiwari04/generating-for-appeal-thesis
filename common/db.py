@@ -26,7 +26,8 @@ def connection() -> Iterator[psycopg.Connection]:
     Use as: `with connection() as conn: ...`. Auto-commits on success,
     rolls back on exception.
     """
-    conn = psycopg.connect(settings.postgres_dsn, row_factory=dict_row)
+    dsn = settings.postgres_dsn.replace("postgresql+psycopg://", "postgresql://")
+    conn = psycopg.connect(dsn, row_factory=dict_row)
     try:
         register_vector(conn)
         yield conn
