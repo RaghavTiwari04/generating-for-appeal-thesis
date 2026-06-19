@@ -4,6 +4,13 @@
 
 WORK="/vol/bitbucket/$USER"
 export HF_HOME="$WORK/.cache/huggingface"
+
+# Load .env so API keys (HF_TOKEN, ANTHROPIC_API_KEY) are available to subprocesses
+if [ -f .env ]; then
+    set -a
+    source .env
+    set +a
+fi
 PG_DIR="$WORK/pgdata"
 MINIO_DIR="$WORK/minio-data"
 MINIO_BIN="$WORK/bin/minio"
