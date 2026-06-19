@@ -135,12 +135,22 @@ def train(
 
     _materialise_training_images(occasion, n_images, image_dir, erase_text=erase_text)
 
+    train_script = Path("diffusers/examples/dreambooth/train_dreambooth_lora_flux.py")
+    if not train_script.exists():
+        train_script.parent.mkdir(parents=True, exist_ok=True)
+        import diffusers
+        _ver = diffusers.__version__
+        _url = f"https://raw.githubusercontent.com/huggingface/diffusers/v{_ver}/examples/dreambooth/train_dreambooth_lora_flux.py"
+        import urllib.request
+        urllib.request.urlretrieve(_url, train_script)
+        log.info(f"Downloaded training script from {_url}")
+
     instance_prompt = f"a greeting card for {occasion.replace('_', ' ').replace('/', ' ')}"
     cmd = [
         "accelerate",
         "launch",
         "--mixed_precision=bf16",
-        "diffusers/examples/dreambooth/train_dreambooth_lora_flux.py",
+        str(train_script),
         f"--pretrained_model_name_or_path={base_model}",
         f"--instance_data_dir={image_dir}",
         f"--output_dir={out_dir}",
