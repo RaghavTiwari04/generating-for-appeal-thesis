@@ -163,6 +163,7 @@ def _persist(
 
 if __name__ == "__main__":
     import typer
+    from common.storage import ensure_buckets
 
     def cli(
         occasion: str,
@@ -172,6 +173,7 @@ if __name__ == "__main__":
         top_k: int = 3,
         scorer: str = "predictor",
     ) -> None:
+        ensure_buckets()
         ranked = generate(
             {"occasion": occasion, "tone": tone, "relationship": relationship},
             OrchestratorConfig(n_candidates=n, top_k=top_k, scorer=scorer),
