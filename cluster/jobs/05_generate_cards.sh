@@ -27,10 +27,9 @@ echo "Start: $(date)"
 
 OCCASIONS=(
     "birthday/general"
-    "christmas/general"
-    "mothers_day"
-    "valentines_day"
-    "sympathy/bereavement"
+    "birthday/milestone"
+    "birthday/kids"
+    "birthday/relationship"
 )
 
 for occ in "${OCCASIONS[@]}"; do
