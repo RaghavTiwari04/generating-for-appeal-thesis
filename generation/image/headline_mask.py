@@ -29,8 +29,8 @@ class LayoutMaskSpec:
 def build_headline_mask(spec: LayoutMaskSpec | None = None) -> tuple[Image.Image, tuple[int, int, int, int]]:
     """Return (mask_image, bbox).
 
-    Mask is white where the headline must remain low-detail, black elsewhere.
-    Diffusers inpaint pipelines treat white = regenerate / keep blank.
+    Mask is white where art should be generated, black in the headline region
+    (kept as-is from the blank input canvas). Diffusers inpaint: white = regenerate.
     """
     spec = spec or LayoutMaskSpec()
     w, h = spec.width, spec.height
@@ -52,9 +52,9 @@ def build_headline_mask(spec: LayoutMaskSpec | None = None) -> tuple[Image.Image
         raise ValueError(f"Unknown region {spec.region!r}")
 
     x1, y1 = x0 + box_w, y0 + box_h
-    mask = Image.new("L", (w, h), 0)
+    mask = Image.new("L", (w, h), 255)
     draw = ImageDraw.Draw(mask)
-    draw.rectangle([x0, y0, x1, y1], fill=255)
+    draw.rectangle([x0, y0, x1, y1], fill=0)
 
     if spec.feather_px:
         from PIL import ImageFilter
