@@ -162,6 +162,7 @@ def _persist(
 
 
 if __name__ == "__main__":
+    import sys
     import typer
     from common.storage import ensure_buckets
 
@@ -174,10 +175,14 @@ if __name__ == "__main__":
         scorer: str = "predictor",
     ) -> None:
         ensure_buckets()
-        ranked = generate(
-            {"occasion": occasion, "tone": tone, "relationship": relationship},
-            OrchestratorConfig(n_candidates=n, top_k=top_k, scorer=scorer),
-        )
+        try:
+            ranked = generate(
+                {"occasion": occasion, "tone": tone, "relationship": relationship},
+                OrchestratorConfig(n_candidates=n, top_k=top_k, scorer=scorer),
+            )
+        except Exception as e:
+            print(f"ERROR: {type(e).__name__}: {e}", file=sys.stderr)
+            raise SystemExit(1)
         for i, c in enumerate(ranked):
             sale = (c.scores or {}).get("saleability_calibrated", float("nan"))
             print(f"#{i+1} sale={sale:.3f} headline={c.headline!r}")

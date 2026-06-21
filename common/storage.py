@@ -30,11 +30,8 @@ def _client() -> Minio:
 def ensure_buckets() -> None:
     client = _client()
     for bucket in (settings.minio_bucket, settings.minio_bucket_raw):
-        try:
-            if not client.bucket_exists(bucket):
-                client.make_bucket(bucket)
-        except S3Error:
-            pass
+        if not client.bucket_exists(bucket):
+            client.make_bucket(bucket)
 
 
 def sha256_hex(data: bytes) -> str:
