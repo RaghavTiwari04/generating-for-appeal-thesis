@@ -150,20 +150,22 @@ class DiffusionRunner:
         upscale_to_print_res: bool = True,
         **kwargs: Any,
     ) -> list[Image.Image]:
-        generator = None
-        if seed is not None:
-            generator = [
-                torch.Generator(device=self.cfg.device).manual_seed(seed + i) for i in range(n)
-            ]
+        images: list[Image.Image] = []
+        for i in range(n):
+            gen = None
+            if seed is not None:
+                gen = [torch.Generator(device=self.cfg.device).manual_seed(seed + i)]
 
-        if mask_image is not None:
-            images = self._generate_with_mask(
-                prompt, negative_prompt, occasion, mask_image, n, generator, **kwargs,
-            )
-        else:
-            images = self._generate_plain(
-                prompt, negative_prompt, occasion, n, generator, **kwargs,
-            )
+            if mask_image is not None:
+                batch = self._generate_with_mask(
+                    prompt, negative_prompt, occasion, mask_image, 1, gen, **kwargs,
+                )
+            else:
+                batch = self._generate_plain(
+                    prompt, negative_prompt, occasion, 1, gen, **kwargs,
+                )
+            images.extend(batch)
+            log.info(f"Generated image {i + 1}/{n}")
 
         if upscale_to_print_res:
             from generation.image.upscaler import upscale_to_print
