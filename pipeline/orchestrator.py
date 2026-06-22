@@ -55,7 +55,6 @@ def generate(request: dict, cfg: OrchestratorConfig | None = None) -> list[Candi
 
     diffusion = get_diffusion_runner()
     mask_spec = LayoutMaskSpec()
-    mask_image, _ = build_headline_mask(mask_spec)
 
     visual_prompt = brief.visual_prompt
     lora_dir = Path("generation/image/loras") / request["occasion"].replace("/", "_")
@@ -68,7 +67,6 @@ def generate(request: dict, cfg: OrchestratorConfig | None = None) -> list[Candi
         occasion=request["occasion"],
         seed=cfg.image_seed_base,
         n=cfg.n_candidates,
-        mask_image=mask_image,
     )
 
     inside = generate_message(
