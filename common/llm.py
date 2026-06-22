@@ -15,6 +15,19 @@ from common.logging import get_logger
 log = get_logger(__name__)
 
 
+def _escape_control_chars(s: str) -> str:
+    def _replace(m: re.Match) -> str:
+        c = m.group()
+        if c == "\n":
+            return "\\n"
+        if c == "\r":
+            return "\\r"
+        if c == "\t":
+            return "\\t"
+        return ""
+    return re.sub(r"[\x00-\x1f]", _replace, s)
+
+
 def extract_json(text: str) -> dict:
     """Extract a JSON object from LLM output, tolerating code fences and prose."""
     text = text.strip()
@@ -25,7 +38,7 @@ def extract_json(text: str) -> dict:
     end = text.rfind("}")
     if start == -1 or end == -1 or end <= start:
         raise ValueError(f"No JSON object found in LLM response: {text[:200]}")
-    return json.loads(text[start : end + 1])
+    return json.loads(_escape_control_chars(text[start : end + 1]))
 
 
 def call_llm(prompt: str, *, max_tokens: int = 1024, temperature: float = 0.7) -> str:
