@@ -114,8 +114,8 @@ def _materialise_training_images(
 def train(
     occasion: str = typer.Option(...),
     rank: int = 8,
-    steps: int = 1000,
-    lr: float = 1e-4,
+    steps: int = 500,
+    lr: float = 4e-5,
     n_images: int = 150,
     erase_text: bool = typer.Option(True, help="Inpaint text regions out of training images"),
     base_model: str = "black-forest-labs/FLUX.1-dev",
@@ -148,7 +148,9 @@ def train(
         urllib.request.urlretrieve(_url, train_script)
         log.info(f"Downloaded training script from {_url}")
 
-    instance_prompt = f"a greeting card for {occasion.replace('_', ' ').replace('/', ' ')}"
+    occasion_tag = occasion.replace("_", " ").replace("/", " ")
+    instance_prompt = f"a TOK greeting card for {occasion_tag}"
+    warmup_steps = max(1, steps // 10)
     cmd = [
         "accelerate",
         "launch",
@@ -162,11 +164,11 @@ def train(
         "--train_batch_size=1",
         "--gradient_accumulation_steps=4",
         f"--learning_rate={lr}",
-        "--lr_scheduler=constant",
-        "--lr_warmup_steps=0",
+        "--lr_scheduler=cosine",
+        f"--lr_warmup_steps={warmup_steps}",
         f"--max_train_steps={steps}",
         f"--rank={rank}",
-        "--checkpointing_steps=500",
+        "--checkpointing_steps=250",
         "--seed=42",
     ]
     log.info(f"Launching LoRA training: {' '.join(cmd)}")

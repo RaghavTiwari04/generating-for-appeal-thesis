@@ -57,8 +57,13 @@ def generate(request: dict, cfg: OrchestratorConfig | None = None) -> list[Candi
     mask_spec = LayoutMaskSpec()
     mask_image, _ = build_headline_mask(mask_spec)
 
+    visual_prompt = brief.visual_prompt
+    lora_dir = Path("generation/image/loras") / request["occasion"].replace("/", "_")
+    if lora_dir.exists():
+        visual_prompt = f"TOK {visual_prompt}"
+
     images = diffusion.generate(
-        prompt=brief.visual_prompt,
+        prompt=visual_prompt,
         negative_prompt=brief.negative_prompt,
         occasion=request["occasion"],
         seed=cfg.image_seed_base,

@@ -1,7 +1,9 @@
 """Flux (default) / SDXL image generation with per-occasion LoRA stacking.
 
-Self-hosted via diffusers. Headline area is reserved via Flux Fill (native
-inpainting) so the typography composer has clean whitespace to overlay text.
+Two-pass pipeline:
+  1. FluxPipeline generates full cover art (no mask).
+  2. FluxFillPipeline inpaints the headline region to create clean
+     whitespace for the typography composer.
 
 LoRA weights are stored under `generation/image/loras/<occasion>/`; they are
 trained by `generation/image/loras/train_lora.py` (separate script, GPU-only).
@@ -13,6 +15,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+import numpy as np
 import torch
 from PIL import Image
 
@@ -33,11 +36,13 @@ class DiffusionConfig:
     flux_model_id: str = settings.flux_model_id
     flux_fill_model_id: str = settings.flux_fill_model_id
     device: str = "cuda" if torch.cuda.is_available() else "cpu"
-    dtype: torch.dtype = torch.float16 if torch.cuda.is_available() else torch.float32
+    dtype: torch.dtype = torch.bfloat16 if torch.cuda.is_available() else torch.float32
     height: int = 1024
     width: int = 1024
-    num_inference_steps: int = 30
-    guidance_scale: float = 7.0
+    gen_steps: int = 28
+    gen_guidance: float = 3.5
+    fill_steps: int = 50
+    fill_guidance: float = 30.0
 
 
 class DiffusionRunner:
@@ -155,15 +160,22 @@ class DiffusionRunner:
         for i in range(n):
             gen = [torch.Generator(device=self.cfg.device).manual_seed(base_seed + i)]
 
+            cover = self._generate_plain(
+                prompt, negative_prompt, occasion, 1, gen, **kwargs,
+            )[0]
+
+            arr = np.array(cover)
+            if arr.max() == 0:
+                log.warning(f"Image {i + 1}/{n} is blank, retrying with offset seed")
+                retry_gen = [torch.Generator(device=self.cfg.device).manual_seed(base_seed + n + i)]
+                cover = self._generate_plain(
+                    prompt, negative_prompt, occasion, 1, retry_gen, **kwargs,
+                )[0]
+
             if mask_image is not None:
-                batch = self._generate_with_mask(
-                    prompt, negative_prompt, occasion, mask_image, 1, gen, **kwargs,
-                )
-            else:
-                batch = self._generate_plain(
-                    prompt, negative_prompt, occasion, 1, gen, **kwargs,
-                )
-            images.extend(batch)
+                cover = self._inpaint_headline_region(cover, mask_image, prompt, base_seed + i)
+
+            images.append(cover)
             log.info(f"Generated image {i + 1}/{n}")
 
         if upscale_to_print_res:
@@ -183,8 +195,8 @@ class DiffusionRunner:
             "prompt": prompt,
             "height": self.cfg.height,
             "width": self.cfg.width,
-            "num_inference_steps": self.cfg.num_inference_steps,
-            "guidance_scale": self.cfg.guidance_scale,
+            "num_inference_steps": self.cfg.gen_steps,
+            "guidance_scale": self.cfg.gen_guidance,
             "num_images_per_prompt": n,
             "generator": generator,
         }
@@ -195,32 +207,35 @@ class DiffusionRunner:
         result = pipe(**call_kwargs)
         return list(result.images)
 
-    def _generate_with_mask(
-        self, prompt: str, negative_prompt: str, occasion: str | None,
-        mask_image: Image.Image, n: int, generator: Any, **kwargs: Any,
-    ) -> list[Image.Image]:
+    def _inpaint_headline_region(
+        self, cover: Image.Image, mask: Image.Image, prompt: str, seed: int,
+    ) -> Image.Image:
+        """Inpaint the headline region of an already-generated cover to create clean whitespace."""
         pipe = self._load_fill_pipeline()
-        self._apply_loras(pipe, occasion)
+        gen = [torch.Generator(device=self.cfg.device).manual_seed(seed)]
 
-        blank = Image.new("RGB", (self.cfg.width, self.cfg.height), (255, 255, 255))
+        from PIL import ImageOps
+        fill_mask = ImageOps.invert(mask.convert("L"))
+
+        inpaint_prompt = (
+            "clean smooth empty whitespace area suitable for text overlay, "
+            "no objects no details, matching the surrounding card style"
+        )
 
         call_kwargs: dict[str, Any] = {
-            "prompt": prompt,
-            "image": blank,
-            "mask_image": mask_image,
+            "prompt": inpaint_prompt,
+            "image": cover,
+            "mask_image": fill_mask,
             "height": self.cfg.height,
             "width": self.cfg.width,
-            "num_inference_steps": self.cfg.num_inference_steps,
-            "guidance_scale": self.cfg.guidance_scale,
-            "num_images_per_prompt": n,
-            "generator": generator,
+            "num_inference_steps": self.cfg.fill_steps,
+            "guidance_scale": self.cfg.fill_guidance,
+            "num_images_per_prompt": 1,
+            "generator": gen,
         }
-        if self.cfg.backend == "sdxl" and negative_prompt:
-            call_kwargs["negative_prompt"] = negative_prompt
-        call_kwargs.update(kwargs)
 
         result = pipe(**call_kwargs)
-        return list(result.images)
+        return result.images[0]
 
 
 _runner: DiffusionRunner | None = None
