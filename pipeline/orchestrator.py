@@ -137,7 +137,7 @@ def _persist(
     out_dir.mkdir(parents=True, exist_ok=True)
 
     with connection() as conn, conn.cursor() as cur:
-        for cand in ranked:
+        for rank, cand in enumerate(ranked):
             buf = io.BytesIO()
             cand.image.save(buf, format="PNG")
             data = buf.getvalue()
@@ -146,8 +146,9 @@ def _persist(
                 _, storage_path = put_image(data, content_type="image/png")
             except Exception as e:
                 import hashlib
-                digest = hashlib.sha256(data).hexdigest()[:12]
-                local_path = out_dir / f"{digest}.png"
+                occasion_slug = request.get("occasion", "unknown").replace("/", "_")
+                digest = hashlib.sha256(data).hexdigest()[:16]
+                local_path = out_dir / f"{occasion_slug}_{rank:02d}_{digest}.png"
                 local_path.write_bytes(data)
                 storage_path = str(local_path)
                 log.warning(f"MinIO upload failed ({e}), saved locally: {local_path}")

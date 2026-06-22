@@ -151,10 +151,9 @@ class DiffusionRunner:
         **kwargs: Any,
     ) -> list[Image.Image]:
         images: list[Image.Image] = []
+        base_seed = seed if seed is not None else int(torch.randint(0, 2**31, (1,)).item())
         for i in range(n):
-            gen = None
-            if seed is not None:
-                gen = [torch.Generator(device=self.cfg.device).manual_seed(seed + i)]
+            gen = [torch.Generator(device=self.cfg.device).manual_seed(base_seed + i)]
 
             if mask_image is not None:
                 batch = self._generate_with_mask(
