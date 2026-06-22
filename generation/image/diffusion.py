@@ -143,6 +143,25 @@ class DiffusionRunner:
                     log.debug(f"LoRA unload failed (non-fatal): {e}")
         self._active_loras = []
 
+    def _free_pipeline(self) -> None:
+        """Unload gen pipeline to free VRAM for Fill pipeline."""
+        if self._pipe is not None:
+            self.unload_loras()
+            self._pipe.to("cpu")
+            del self._pipe
+            self._pipe = None
+            torch.cuda.empty_cache()
+            log.info("Freed gen pipeline VRAM")
+
+    def _free_fill_pipeline(self) -> None:
+        """Unload Fill pipeline to free VRAM."""
+        if self._fill_pipe is not None:
+            self._fill_pipe.to("cpu")
+            del self._fill_pipe
+            self._fill_pipe = None
+            torch.cuda.empty_cache()
+            log.info("Freed Fill pipeline VRAM")
+
     def generate(
         self,
         prompt: str,
@@ -155,11 +174,12 @@ class DiffusionRunner:
         upscale_to_print_res: bool = True,
         **kwargs: Any,
     ) -> list[Image.Image]:
-        images: list[Image.Image] = []
         base_seed = seed if seed is not None else int(torch.randint(0, 2**31, (1,)).item())
+
+        # Pass 1: generate all cover images with FluxPipeline
+        covers: list[Image.Image] = []
         for i in range(n):
             gen = [torch.Generator(device=self.cfg.device).manual_seed(base_seed + i)]
-
             cover = self._generate_plain(
                 prompt, negative_prompt, occasion, 1, gen, **kwargs,
             )[0]
@@ -172,17 +192,22 @@ class DiffusionRunner:
                     prompt, negative_prompt, occasion, 1, retry_gen, **kwargs,
                 )[0]
 
-            if mask_image is not None:
-                cover = self._inpaint_headline_region(cover, mask_image, prompt, base_seed + i)
-
-            images.append(cover)
+            covers.append(cover)
             log.info(f"Generated image {i + 1}/{n}")
+
+        # Pass 2: inpaint headline regions with FluxFillPipeline
+        if mask_image is not None:
+            self._free_pipeline()
+            for i, cover in enumerate(covers):
+                covers[i] = self._inpaint_headline_region(cover, mask_image, prompt, base_seed + i)
+                log.info(f"Inpainted headline {i + 1}/{n}")
+            self._free_fill_pipeline()
 
         if upscale_to_print_res:
             from generation.image.upscaler import upscale_to_print
-            images = [upscale_to_print(img) for img in images]
+            covers = [upscale_to_print(img) for img in covers]
 
-        return images
+        return covers
 
     def _generate_plain(
         self, prompt: str, negative_prompt: str, occasion: str | None,
