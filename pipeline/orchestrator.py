@@ -133,11 +133,24 @@ def _persist(
     brief: Brief,
     inside_alternatives: list[str],
 ) -> None:
+    out_dir = Path("./artifacts/generated_cards")
+    out_dir.mkdir(parents=True, exist_ok=True)
+
     with connection() as conn, conn.cursor() as cur:
         for cand in ranked:
             buf = io.BytesIO()
             cand.image.save(buf, format="PNG")
-            _, storage_path = put_image(buf.getvalue(), content_type="image/png")
+            data = buf.getvalue()
+
+            try:
+                _, storage_path = put_image(data, content_type="image/png")
+            except Exception as e:
+                import hashlib
+                digest = hashlib.sha256(data).hexdigest()[:12]
+                local_path = out_dir / f"{digest}.png"
+                local_path.write_bytes(data)
+                storage_path = str(local_path)
+                log.warning(f"MinIO upload failed ({e}), saved locally: {local_path}")
 
             cur.execute(
                 _INSERT,
