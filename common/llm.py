@@ -6,7 +6,6 @@ API key validation so each module doesn't reimplement these.
 
 from __future__ import annotations
 
-import ast
 import json
 import re
 
@@ -39,14 +38,17 @@ def extract_json(text: str) -> dict:
     end = text.rfind("}")
     if start == -1 or end == -1 or end <= start:
         raise ValueError(f"No JSON object found in LLM response: {text[:200]}")
-    raw = _escape_control_chars(text[start : end + 1])
-    try:
-        return json.loads(raw)
-    except json.JSONDecodeError:
-        result = ast.literal_eval(raw)
-        if not isinstance(result, dict):
-            raise ValueError(f"LLM response parsed to {type(result)}, expected dict")
-        return result
+    raw = text[start : end + 1]
+    for attempt_fn in (
+        lambda s: json.loads(s),
+        lambda s: json.loads(_escape_control_chars(s)),
+        lambda s: json.loads(re.sub(r"(?<!\\)'", '"', _escape_control_chars(s))),
+    ):
+        try:
+            return attempt_fn(raw)
+        except (json.JSONDecodeError, ValueError):
+            continue
+    raise ValueError(f"Could not parse JSON from LLM response: {raw[:300]}")
 
 
 def call_llm(prompt: str, *, max_tokens: int = 1024, temperature: float = 0.7) -> str:
