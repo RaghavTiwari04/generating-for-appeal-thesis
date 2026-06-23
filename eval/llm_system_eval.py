@@ -1,9 +1,10 @@
 """LLM-as-judge system evaluation (synthetic consumer panel).
 
-Replaces Prolific human study with VLM ratings. Methodological justification:
-    Maier et al. (2024) "LLMs Reproduce Human Purchase Intent via Semantic
-    Similarity Elicitation of Likert Ratings" — SSR achieves 90% of human
-    test-retest reliability with KS similarity > 0.85.
+Replaces Prolific human study with hybrid LLM evaluation:
+    - Purchase intent: SSR (Maier et al. 2025, arXiv:2510.08338) — 90%
+      of human test-retest reliability, KS similarity > 0.85
+    - Other dims: Rubric-guided LLM judge (Zheng et al. 2023, NeurIPS)
+      — >80% agreement with human annotators
 
 Four conditions (same as system_eval.py):
     A_naive_ai          — raw diffusion, no pipeline
@@ -27,7 +28,6 @@ Usage:
 from __future__ import annotations
 
 import json
-import random
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -44,7 +44,6 @@ log = get_logger(__name__)
 
 CONDITIONS = ("A_naive_ai", "B_pipeline_no_rerank", "C_pipeline_rerank", "D_human_bestseller")
 
-N_JUDGES = 3
 
 
 @dataclass
@@ -109,10 +108,10 @@ def _load_image(cover_path: str) -> Image.Image | None:
         return None
 
 
-def _score_cards(cards_df: pd.DataFrame, n_judges: int = N_JUDGES, out_dir: Path | None = None) -> pd.DataFrame:
+def _score_cards(cards_df: pd.DataFrame, out_dir: Path | None = None) -> pd.DataFrame:
     """Score cards using SSR methodology (Maier et al. 2025).
 
-    Each card is evaluated by n_judges synthetic consumer profiles.
+    Each card is evaluated by 3 synthetic consumer profiles (SSR)
     SSR elicits free-text responses from the LLM, then maps them to
     Likert distributions via embedding similarity to reference statements.
     This produces realistic response distributions (KS>0.85) unlike
@@ -142,14 +141,12 @@ def _score_cards(cards_df: pd.DataFrame, n_judges: int = N_JUDGES, out_dir: Path
             {"card_key": row["card_key"], **r} for r in responses
         ])
 
-        for profile in scorer.profiles:
-            ratings.append({
-                "card_key": row["card_key"],
-                "condition": row["condition_tag"],
-                "occasion": row.get("occasion", ""),
-                "judge_id": f"consumer_age{profile['age']}",
-                **{d: scores.get(d, 0.5) for d in DIMS},
-            })
+        ratings.append({
+            "card_key": row["card_key"],
+            "condition": row["condition_tag"],
+            "occasion": row.get("occasion", ""),
+            **{d: scores.get(d, np.nan) for d in DIMS},
+        })
 
         log.info(
             f"  {row['condition_tag']} card={row['card_key'][:8]}... "
@@ -191,7 +188,6 @@ def pairwise_holm(df: pd.DataFrame, metric: str = "purchase_intent") -> dict[str
 
 def run(
     occasions: str = "birthday/general",
-    n_judges: int = N_JUDGES,
     human_per_occasion: int = 3,
     out_dir: str | Path = "./artifacts/llm_system_eval",
 ) -> LLMSystemEvalReport:
@@ -216,7 +212,7 @@ def run(
     if all_cards.empty:
         raise SystemExit("No cards found. Generate cards under conditions A/B/C first.")
 
-    ratings_df = _score_cards(all_cards, n_judges=n_judges, out_dir=out)
+    ratings_df = _score_cards(all_cards, out_dir=out)
     ratings_df.to_csv(out / "raw_ratings.csv", index=False)
 
     cond_means = ratings_df.groupby("condition")["purchase_intent"].mean().to_dict()
@@ -247,9 +243,10 @@ def run(
     )
 
     report_dict = {
-        "method": "LLM-as-judge (synthetic consumer panel)",
-        "reference": "Maier et al. (2024) SSR — 90% human test-retest reliability",
-        "n_judges": n_judges,
+        "method": "Hybrid LLM evaluation",
+        "purchase_intent_method": "SSR (Maier et al. 2025, arXiv:2510.08338)",
+        "other_dims_method": "Rubric-guided LLM judge (Zheng et al. 2023, NeurIPS)",
+        "n_consumer_profiles": len(SSRScorer().profiles),
         "n_cards": report.n_cards,
         "n_ratings": report.n_ratings,
         "conditions": list(CONDITIONS),
@@ -265,7 +262,7 @@ def run(
     log.info(f"\n{'='*60}")
     log.info("LLM System Evaluation Results")
     log.info(f"{'='*60}")
-    log.info(f"Cards: {report.n_cards}  Ratings: {report.n_ratings}  Judges: {n_judges}")
+    log.info(f"Cards: {report.n_cards}  Ratings: {report.n_ratings}")
     log.info(f"\nPurchase Intent by condition:")
     for cond in CONDITIONS:
         m = report.condition_means.get(cond, float("nan"))

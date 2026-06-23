@@ -201,6 +201,7 @@ CONSUMER_PROFILES = [
 # Embedding model for SSR (paper default: all-MiniLM-L6-v2)
 # ---------------------------------------------------------------------------
 _embedder = None
+_ref_embedding_cache: dict[str, np.ndarray] = {}
 
 
 def _get_embedder():
@@ -216,14 +217,25 @@ def _embed(texts: list[str]) -> np.ndarray:
     return _get_embedder().encode(texts, normalize_embeddings=True)
 
 
+def _embed_cached(texts: list[str]) -> np.ndarray:
+    key = "\0".join(texts)
+    if key not in _ref_embedding_cache:
+        _ref_embedding_cache[key] = _embed(texts)
+    return _ref_embedding_cache[key]
+
+
 def _cosine_similarity(a: np.ndarray, b: np.ndarray) -> np.ndarray:
     return (1 + np.dot(a, b.T)) / 2
 
 
 def similarities_to_pmf(
-    sims: np.ndarray, temperature: float = 1.0, epsilon: float = 0.0,
+    sims: np.ndarray, epsilon: float = 0.0,
 ) -> np.ndarray:
-    """Convert cosine similarities to PMF over Likert scale (paper Eq. 8-9)."""
+    """Convert cosine similarities to PMF over Likert scale (paper Eq. 8).
+
+    Temperature scaling is applied separately after averaging across
+    reference sets, matching the reference implementation.
+    """
     s = sims.copy()
     s_min = s.min()
     s = s - s_min
@@ -235,13 +247,21 @@ def similarities_to_pmf(
     if s.sum() == 0:
         return np.ones(len(s)) / len(s)
 
-    pmf = s / s.sum()
+    return s / s.sum()
 
-    if temperature != 1.0 and temperature > 0:
-        pmf = pmf ** (1.0 / temperature)
-        pmf = pmf / pmf.sum()
 
-    return pmf
+def scale_pmf(pmf: np.ndarray, temperature: float) -> np.ndarray:
+    """Temperature-scale a PMF (paper Eq. 9). Matches reference compute.scale_pmf."""
+    if temperature == 1.0:
+        return pmf
+    if temperature == 0.0:
+        out = np.zeros_like(pmf)
+        if np.all(pmf == pmf[0]):
+            return pmf.copy()
+        out[np.argmax(pmf)] = 1.0
+        return out
+    scaled = pmf ** (1.0 / temperature)
+    return scaled / scaled.sum()
 
 
 def compute_ssr_score(
@@ -254,13 +274,17 @@ def compute_ssr_score(
 
     pmfs = []
     for ref_set in SSR_REFERENCE_SETS:
-        ref_embs = _embed(ref_set)
+        ref_embs = _embed_cached(ref_set)
         sims = _cosine_similarity(response_emb.reshape(1, -1), ref_embs)[0]
-        pmf = similarities_to_pmf(sims, temperature=temperature, epsilon=epsilon)
+        pmf = similarities_to_pmf(sims, epsilon=epsilon)
         pmfs.append(pmf)
 
     avg_pmf = np.mean(pmfs, axis=0)
-    avg_pmf = avg_pmf / avg_pmf.sum()
+
+    # Temperature scaling applied AFTER averaging across reference sets
+    # (Maier et al. 2025, response_rater.py lines 436-439)
+    if temperature != 1.0:
+        avg_pmf = scale_pmf(avg_pmf, temperature)
 
     expected = np.dot(avg_pmf, np.array([1, 2, 3, 4, 5]))
     normalised = (expected - 1) / 4
@@ -289,41 +313,46 @@ def _call_anthropic(
     model: str | None = None,
     temperature: float = 0.8,
     max_tokens: int = 200,
+    api_retries: int = 5,
 ) -> str:
     import anthropic
 
     model = model or settings.llm_model
     client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
 
-    try:
-        msg = client.messages.create(
-            model=model,
-            max_tokens=max_tokens,
-            temperature=temperature,
-            system=system_prompt,
-            messages=[
-                {
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "image",
-                            "source": {
-                                "type": "base64",
-                                "media_type": media_type,
-                                "data": image_b64,
+    for attempt in range(api_retries):
+        try:
+            msg = client.messages.create(
+                model=model,
+                max_tokens=max_tokens,
+                temperature=temperature,
+                system=system_prompt,
+                messages=[
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "image",
+                                "source": {
+                                    "type": "base64",
+                                    "media_type": media_type,
+                                    "data": image_b64,
+                                },
                             },
-                        },
-                        {"type": "text", "text": user_text},
-                    ],
-                }
-            ],
-        )
-    except Exception as e:
-        log.warning(f"Anthropic API error: {e}")
-        return ""
+                            {"type": "text", "text": user_text},
+                        ],
+                    }
+                ],
+            )
+            blocks = [b.text for b in msg.content if getattr(b, "type", None) == "text"]
+            return blocks[0] if blocks else ""
+        except Exception as e:
+            wait = min(2 ** attempt, 30)
+            log.warning(f"Anthropic API error (attempt {attempt + 1}/{api_retries}): {e}")
+            if attempt < api_retries - 1:
+                time.sleep(wait)
 
-    blocks = [b.text for b in msg.content if getattr(b, "type", None) == "text"]
-    return blocks[0] if blocks else ""
+    return ""
 
 
 # ---------------------------------------------------------------------------
@@ -432,7 +461,7 @@ def _score_rubric_dim(
     for attempt in range(3):
         response = _call_anthropic(
             image_b64, media_type, JUDGE_SYSTEM_PROMPT, user_text,
-            model=model, temperature=0.0, max_tokens=400,
+            model=model, temperature=0.0, max_tokens=1024,
         )
         score = _extract_score(response)
         if score is not None:
@@ -443,7 +472,7 @@ def _score_rubric_dim(
         time.sleep(0.5)
 
     if not scores:
-        return {"score": 5.0, "score_0_1": 0.5, "explanation": ""}
+        return None
 
     raw = scores[0]
     return {
@@ -507,6 +536,9 @@ class SSRScorer:
                 b64, media_type, dim, headline, inside_message, occasion,
                 model=self.model,
             )
+            if result is None:
+                log.warning(f"Rubric judge failed for {dim} after 3 retries, excluding")
+                continue
             scores[dim] = result["score_0_1"]
             scores[f"{dim}_raw_1_10"] = result["score"]
             scores[f"{dim}_method"] = "rubric_judge"
