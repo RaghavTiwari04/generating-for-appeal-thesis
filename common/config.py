@@ -50,8 +50,8 @@ class Settings(BaseSettings):
     # LLMs
     anthropic_api_key: str | None = None
     openai_api_key: str | None = None
-    llm_provider: str = "openai"
-    llm_model: str = "gpt-4.1-mini"
+    llm_provider: str = "anthropic"
+    llm_model: str = "claude-sonnet-4-6"
 
     # HuggingFace
     hf_token: str | None = None

@@ -171,7 +171,7 @@ def _call_openai(
 class LLMScorer:
     """Score generated card images via VLM — same output format as PredictorRunner."""
 
-    provider: str = settings.llm_provider
+    provider: str = "openai"
     model: str | None = None
 
     def __post_init__(self):
@@ -179,7 +179,7 @@ class LLMScorer:
             if self.provider == "openai":
                 self.model = "gpt-4.1-mini"
             else:
-                self.model = "claude-sonnet-4-6"
+                self.model = settings.llm_model
 
     def score_one(
         self, image: Image.Image, headline: str, inside_message: str, occasion: str
