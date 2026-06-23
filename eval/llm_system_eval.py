@@ -108,7 +108,12 @@ def _load_image(cover_path: str) -> Image.Image | None:
         return None
 
 
-def _score_cards(cards_df: pd.DataFrame, out_dir: Path | None = None) -> pd.DataFrame:
+def _score_cards(
+    cards_df: pd.DataFrame,
+    out_dir: Path | None = None,
+    provider: str = "openai",
+    model: str | None = None,
+) -> pd.DataFrame:
     """Score cards using SSR methodology (Maier et al. 2025).
 
     Each card is evaluated by 3 synthetic consumer profiles (SSR)
@@ -117,7 +122,7 @@ def _score_cards(cards_df: pd.DataFrame, out_dir: Path | None = None) -> pd.Data
     This produces realistic response distributions (KS>0.85) unlike
     direct numerical ratings (KS=0.26).
     """
-    scorer = SSRScorer()
+    scorer = SSRScorer(provider=provider, model=model)
     log.info(
         f"SSR scoring {len(cards_df)} cards × {len(scorer.profiles)} consumer profiles"
     )
@@ -190,6 +195,8 @@ def run(
     occasions: str = "birthday/general",
     human_per_occasion: int = 3,
     out_dir: str | Path = "./artifacts/llm_system_eval",
+    provider: str = "openai",
+    model: str = "",
 ) -> LLMSystemEvalReport:
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
@@ -212,7 +219,7 @@ def run(
     if all_cards.empty:
         raise SystemExit("No cards found. Generate cards under conditions A/B/C first.")
 
-    ratings_df = _score_cards(all_cards, out_dir=out)
+    ratings_df = _score_cards(all_cards, out_dir=out, provider=provider, model=model or None)
     ratings_df.to_csv(out / "raw_ratings.csv", index=False)
 
     cond_means = ratings_df.groupby("condition")["purchase_intent"].mean().to_dict()

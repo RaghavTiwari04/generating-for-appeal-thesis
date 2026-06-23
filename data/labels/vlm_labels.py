@@ -444,9 +444,12 @@ _COST_TABLE: dict[str, tuple[float, float]] = {
     "claude-sonnet-4-6": (3.0, 15.0),
     "claude-sonnet-4-20250514": (3.0, 15.0),
     "claude-haiku-3-5-20241022": (0.80, 4.0),
+    "claude-haiku-4-5": (0.80, 4.0),
     "claude-3-5-sonnet-20241022": (3.0, 15.0),
     "gpt-4o": (2.50, 10.0),
     "gpt-4o-mini": (0.15, 0.60),
+    "gpt-4.1-mini": (0.40, 1.60),
+    "gpt-4.1-nano": (0.10, 0.40),
 }
 
 

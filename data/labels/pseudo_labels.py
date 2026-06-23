@@ -162,6 +162,41 @@ def _call_anthropic(image_b64: str, user_text: str, model: str) -> dict | None:
     return _parse_response(blocks[0])
 
 
+def _call_openai(image_b64: str, user_text: str, model: str) -> dict | None:
+    """Call OpenAI vision API."""
+    from openai import OpenAI
+
+    client = OpenAI(api_key=settings.openai_api_key)
+    try:
+        resp = client.chat.completions.create(
+            model=model,
+            max_tokens=400,
+            messages=[
+                {"role": "system", "content": RATING_SYSTEM},
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:image/jpeg;base64,{image_b64}",
+                                "detail": "low",
+                            },
+                        },
+                        {"type": "text", "text": user_text},
+                    ],
+                },
+            ],
+        )
+    except Exception as e:
+        log.warning(f"OpenAI API error: {e}")
+        return None
+    choice = resp.choices[0] if resp.choices else None
+    if not choice or not choice.message.content:
+        return None
+    return _parse_response(choice.message.content)
+
+
 _UPSERT = """
 INSERT INTO saleability_labels (listing_id, label_source, score, raw)
 VALUES (%(listing_id)s, %(label_source)s, %(score)s, %(raw)s)
@@ -202,6 +237,7 @@ def build_and_persist(
     label_source: str = "llm_pseudo_v1",
     *,
     limit: int | None = None,
+    provider: str | None = None,
     model: str | None = None,
 ) -> int:
     pool = _load_pool(limit=limit)
@@ -209,18 +245,21 @@ def build_and_persist(
         log.warning("No cards in pool to pseudo-label.")
         return 0
 
-    if settings.llm_provider != "anthropic":
-        raise NotImplementedError(
-            "Only the Anthropic provider has a vision call wired up in pseudo_labels.py."
-        )
-    model = model or settings.llm_model
+    provider = provider or settings.llm_provider
+    if not model:
+        if provider == "openai":
+            model = "gpt-4.1-mini"
+        else:
+            model = settings.llm_model
+
+    caller = _call_openai if provider == "openai" else _call_anthropic
 
     rows: list[PseudoLabelRow] = []
     for _, row in pool.iterrows():
         b64 = _fetch_image_b64(row["cover_path"])
         if not b64:
             continue
-        resp = _call_anthropic(b64, _user_prompt(row), model)
+        resp = caller(b64, _user_prompt(row), model)
         if not resp:
             log.warning(f"No usable JSON for listing_id={row['listing_id']}")
             continue
@@ -242,11 +281,13 @@ def build_and_persist(
 def run(
     label_source: str = "llm_pseudo_v1",
     limit: int = 0,
+    provider: str = "",
     model: str = "",
 ) -> None:
     written = build_and_persist(
         label_source=label_source,
         limit=(limit or None),
+        provider=(provider or None),
         model=(model or None),
     )
     print(f"Wrote {written} pseudo-label rows with label_source={label_source!r}")

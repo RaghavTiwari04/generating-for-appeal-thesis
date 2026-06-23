@@ -355,6 +355,78 @@ def _call_anthropic(
     return ""
 
 
+def _call_openai(
+    image_b64: str,
+    media_type: str,
+    system_prompt: str,
+    user_text: str,
+    model: str | None = None,
+    temperature: float = 0.8,
+    max_tokens: int = 200,
+    api_retries: int = 5,
+) -> str:
+    from openai import OpenAI
+
+    model = model or "gpt-4.1-mini"
+    client = OpenAI(api_key=settings.openai_api_key)
+
+    for attempt in range(api_retries):
+        try:
+            resp = client.chat.completions.create(
+                model=model,
+                max_tokens=max_tokens,
+                temperature=temperature,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "image_url",
+                                "image_url": {
+                                    "url": f"data:{media_type};base64,{image_b64}",
+                                    "detail": "low",
+                                },
+                            },
+                            {"type": "text", "text": user_text},
+                        ],
+                    },
+                ],
+            )
+            choice = resp.choices[0] if resp.choices else None
+            if choice and choice.message.content:
+                return choice.message.content
+            return ""
+        except Exception as e:
+            wait = min(2 ** attempt, 30)
+            log.warning(f"OpenAI API error (attempt {attempt + 1}/{api_retries}): {e}")
+            if attempt < api_retries - 1:
+                time.sleep(wait)
+
+    return ""
+
+
+def _call_vlm(
+    image_b64: str,
+    media_type: str,
+    system_prompt: str,
+    user_text: str,
+    provider: str = "anthropic",
+    model: str | None = None,
+    temperature: float = 0.8,
+    max_tokens: int = 200,
+) -> str:
+    if provider == "openai":
+        return _call_openai(
+            image_b64, media_type, system_prompt, user_text,
+            model=model, temperature=temperature, max_tokens=max_tokens,
+        )
+    return _call_anthropic(
+        image_b64, media_type, system_prompt, user_text,
+        model=model, temperature=temperature, max_tokens=max_tokens,
+    )
+
+
 # ---------------------------------------------------------------------------
 # SSR: free-text elicitation for purchase intent
 # ---------------------------------------------------------------------------
@@ -375,6 +447,7 @@ def _score_purchase_intent_ssr(
     headline: str,
     occasion: str,
     profiles: list[dict],
+    provider: str = "anthropic",
     model: str | None = None,
     temperature: float = 1.0,
     epsilon: float = 0.0,
@@ -391,9 +464,9 @@ def _score_purchase_intent_ssr(
 
     for profile in profiles:
         sys_prompt = _ssr_system_prompt(profile)
-        response = _call_anthropic(
+        response = _call_vlm(
             image_b64, media_type, sys_prompt, question,
-            model=model, temperature=0.8, max_tokens=200,
+            provider=provider, model=model, temperature=0.8, max_tokens=200,
         )
         if not response:
             response = "I am unsure about this card."
@@ -443,6 +516,7 @@ def _score_rubric_dim(
     headline: str,
     inside_message: str,
     occasion: str,
+    provider: str = "anthropic",
     model: str | None = None,
 ) -> dict:
     """Score one dimension using rubric-guided LLM judge (temp=0)."""
@@ -459,9 +533,9 @@ def _score_rubric_dim(
     explanations = []
 
     for attempt in range(3):
-        response = _call_anthropic(
+        response = _call_vlm(
             image_b64, media_type, JUDGE_SYSTEM_PROMPT, user_text,
-            model=model, temperature=0.0, max_tokens=1024,
+            provider=provider, model=model, temperature=0.0, max_tokens=1024,
         )
         score = _extract_score(response)
         if score is not None:
@@ -497,10 +571,18 @@ class SSRScorer:
     chain-of-thought, 1-10 scale, temperature=0. >80% human agreement.
     """
 
+    provider: str = "openai"
     model: str | None = None
     ssr_temperature: float = 1.0
     ssr_epsilon: float = 0.0
     profiles: list[dict] = field(default_factory=lambda: list(CONSUMER_PROFILES))
+
+    def __post_init__(self):
+        if not self.model:
+            if self.provider == "openai":
+                self.model = "gpt-4.1-mini"
+            else:
+                self.model = settings.llm_model
 
     def score_one(
         self,
@@ -516,6 +598,7 @@ class SSRScorer:
         pi_result = _score_purchase_intent_ssr(
             b64, media_type, headline, occasion,
             profiles=self.profiles,
+            provider=self.provider,
             model=self.model,
             temperature=self.ssr_temperature,
             epsilon=self.ssr_epsilon,
@@ -534,7 +617,7 @@ class SSRScorer:
         for dim in RUBRIC_DIMS:
             result = _score_rubric_dim(
                 b64, media_type, dim, headline, inside_message, occasion,
-                model=self.model,
+                provider=self.provider, model=self.model,
             )
             if result is None:
                 log.warning(f"Rubric judge failed for {dim} after 3 retries, excluding")
