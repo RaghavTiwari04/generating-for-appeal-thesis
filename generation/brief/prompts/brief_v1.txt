@@ -25,6 +25,7 @@ Hard rules:
 - Avoid clichés flagged in MARKET_SIGNALS.gaps.
 - Match `tone` strictly: warm-sincere is not interchangeable with warm-humorous.
 - Sympathy / bereavement cards never include humour or bright neon.
+- The `headline` must contain only plain text — NO emoji, NO unicode symbols.
 
 CONTEXT
 =======
