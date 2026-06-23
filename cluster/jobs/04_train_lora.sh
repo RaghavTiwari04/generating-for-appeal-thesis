@@ -1,9 +1,9 @@
 #!/bin/bash
 #SBATCH --job-name=gc-lora
-#SBATCH --partition=a40
+#SBATCH --partition=a100
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=8
-#SBATCH --mem=48G
+#SBATCH --mem=64G
 #SBATCH --time=04:00:00
 #SBATCH --output=logs/slurm-%j-lora.out
 #SBATCH --error=logs/slurm-%j-lora.err
