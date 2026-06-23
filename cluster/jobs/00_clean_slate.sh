@@ -40,9 +40,7 @@ UPDATE listing_features SET
     image_complexity = NULL,
     duplicate_cluster_id = NULL,
     duplicate_cluster_size = NULL,
-    predictor_scores = NULL,
-    feature_version = NULL,
-    computed_at = NULL;
+    predictor_scores = NULL;
 
 COMMIT;
 
