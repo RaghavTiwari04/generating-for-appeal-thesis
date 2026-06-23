@@ -51,6 +51,7 @@ _RULES: dict[str, list[str]] = {
     "birthday/general": ["birthday", "bday", "happy birthday"],
     "birthday/milestone": ["18th", "21st", "30th", "40th", "50th", "60th", "70th", "80th", "milestone"],
     "birthday/kids": ["kids birthday", "children's birthday", "age 1", "age 2", "age 3", "age 4", "age 5"],
+    "birthday/relationship": ["boyfriend birthday", "girlfriend birthday", "husband birthday", "wife birthday", "partner birthday", "for him birthday", "for her birthday", "hubby birthday", "wifey birthday", "fiance birthday"],
     "christmas/general": ["christmas", "xmas", "festive", "merry christmas"],
     "christmas/humorous": ["christmas funny", "funny christmas", "humorous christmas"],
     "mothers_day": ["mother's day", "mothers day", "mum birthday", "mom birthday"],
