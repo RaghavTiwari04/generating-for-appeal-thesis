@@ -54,3 +54,10 @@ pipeline_flowchart.html
 
 # Generated card outputs (regenerable)
 generated/
+generated_card.png
+
+# Cluster data dumps (large, local only)
+cluster_data/
+
+# Temp debug files
+tmp_*.py
