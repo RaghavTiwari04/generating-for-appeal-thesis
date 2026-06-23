@@ -177,7 +177,7 @@ class LLMScorer:
     def __post_init__(self):
         if not self.model:
             if self.provider == "openai":
-                self.model = "gpt-4o"
+                self.model = "gpt-4.1-mini"
             else:
                 self.model = settings.llm_model
 

@@ -649,7 +649,7 @@ def build_and_persist(
         if provider == "anthropic":
             model = settings.llm_model
         else:
-            model = "gpt-4o"
+            model = "gpt-4.1-mini"
 
     # Validate API key
     if provider == "anthropic" and not settings.anthropic_api_key:
@@ -705,12 +705,11 @@ def build_dual(
     )
     stats_o = build_and_persist(
         provider="openai",
-        label_source="vlm_4head_gpt4o",
+        label_source="vlm_4head_openai",
         limit=limit,
         force=force,
     )
-    # Compute inter-model agreement
-    _report_agreement("vlm_4head_claude", "vlm_4head_gpt4o")
+    _report_agreement("vlm_4head_claude", "vlm_4head_openai")
     return stats_a, stats_o
 
 
@@ -829,7 +828,7 @@ def stats() -> None:
 @app.command()
 def agreement() -> None:
     """Compute inter-model agreement between Claude and GPT-4o labels."""
-    _report_agreement("vlm_4head_claude", "vlm_4head_gpt4o")
+    _report_agreement("vlm_4head_claude", "vlm_4head_openai")
 
 
 if __name__ == "__main__":
