@@ -107,7 +107,7 @@ def _generate_naive(occasion: str, seed: int) -> EvalCard:
 # ---------------------------------------------------------------------------
 # Condition B — pipeline, no rerank (N=1)
 # ---------------------------------------------------------------------------
-def _generate_pipeline_no_rerank(occasion: str, seed: int) -> EvalCard:
+def _generate_pipeline_no_rerank(occasion: str, seed: int, scorer: str = "predictor") -> EvalCard:
     from pipeline.orchestrator import OrchestratorConfig, generate
 
     cfg = OrchestratorConfig(
@@ -115,6 +115,7 @@ def _generate_pipeline_no_rerank(occasion: str, seed: int) -> EvalCard:
         top_k=1,
         image_seed_base=seed,
         condition_tag=CONDITION_TAGS["B"],
+        scorer=scorer,
     )
     ranked = generate({"occasion": occasion, "tone": "warm-sincere"}, cfg)
     c = ranked[0]
@@ -132,7 +133,7 @@ def _generate_pipeline_no_rerank(occasion: str, seed: int) -> EvalCard:
 # ---------------------------------------------------------------------------
 # Condition C — pipeline + rerank (N=8)
 # ---------------------------------------------------------------------------
-def _generate_pipeline_rerank(occasion: str, seed: int) -> EvalCard:
+def _generate_pipeline_rerank(occasion: str, seed: int, scorer: str = "predictor") -> EvalCard:
     from pipeline.orchestrator import OrchestratorConfig, generate
 
     cfg = OrchestratorConfig(
@@ -140,6 +141,7 @@ def _generate_pipeline_rerank(occasion: str, seed: int) -> EvalCard:
         top_k=1,
         image_seed_base=seed,
         condition_tag=CONDITION_TAGS["C"],
+        scorer=scorer,
     )
     ranked = generate({"occasion": occasion, "tone": "warm-sincere"}, cfg)
     c = ranked[0]
@@ -231,6 +233,7 @@ def generate_eval_set(
     n_per_condition_per_occasion: int = 2,
     seed_base: int = 0,
     conditions: tuple[str, ...] = ("A", "B", "C", "D"),
+    scorer: str = "predictor",
 ) -> list[EvalCard]:
     cards: list[EvalCard] = []
     for occ_i, occasion in enumerate(occasions):
@@ -241,9 +244,9 @@ def generate_eval_set(
                     if cond == "A":
                         card = _generate_naive(occasion, seed)
                     elif cond == "B":
-                        card = _generate_pipeline_no_rerank(occasion, seed)
+                        card = _generate_pipeline_no_rerank(occasion, seed, scorer=scorer)
                     elif cond == "C":
-                        card = _generate_pipeline_rerank(occasion, seed)
+                        card = _generate_pipeline_rerank(occasion, seed, scorer=scorer)
                     elif cond == "D":
                         card = _sample_human_bestseller(occasion, seed)
                         if card is None:
@@ -266,14 +269,21 @@ if __name__ == "__main__":
 
 
     def cli(
-        occasions: str = "birthday/general,christmas/general,mothers_day,valentines_day,sympathy/bereavement,thank_you,graduation,anniversary/general",
+        occasions: str = "birthday/general,birthday/milestone,birthday/kids,birthday/relationship",
         n: int = 2,
-        conditions: str = "A,B,C,D",
+        conditions: str = "A,B,C",
         seed: int = 0,
+        scorer: str = "predictor",
     ) -> None:
         occ_list = [o.strip() for o in occasions.split(",")]
         cond_tuple = tuple(c.strip() for c in conditions.split(","))
-        cards = generate_eval_set(occ_list, n_per_condition_per_occasion=n, seed_base=seed, conditions=cond_tuple)
+        cards = generate_eval_set(
+            occ_list,
+            n_per_condition_per_occasion=n,
+            seed_base=seed,
+            conditions=cond_tuple,
+            scorer=scorer,
+        )
         print(f"Generated {len(cards)} eval cards")
 
     typer.run(cli)
