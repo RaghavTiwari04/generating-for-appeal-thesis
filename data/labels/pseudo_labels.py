@@ -250,7 +250,7 @@ def build_and_persist(
         if provider == "openai":
             model = "gpt-4.1-mini"
         else:
-            model = settings.llm_model
+            model = "claude-sonnet-4-6"
 
     caller = _call_openai if provider == "openai" else _call_anthropic
 

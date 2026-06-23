@@ -61,12 +61,12 @@ def call_llm(prompt: str, *, max_tokens: int = 1024, temperature: float = 0.7) -
     raise ValueError(f"Unknown LLM provider: {provider}")
 
 
-def _call_anthropic(prompt: str, *, max_tokens: int = 1024) -> str:
+def _call_anthropic(prompt: str, *, max_tokens: int = 1024, model: str = "claude-sonnet-4-6") -> str:
     from anthropic import Anthropic
 
     client = Anthropic(api_key=settings.anthropic_api_key)
     response = client.messages.create(
-        model=settings.llm_model,
+        model=model,
         max_tokens=max_tokens,
         messages=[{"role": "user", "content": prompt}],
     )

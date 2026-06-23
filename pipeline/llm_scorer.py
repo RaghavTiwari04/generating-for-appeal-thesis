@@ -179,7 +179,7 @@ class LLMScorer:
             if self.provider == "openai":
                 self.model = "gpt-4.1-mini"
             else:
-                self.model = settings.llm_model
+                self.model = "claude-sonnet-4-6"
 
     def score_one(
         self, image: Image.Image, headline: str, inside_message: str, occasion: str

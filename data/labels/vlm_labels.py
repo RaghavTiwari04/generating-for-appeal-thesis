@@ -647,7 +647,7 @@ def build_and_persist(
     # Resolve model
     if not model:
         if provider == "anthropic":
-            model = settings.llm_model
+            model = "claude-sonnet-4-6"
         else:
             model = "gpt-4.1-mini"
 

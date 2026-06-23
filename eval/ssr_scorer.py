@@ -317,7 +317,7 @@ def _call_anthropic(
 ) -> str:
     import anthropic
 
-    model = model or settings.llm_model
+    model = model or "claude-sonnet-4-6"
     client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
 
     for attempt in range(api_retries):
@@ -582,7 +582,7 @@ class SSRScorer:
             if self.provider == "openai":
                 self.model = "gpt-4.1-mini"
             else:
-                self.model = settings.llm_model
+                self.model = "claude-sonnet-4-6"
 
     def score_one(
         self,
