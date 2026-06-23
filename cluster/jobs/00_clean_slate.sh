@@ -19,7 +19,7 @@ echo "=== Clean slate reset ==="
 echo "Start: $(date)"
 
 # --- DB cleanup ---
-psql -h localhost -p 5433 -U "$USER" -d greeting_cards <<'SQL'
+psql -h localhost -p 5433 -U gc -d greeting_cards <<'SQL'
 BEGIN;
 
 -- Delete all VLM / pseudo labels
@@ -32,12 +32,16 @@ DELETE FROM generated_cards;
 UPDATE listing_features SET
     clip_embedding = NULL,
     occasion = NULL,
+    occasion_confidence = NULL,
+    occasion_multilabel = NULL,
     extracted_text = NULL,
-    colour_palette = NULL,
+    palette_lab = NULL,
     image_complexity = NULL,
-    cluster_id = NULL,
-    cluster_size = NULL,
-    predictor_scores = NULL;
+    duplicate_cluster_id = NULL,
+    duplicate_cluster_size = NULL,
+    predictor_scores = NULL,
+    feature_version = NULL,
+    computed_at = NULL;
 
 COMMIT;
 

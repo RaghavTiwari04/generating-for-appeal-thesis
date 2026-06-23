@@ -176,6 +176,9 @@ def _persist(
                     "seed": cand.seed,
                 },
             )
+            row = cur.fetchone()
+            if row:
+                cand.card_id = str(row["card_id"])
 
 
 if __name__ == "__main__":

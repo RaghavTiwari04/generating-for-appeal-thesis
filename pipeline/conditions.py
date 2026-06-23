@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import random
 from dataclasses import dataclass
+from pathlib import Path
 
 from psycopg.types.json import Jsonb
 
@@ -80,10 +81,22 @@ def _generate_naive(occasion: str, seed: int) -> EvalCard:
     )
     composed = result.image
 
+    import hashlib
     import io
     buf = io.BytesIO()
     composed.save(buf, format="PNG")
-    _, storage_path = put_image(buf.getvalue(), content_type="image/png")
+    data = buf.getvalue()
+    try:
+        _, storage_path = put_image(data, content_type="image/png")
+    except Exception as e:
+        out_dir = Path("./artifacts/generated_cards")
+        out_dir.mkdir(parents=True, exist_ok=True)
+        slug = occasion.replace("/", "_")
+        digest = hashlib.sha256(data).hexdigest()[:16]
+        local_path = out_dir / f"naive_{slug}_{seed}_{digest}.png"
+        local_path.write_bytes(data)
+        storage_path = str(local_path)
+        log.warning(f"MinIO upload failed ({e}), saved locally: {local_path}")
 
     from generation.message.generate import generate_message
     msg = generate_message(
@@ -123,10 +136,11 @@ def _generate_pipeline_no_rerank(occasion: str, seed: int, scorer: str = "predic
         condition="B",
         condition_tag=CONDITION_TAGS["B"],
         occasion=occasion,
-        cover_path=None,  # already persisted by orchestrator
+        cover_path=None,
         headline=c.headline,
         inside_message=c.inside_message,
         predicted_scores=c.scores or {},
+        card_id=c.card_id,
     )
 
 
@@ -153,6 +167,7 @@ def _generate_pipeline_rerank(occasion: str, seed: int, scorer: str = "predictor
         headline=c.headline,
         inside_message=c.inside_message,
         predicted_scores=c.scores or {},
+        card_id=c.card_id,
     )
 
 
@@ -255,10 +270,14 @@ def generate_eval_set(
                     else:
                         raise ValueError(cond)
 
-                    card_id = _persist_eval_card(card, seed)
-                    card.card_id = card_id
-                    cards.append(card)
-                    log.info(f"Generated {cond} {occasion} seed={seed} card_id={card_id}")
+                    if cond in ("B", "C") and card.card_id:
+                        cards.append(card)
+                        log.info(f"Generated {cond} {occasion} seed={seed} card_id={card.card_id}")
+                    else:
+                        card_id = _persist_eval_card(card, seed)
+                        card.card_id = card_id
+                        cards.append(card)
+                        log.info(f"Generated {cond} {occasion} seed={seed} card_id={card_id}")
                 except Exception as e:
                     log.error(f"Failed condition={cond} occasion={occasion} seed={seed}: {e}")
     return cards
