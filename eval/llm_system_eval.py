@@ -38,7 +38,7 @@ from PIL import Image
 from common.db import connection, engine
 from common.logging import get_logger
 from common.storage import get_object
-from pipeline.llm_scorer import DIMS, LLMScorer
+from eval.ssr_scorer import DIMS, SSRScorer
 
 log = get_logger(__name__)
 
@@ -109,34 +109,59 @@ def _load_image(cover_path: str) -> Image.Image | None:
         return None
 
 
-def _score_cards(cards_df: pd.DataFrame, n_judges: int = N_JUDGES) -> pd.DataFrame:
-    scorer = LLMScorer()
-    log.info(f"Scoring {len(cards_df)} cards × {n_judges} judges via {scorer.provider}/{scorer.model}")
+def _score_cards(cards_df: pd.DataFrame, n_judges: int = N_JUDGES, out_dir: Path | None = None) -> pd.DataFrame:
+    """Score cards using SSR methodology (Maier et al. 2025).
+
+    Each card is evaluated by n_judges synthetic consumer profiles.
+    SSR elicits free-text responses from the LLM, then maps them to
+    Likert distributions via embedding similarity to reference statements.
+    This produces realistic response distributions (KS>0.85) unlike
+    direct numerical ratings (KS=0.26).
+    """
+    scorer = SSRScorer()
+    log.info(
+        f"SSR scoring {len(cards_df)} cards × {len(scorer.profiles)} consumer profiles"
+    )
 
     ratings = []
+    response_log = []
     for _, row in cards_df.iterrows():
         img = _load_image(row["cover_path"])
         if img is None:
             continue
 
-        for judge_id in range(n_judges):
-            scores = scorer.score_one(
-                image=img,
-                headline=row.get("headline_text", "") or "",
-                inside_message=row.get("inside_message", "") or "",
-                occasion=row.get("occasion", "birthday/general") or "birthday/general",
-            )
+        scores = scorer.score_one(
+            image=img,
+            headline=row.get("headline_text", "") or "",
+            inside_message=row.get("inside_message", "") or "",
+            occasion=row.get("occasion", "birthday/general") or "birthday/general",
+        )
+
+        responses = scores.pop("_responses", [])
+        response_log.extend([
+            {"card_key": row["card_key"], **r} for r in responses
+        ])
+
+        for profile in scorer.profiles:
             ratings.append({
                 "card_key": row["card_key"],
                 "condition": row["condition_tag"],
                 "occasion": row.get("occasion", ""),
-                "judge_id": f"llm_judge_{judge_id}",
+                "judge_id": f"consumer_age{profile['age']}",
                 **{d: scores.get(d, 0.5) for d in DIMS},
             })
-            log.info(
-                f"  {row['condition_tag']} card={row['card_key'][:8]}... "
-                f"judge={judge_id} pi={scores.get('purchase_intent', 0):.2f}"
-            )
+
+        log.info(
+            f"  {row['condition_tag']} card={row['card_key'][:8]}... "
+            f"pi={scores.get('purchase_intent', 0):.2f} "
+            f"aes={scores.get('aesthetic', 0):.2f}"
+        )
+
+    if response_log:
+        resp_df = pd.DataFrame(response_log)
+        save_dir = out_dir or Path("./artifacts/llm_system_eval")
+        save_dir.mkdir(parents=True, exist_ok=True)
+        resp_df.to_csv(save_dir / "ssr_responses.csv", index=False)
 
     return pd.DataFrame(ratings)
 
@@ -191,7 +216,7 @@ def run(
     if all_cards.empty:
         raise SystemExit("No cards found. Generate cards under conditions A/B/C first.")
 
-    ratings_df = _score_cards(all_cards, n_judges=n_judges)
+    ratings_df = _score_cards(all_cards, n_judges=n_judges, out_dir=out)
     ratings_df.to_csv(out / "raw_ratings.csv", index=False)
 
     cond_means = ratings_df.groupby("condition")["purchase_intent"].mean().to_dict()
