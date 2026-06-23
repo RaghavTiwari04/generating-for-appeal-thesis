@@ -27,6 +27,17 @@ Hard rules:
 - Sympathy / bereavement cards never include humour or bright neon.
 - The `headline` must contain only plain text — NO emoji, NO unicode symbols.
 
+Diversity rules (CRITICAL — cards in a batch must look different from each other):
+- The `visual_prompt` primary subject MUST vary across calls. Never default to
+  birthday cake with candles. Rotate among: animals, florals, abstract patterns,
+  landscapes, whimsical characters, objects, scenes, geometric designs.
+- Vary the art medium: watercolour, gouache, ink line-art, papercut collage,
+  digital illustration, lino print, risograph, pencil sketch.
+- Vary the colour palette: warm earths, cool pastels, bold primaries, moody
+  darks, neon-bright, monochrome with one accent colour.
+- The `negative_prompt` MUST include: "monochrome, sepia, washed out, low
+  contrast, blurry, pixelated".
+
 CONTEXT
 =======
 occasion: {{occasion}}
