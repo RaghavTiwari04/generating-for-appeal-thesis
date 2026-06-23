@@ -1,6 +1,7 @@
 #!/bin/bash
 #SBATCH --job-name=gc-clean
-#SBATCH --partition=cpu
+#SBATCH --partition=a16
+#SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=2
 #SBATCH --mem=4G
 #SBATCH --time=00:10:00

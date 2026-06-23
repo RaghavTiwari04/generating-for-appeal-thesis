@@ -1,6 +1,7 @@
 #!/bin/bash
 #SBATCH --job-name=gc-vlm-label
-#SBATCH --partition=cpu
+#SBATCH --partition=a16
+#SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=8G
 #SBATCH --time=04:00:00
