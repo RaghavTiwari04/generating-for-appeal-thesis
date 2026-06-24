@@ -22,7 +22,13 @@ if [ -d "$PG_PREFIX/bin" ]; then
     export LD_LIBRARY_PATH="$PG_PREFIX/lib:${LD_LIBRARY_PATH:-}"
 fi
 
-# Start Postgres
+# Start Postgres — remove stale PID from previous node/job
+if [ -f "$PG_DIR/postmaster.pid" ]; then
+    OLD_PID=$(head -1 "$PG_DIR/postmaster.pid")
+    if ! kill -0 "$OLD_PID" 2>/dev/null; then
+        rm -f "$PG_DIR/postmaster.pid"
+    fi
+fi
 pg_ctl -D "$PG_DIR" -l "$PG_DIR/postgres.log" start 2>/dev/null || true
 sleep 2
 
