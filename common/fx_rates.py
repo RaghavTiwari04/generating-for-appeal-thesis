@@ -95,9 +95,11 @@ def get_rate(from_currency: str) -> float:
 def to_gbp(minor_units: int | None, currency: str | None) -> float | None:
     """Convert minor units (pence/cents) in `currency` to GBP float.
 
-    Returns None if either input is None.
+    Returns None if either input is None or not a valid string.
     """
     if minor_units is None or currency is None:
+        return None
+    if not isinstance(currency, str):
         return None
     rate = get_rate(currency)
     return round(minor_units / 100.0 * rate, 4)

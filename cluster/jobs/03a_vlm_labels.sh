@@ -10,7 +10,7 @@
 #SBATCH --mail-type=END,FAIL
 #SBATCH --mail-user=${USER}
 
-# VLM labelling — scores scraped cards on 4 dimensions via Claude Sonnet 4.
+# VLM labelling — scores scraped cards on 5 dimensions via Claude Sonnet 4.
 # CPU-only (API calls). Needs ANTHROPIC_API_KEY in .env.
 # Runs AFTER occasion classifier (needs occasion labels to filter).
 
