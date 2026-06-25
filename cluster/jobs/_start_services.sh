@@ -22,15 +22,21 @@ if [ -d "$PG_PREFIX/bin" ]; then
     export LD_LIBRARY_PATH="$PG_PREFIX/lib:${LD_LIBRARY_PATH:-}"
 fi
 
-# Start Postgres — remove stale PID from previous node/job
-if [ -f "$PG_DIR/postmaster.pid" ]; then
-    OLD_PID=$(head -1 "$PG_DIR/postmaster.pid")
-    if ! kill -0 "$OLD_PID" 2>/dev/null; then
-        rm -f "$PG_DIR/postmaster.pid"
-    fi
-fi
+# Start Postgres — pg_ctl handles stale PIDs natively.
+# Do NOT manually rm postmaster.pid — causes NFS cache invalidation issues
+# that make Postgres shut down immediately after start.
 pg_ctl -D "$PG_DIR" -l "$PG_DIR/postgres.log" start 2>/dev/null || true
-sleep 2
+sleep 3
+# Verify Postgres is accepting connections
+if ! pg_isready -h localhost -p 5433 -q 2>/dev/null; then
+    # Retry: stop any zombie, clean PID, restart
+    pg_ctl -D "$PG_DIR" stop -m immediate 2>/dev/null || true
+    sleep 2
+    rm -f "$PG_DIR/postmaster.pid"
+    sleep 1
+    pg_ctl -D "$PG_DIR" -l "$PG_DIR/postgres.log" start 2>/dev/null || true
+    sleep 3
+fi
 
 # Start MinIO — use 9002 to avoid port conflicts with system services
 MINIO_PORT="${MINIO_PORT:-9002}"
