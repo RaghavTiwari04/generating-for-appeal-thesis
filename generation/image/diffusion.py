@@ -11,6 +11,7 @@ trained by `generation/image/loras/train_lora.py` (separate script, GPU-only).
 
 from __future__ import annotations
 
+import gc
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -144,21 +145,21 @@ class DiffusionRunner:
         self._active_loras = []
 
     def _free_pipeline(self) -> None:
-        """Unload gen pipeline to free VRAM for Fill pipeline."""
+        """Unload gen pipeline to free VRAM."""
         if self._pipe is not None:
             self.unload_loras()
-            self._pipe.to("cpu")
             del self._pipe
             self._pipe = None
+            gc.collect()
             torch.cuda.empty_cache()
             log.info("Freed gen pipeline VRAM")
 
     def _free_fill_pipeline(self) -> None:
         """Unload Fill pipeline to free VRAM."""
         if self._fill_pipe is not None:
-            self._fill_pipe.to("cpu")
             del self._fill_pipe
             self._fill_pipe = None
+            gc.collect()
             torch.cuda.empty_cache()
             log.info("Freed Fill pipeline VRAM")
 
