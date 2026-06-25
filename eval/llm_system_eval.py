@@ -83,7 +83,7 @@ def _load_human_bestsellers(occasions: list[str], per_occasion: int = 3) -> pd.D
     JOIN listing_features lf USING (listing_id)
     JOIN listing_images li ON li.listing_id = l.listing_id AND li.is_primary
     LEFT JOIN saleability_labels sl
-      ON sl.listing_id = l.listing_id AND sl.label_source = 'vlm_4head_v1'
+      ON sl.listing_id = l.listing_id AND sl.label_source = 'vlm_5head_v1'
     WHERE lf.occasion = ANY(%(occasions)s)
     ORDER BY COALESCE(sl.score, 0) DESC
     LIMIT %(limit)s
