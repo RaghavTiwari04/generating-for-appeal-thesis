@@ -32,10 +32,16 @@ fi
 pg_ctl -D "$PG_DIR" -l "$PG_DIR/postgres.log" start 2>/dev/null || true
 sleep 2
 
-# Start MinIO
+# Start MinIO — use 9002 to avoid port conflicts with system services
+MINIO_PORT="${MINIO_PORT:-9002}"
+MINIO_CONSOLE_PORT="${MINIO_CONSOLE_PORT:-9003}"
 export MINIO_ROOT_USER=minioadmin
 export MINIO_ROOT_PASSWORD=minioadmin
-"$MINIO_BIN" server "$MINIO_DIR" --address ":9000" --console-address ":9001" &>/dev/null &
+# Kill stale MinIO on this port
+fuser -k "$MINIO_PORT/tcp" 2>/dev/null || true
+sleep 1
+"$MINIO_BIN" server "$MINIO_DIR" --address ":$MINIO_PORT" --console-address ":$MINIO_CONSOLE_PORT" &>/dev/null &
 sleep 2
+export MINIO_ENDPOINT="http://localhost:$MINIO_PORT"
 
-echo "Services: Postgres :5433, MinIO :9000"
+echo "Services: Postgres :5433, MinIO :$MINIO_PORT"
