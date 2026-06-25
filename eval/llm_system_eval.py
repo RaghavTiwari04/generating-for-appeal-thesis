@@ -64,7 +64,7 @@ def _load_generated_cards(conditions: list[str]) -> pd.DataFrame:
            gc.cover_path,
            gc.headline_text,
            gc.inside_message,
-           (gc.brief->'request'->>'occasion') AS occasion
+           COALESCE(gc.brief->'request'->>'occasion', gc.brief->>'occasion') AS occasion
     FROM generated_cards gc
     WHERE gc.condition_tag = ANY(%(conditions)s)
     """
@@ -104,7 +104,8 @@ def _load_image(cover_path: str) -> Image.Image | None:
             data = Path(cover_path).read_bytes()
         return Image.open(io.BytesIO(data)).convert("RGB")
     except Exception as e:
-        log.warning(f"Failed to load image {cover_path}: {e}")
+        short_path = cover_path.rsplit("/", 1)[-1][:20] if "/" in cover_path else cover_path[:20]
+        log.warning(f"Image load failed [{type(e).__name__}]: ...{short_path} — {e}")
         return None
 
 
@@ -205,16 +206,22 @@ def run(
     gen_conditions = [c for c in CONDITIONS if c != "D_human_bestseller"]
 
     cards_gen = _load_generated_cards(gen_conditions)
+    n_before_filter = len(cards_gen)
     if occ_list:
         cards_gen = cards_gen[cards_gen["occasion"].isin(occ_list)]
+    if len(cards_gen) < n_before_filter:
+        dropped = n_before_filter - len(cards_gen)
+        log.warning(f"Occasion filter dropped {dropped}/{n_before_filter} generated cards (NULL/mismatched occasion)")
 
     cards_human = _load_human_bestsellers(occ_list, per_occasion=human_per_occasion)
 
     all_cards = pd.concat([cards_gen, cards_human], ignore_index=True)
+    per_cond = cards_gen.groupby("condition_tag").size().to_dict()
     log.info(
         f"Cards to evaluate: {len(all_cards)} "
         f"({len(cards_gen)} generated + {len(cards_human)} human bestsellers)"
     )
+    log.info(f"Per-condition breakdown: {per_cond}")
 
     if all_cards.empty:
         raise SystemExit("No cards found. Generate cards under conditions A/B/C first.")

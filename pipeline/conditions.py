@@ -227,7 +227,7 @@ def _persist_eval_card(card: EvalCard, seed: int) -> str:
             {
                 "pv": f"eval_{card.condition}",
                 "ct": card.condition_tag,
-                "brief": Jsonb({"occasion": card.occasion, "condition": card.condition}),
+                "brief": Jsonb({"request": {"occasion": card.occasion}, "condition": card.condition}),
                 "cover_path": card.cover_path,
                 "inside_message": card.inside_message,
                 "headline_text": card.headline,
