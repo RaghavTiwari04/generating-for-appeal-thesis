@@ -194,7 +194,7 @@ def pairwise_holm(df: pd.DataFrame, metric: str = "purchase_intent") -> dict[str
 def run(
     occasions: str = "birthday/general",
     human_per_occasion: int = 3,
-    out_dir: str | Path = "./artifacts/llm_system_eval",
+    out_dir: str = "./artifacts/llm_system_eval",
     provider: str = "openai",
     model: str = "",
 ) -> LLMSystemEvalReport:
