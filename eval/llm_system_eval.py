@@ -320,11 +320,11 @@ def run(
     # Pairwise tests with effect sizes
     pairwise, effect_sizes = pairwise_holm(ratings_df)
 
-    # TOST equivalence tests (B/C vs D)
+    # TOST equivalence tests (all pairs)
     tost_results = {}
-    for pair_a, pair_b in [("B_pipeline_no_rerank", "D_human_bestseller"),
-                            ("C_pipeline_rerank", "D_human_bestseller"),
-                            ("B_pipeline_no_rerank", "C_pipeline_rerank")]:
+    seen_conds = [c for c in CONDITIONS if c in ratings_df["condition"].values]
+    tost_pairs = [(a, b) for i, a in enumerate(seen_conds) for b in seen_conds[i + 1:]]
+    for pair_a, pair_b in tost_pairs:
         sa = ratings_df[ratings_df["condition"] == pair_a]["purchase_intent"].dropna()
         sb = ratings_df[ratings_df["condition"] == pair_b]["purchase_intent"].dropna()
         if len(sa) >= 3 and len(sb) >= 3:
