@@ -75,7 +75,7 @@ def _load_generated_cards(conditions: list[str]) -> pd.DataFrame:
     return pd.read_sql(sql, engine(), params={"conditions": conditions})
 
 
-def _load_human_bestsellers(occasions: list[str], per_occasion: int = 3) -> pd.DataFrame:
+def _load_human_bestsellers(occasions: list[str], per_occasion: int = 5) -> pd.DataFrame:
     sql = """
     SELECT li.listing_id::text AS card_key,
            'D_human_bestseller' AS condition_tag,
