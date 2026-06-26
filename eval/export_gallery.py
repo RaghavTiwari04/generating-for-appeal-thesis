@@ -27,23 +27,6 @@ FROM generated_cards gc
 WHERE gc.condition_tag = ANY(%(conditions)s)
 """
 
-_HUMAN_SQL = """
-SELECT li.listing_id::text AS card_key,
-       'D_human_bestseller' AS condition_tag,
-       li.storage_path AS cover_path,
-       l.title AS headline_text,
-       lf.occasion
-FROM listings l
-JOIN listing_features lf USING (listing_id)
-JOIN listing_images li ON li.listing_id = l.listing_id AND li.is_primary
-LEFT JOIN saleability_labels sl
-  ON sl.listing_id = l.listing_id AND sl.label_source = 'vlm_5head_v1'
-WHERE lf.occasion = ANY(%(occasions)s)
-  AND l.is_bestseller = TRUE
-ORDER BY COALESCE(sl.score, 0) DESC
-LIMIT %(limit)s
-"""
-
 
 def _fetch_image_bytes(cover_path: str) -> bytes | None:
     try:
@@ -57,26 +40,14 @@ def _fetch_image_bytes(cover_path: str) -> bytes | None:
 
 def export(
     out_dir: Path,
-    occasions: list[str],
     conditions: tuple[str, ...] = (
-        "A_naive_ai", "B_pipeline_no_rerank", "C_pipeline_rerank",
+        "A_naive_ai", "B_pipeline_no_rerank", "C_pipeline_rerank", "D_human_bestseller",
     ),
-    d_per_occasion: int = 5,
 ) -> None:
     out_dir = Path(out_dir)
 
-    # Load A/B/C from generated_cards
-    gen_df = pd.read_sql(_GEN_SQL, engine(), params={"conditions": list(conditions)})
-    log.info(f"Loaded {len(gen_df)} generated cards (A/B/C)")
-
-    # Load D from listings
-    human_df = pd.read_sql(
-        _HUMAN_SQL, engine(),
-        params={"occasions": occasions, "limit": d_per_occasion * len(occasions)},
-    )
-    log.info(f"Loaded {len(human_df)} human bestseller cards (D)")
-
-    all_cards = pd.concat([gen_df, human_df], ignore_index=True)
+    all_cards = pd.read_sql(_GEN_SQL, engine(), params={"conditions": list(conditions)})
+    log.info(f"Loaded {len(all_cards)} cards (conditions: {', '.join(conditions)})")
 
     exported = 0
     html_sections: dict[str, list[str]] = {}
@@ -132,10 +103,7 @@ if __name__ == "__main__":
 
     def cli(
         out: str = "./card_gallery",
-        occasions: str = "birthday/general,birthday/milestone,birthday/kids,birthday/relationship",
-        d_per_occasion: int = 5,
     ) -> None:
-        occ_list = [o.strip() for o in occasions.split(",")]
-        export(Path(out), occ_list, d_per_occasion=d_per_occasion)
+        export(Path(out))
 
     typer.run(cli)
