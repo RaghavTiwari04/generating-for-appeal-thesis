@@ -195,7 +195,7 @@ def _bootstrap_ci(
 
 
 def _tost_equivalence(
-    sa: pd.Series, sb: pd.Series, delta: float = 0.05,
+    sa: pd.Series, sb: pd.Series, delta: float = 0.02,
 ) -> dict:
     """Two One-Sided Tests for equivalence within ±delta."""
     from scipy.stats import mannwhitneyu
@@ -395,7 +395,7 @@ def run(
         r = report.pairwise_effect_size.get(pair, float("nan"))
         sig = "***" if p < 0.001 else "**" if p < 0.01 else "*" if p < 0.05 else "ns"
         log.info(f"  {pair:50s}  p={p:.4f} r={r:+.3f} {sig}")
-    log.info(f"\nTOST equivalence tests (δ=0.05):")
+    log.info(f"\nTOST equivalence tests (δ=0.02):")
     for pair, res in report.tost_equivalence.items():
         eq = "EQUIVALENT" if res["equivalent"] else "inconclusive"
         log.info(f"  {pair:50s}  Δ={res['mean_diff']:+.4f} p_tost={res['p_tost']:.4f} {eq}")
