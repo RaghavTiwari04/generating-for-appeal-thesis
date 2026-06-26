@@ -277,6 +277,7 @@ def run(
         if not csv_path.exists():
             raise SystemExit(f"No ratings file at {csv_path}. Run without --analyze-only first.")
         ratings_df = pd.read_csv(csv_path)
+        all_cards = ratings_df
         log.info(f"Loaded {len(ratings_df)} existing ratings from {csv_path}")
     else:
         gen_conditions = [c for c in CONDITIONS if c != "D_human_bestseller"]
