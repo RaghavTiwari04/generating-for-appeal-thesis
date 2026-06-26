@@ -200,8 +200,8 @@ def _tost_equivalence(
     """Two One-Sided Tests for equivalence within ±delta."""
     from scipy.stats import mannwhitneyu
     diff = sa.mean() - sb.mean()
-    _, p_lower = mannwhitneyu(sa, sb + delta, alternative="less")
-    _, p_upper = mannwhitneyu(sa - delta, sb, alternative="greater")
+    _, p_upper = mannwhitneyu(sa, sb + delta, alternative="less")
+    _, p_lower = mannwhitneyu(sa, sb - delta, alternative="greater")
     p_tost = max(p_lower, p_upper)
     return {
         "mean_diff": float(diff),
