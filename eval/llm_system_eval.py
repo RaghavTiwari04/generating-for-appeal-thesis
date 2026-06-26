@@ -207,7 +207,7 @@ def _tost_equivalence(
         "mean_diff": float(diff),
         "delta": delta,
         "p_tost": float(p_tost),
-        "equivalent": p_tost < 0.05,
+        "equivalent": bool(p_tost < 0.05),
     }
 
 
