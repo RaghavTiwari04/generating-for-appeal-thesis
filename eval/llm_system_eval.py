@@ -261,7 +261,7 @@ def per_occasion_pairwise(df: pd.DataFrame, metric: str = "purchase_intent") -> 
 
 def run(
     occasions: str = "birthday/general",
-    human_per_occasion: int = 3,
+    human_per_occasion: int = 5,
     out_dir: str = "./artifacts/llm_system_eval",
     provider: str = "openai",
     model: str = "",
