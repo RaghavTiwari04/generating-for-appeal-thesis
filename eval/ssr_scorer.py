@@ -385,7 +385,7 @@ def _call_openai(
                                 "type": "image_url",
                                 "image_url": {
                                     "url": f"data:{media_type};base64,{image_b64}",
-                                    "detail": "low",
+                                    "detail": "high",
                                 },
                             },
                             {"type": "text", "text": user_text},
