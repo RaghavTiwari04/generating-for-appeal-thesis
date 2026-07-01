@@ -42,6 +42,7 @@ class DiffusionConfig:
     width: int = 1024
     gen_steps: int = 28
     gen_guidance: float = 3.5
+    lora_scale: float = 0.65
     fill_steps: int = 50
     fill_guidance: float = 30.0
 
@@ -130,8 +131,9 @@ class DiffusionRunner:
             return
         try:
             pipe.load_lora_weights(str(lora_dir))
+            pipe.fuse_lora(lora_scale=self.cfg.lora_scale)
             self._active_loras.append(str(lora_dir))
-            log.info(f"Loaded LoRA: {lora_dir.name}")
+            log.info(f"Loaded LoRA: {lora_dir.name} (scale={self.cfg.lora_scale})")
         except Exception as e:
             log.warning(f"LoRA load failed for {occasion}: {e}")
 

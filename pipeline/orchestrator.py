@@ -11,6 +11,7 @@ calibrated saleability score.
 from __future__ import annotations
 
 import io
+import random
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -58,16 +59,32 @@ def generate(request: dict, cfg: OrchestratorConfig | None = None) -> list[Candi
 
     visual_prompt = brief.visual_prompt
     lora_dir = Path("generation/image/loras") / request["occasion"].replace("/", "_")
-    if lora_dir.exists():
-        visual_prompt = f"TOK {visual_prompt}"
+    has_lora = lora_dir.exists()
 
-    images = diffusion.generate(
-        prompt=visual_prompt,
-        negative_prompt=brief.negative_prompt,
-        occasion=request["occasion"],
-        seed=cfg.image_seed_base,
-        n=cfg.n_candidates,
-    )
+    STYLE_PREFIXES = [
+        "",
+        "watercolour illustration of ",
+        "3D rendered cartoon of ",
+        "paper cut collage of ",
+        "flat vector illustration of ",
+        "oil painting of ",
+        "whimsical pencil sketch of ",
+        "retro vintage poster of ",
+    ]
+
+    images = []
+    rng = random.Random(cfg.image_seed_base or 0)
+    for i in range(cfg.n_candidates):
+        style = rng.choice(STYLE_PREFIXES)
+        prompt_i = f"TOK {style}{visual_prompt}" if has_lora else f"{style}{visual_prompt}"
+        img = diffusion.generate(
+            prompt=prompt_i,
+            negative_prompt=brief.negative_prompt,
+            occasion=request["occasion"],
+            seed=(cfg.image_seed_base + i) if cfg.image_seed_base is not None else None,
+            n=1,
+        )
+        images.extend(img)
 
     inside = generate_message(
         occasion=request["occasion"],
