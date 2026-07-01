@@ -1,7 +1,8 @@
-"""Export eval cards (A/B/C/D) from MinIO to a local gallery folder.
+"""Export eval cards (A/B/C/D) from MinIO to a local gallery folder with LLM scores.
 
 Usage (run on compute node with MinIO running):
     python -m eval.export_gallery --out /path/to/card_gallery
+    python -m eval.export_gallery --out /path/to/card_gallery --ratings ./artifacts/llm_system_eval/raw_ratings.csv
 """
 from __future__ import annotations
 
@@ -42,6 +43,10 @@ ORDER BY COALESCE(sl.score, 0) DESC
 LIMIT %(limit)s
 """
 
+DIMS = ["purchase_intent", "occasion_fit", "aesthetic", "emotional_resonance", "distinctiveness"]
+DIM_SHORT = {"purchase_intent": "PI", "occasion_fit": "OF", "aesthetic": "AE",
+             "emotional_resonance": "ER", "distinctiveness": "DI"}
+
 
 def _fetch_image_bytes(cover_path: str) -> bytes | None:
     try:
@@ -53,10 +58,20 @@ def _fetch_image_bytes(cover_path: str) -> bytes | None:
         return None
 
 
+def _score_bar(val: float) -> str:
+    pct = int(val * 100)
+    color = "#4caf50" if val >= 0.7 else "#ff9800" if val >= 0.5 else "#f44336"
+    return (
+        f'<div style="background:#333;border-radius:3px;height:8px;width:100%;margin:1px 0">'
+        f'<div style="background:{color};height:8px;border-radius:3px;width:{pct}%"></div></div>'
+    )
+
+
 def export(
     out_dir: Path,
     occasions: list[str],
     d_per_occasion: int = 5,
+    ratings_path: str | None = None,
 ) -> None:
     out_dir = Path(out_dir)
 
@@ -72,6 +87,15 @@ def export(
 
     all_cards = pd.concat([gen_df, human_df], ignore_index=True)
 
+    ratings_df = None
+    if ratings_path:
+        rp = Path(ratings_path)
+        if rp.exists():
+            ratings_df = pd.read_csv(rp)
+            log.info(f"Loaded {len(ratings_df)} ratings from {rp}")
+        else:
+            log.warning(f"Ratings file not found: {rp}")
+
     exported = 0
     html_sections: dict[str, list[str]] = {}
 
@@ -80,6 +104,7 @@ def export(
         occasion = row.get("occasion", "unknown") or "unknown"
         cover_path = row.get("cover_path")
         headline = row.get("headline_text", "") or ""
+        card_key = row["card_key"]
 
         if not cover_path:
             continue
@@ -99,21 +124,63 @@ def export(
         fpath.write_bytes(data)
         exported += 1
 
+        scores_html = ""
+        if ratings_df is not None:
+            match = ratings_df[ratings_df["card_key"] == card_key]
+            if not match.empty:
+                r = match.iloc[0]
+                scores_html = '<div style="text-align:left;width:200px;margin-top:4px">'
+                for dim in DIMS:
+                    val = r.get(dim, float("nan"))
+                    if pd.notna(val):
+                        label = DIM_SHORT.get(dim, dim[:2].upper())
+                        scores_html += (
+                            f'<div style="display:flex;align-items:center;gap:4px;font-size:10px">'
+                            f'<span style="width:20px">{label}</span>'
+                            f'<div style="flex:1">{_score_bar(val)}</div>'
+                            f'<span style="width:28px;text-align:right">{val:.2f}</span></div>'
+                        )
+                scores_html += "</div>"
+
         if cond not in html_sections:
             html_sections[cond] = []
         html_sections[cond].append(
-            f'<div style="text-align:center">'
-            f'<img src="{cond}/{fname}" width=200><br>'
-            f'<small>{occasion}<br>{headline[:30]}</small></div>'
+            f'<div style="text-align:center;border:1px solid #333;border-radius:8px;'
+            f'padding:8px;background:#1a1a1a">'
+            f'<img src="{cond}/{fname}" width=200 style="border-radius:4px"><br>'
+            f'<small style="color:#aaa">{occasion}<br>{headline[:40]}</small>'
+            f'{scores_html}</div>'
         )
 
-    html = '<html><body style="font-family:sans-serif;background:#111;color:#eee">'
-    html += "<h1>Generated Cards Gallery</h1>"
-    for cond in sorted(html_sections):
-        html += f"<h2>{cond}</h2>"
-        html += '<div style="display:flex;flex-wrap:wrap;gap:10px">'
+    cond_labels = {
+        "A_naive_ai": "A — Naive AI (no LoRA, no pipeline)",
+        "B_pipeline_no_rerank": "B — Pipeline, no rerank (N=1)",
+        "C_pipeline_rerank": "C — Pipeline + rerank (N=8)",
+        "D_human_bestseller": "D — Human Bestsellers",
+    }
+
+    html = (
+        '<html><head><style>'
+        'body{font-family:system-ui,sans-serif;background:#111;color:#eee;margin:20px}'
+        'h1{border-bottom:2px solid #444;padding-bottom:10px}'
+        'h2{color:#88aaff;margin-top:30px}'
+        '.grid{display:flex;flex-wrap:wrap;gap:12px;margin-top:10px}'
+        '</style></head><body>'
+    )
+    html += "<h1>Card Gallery with LLM Scores</h1>"
+    if ratings_df is not None:
+        html += "<p>PI=Purchase Intent, OF=Occasion Fit, AE=Aesthetic, ER=Emotional Resonance, DI=Distinctiveness</p>"
+
+    for cond in ["A_naive_ai", "B_pipeline_no_rerank", "C_pipeline_rerank", "D_human_bestseller"]:
+        if cond not in html_sections:
+            continue
+        label = cond_labels.get(cond, cond)
+        n = len(html_sections[cond])
+        html += f'<h2>{label} ({n} cards)</h2>'
+        html += '<div class="grid">'
         html += "".join(html_sections[cond])
         html += "</div>"
+
     html += "</body></html>"
     (out_dir / "gallery.html").write_text(html)
 
@@ -127,8 +194,9 @@ if __name__ == "__main__":
         out: str = "./card_gallery",
         occasions: str = "birthday/general,birthday/milestone,birthday/kids,birthday/relationship",
         d_per_occasion: int = 5,
+        ratings: str = "./artifacts/llm_system_eval/raw_ratings.csv",
     ) -> None:
         occ_list = [o.strip() for o in occasions.split(",")]
-        export(Path(out), occ_list, d_per_occasion=d_per_occasion)
+        export(Path(out), occ_list, d_per_occasion=d_per_occasion, ratings_path=ratings)
 
     typer.run(cli)
