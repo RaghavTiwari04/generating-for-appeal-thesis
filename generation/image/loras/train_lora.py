@@ -113,9 +113,9 @@ def _materialise_training_images(
 
 def train(
     occasion: str = typer.Option(...),
-    rank: int = 8,
-    steps: int = 500,
-    lr: float = 4e-5,
+    rank: int = 32,
+    steps: int = 1500,
+    lr: float = 1e-5,
     n_images: int = 150,
     erase_text: bool = typer.Option(True, help="Inpaint text regions out of training images"),
     base_model: str = "black-forest-labs/FLUX.1-dev",

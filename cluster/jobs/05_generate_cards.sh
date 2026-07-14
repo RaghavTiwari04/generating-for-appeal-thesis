@@ -31,6 +31,6 @@ python -m pipeline.conditions \
     --occasions "$OCCASIONS" \
     --conditions "A,B,C" \
     --n "$N_PER" \
-    --seed 42
+    --seed 10000
 
 echo "=== Done: $(date) ==="

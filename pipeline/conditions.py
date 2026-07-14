@@ -64,7 +64,7 @@ def _generate_naive(occasion: str, seed: int) -> EvalCard:
 
     cfg = DiffusionConfig()
     runner = DiffusionRunner(cfg)
-    mask_spec = LayoutMaskSpec()
+    mask_spec = LayoutMaskSpec(width=cfg.width, height=cfg.height)
     mask_image, _ = build_headline_mask(mask_spec)
 
     images = runner.generate(
@@ -77,7 +77,7 @@ def _generate_naive(occasion: str, seed: int) -> EvalCard:
 
     result = compose(
         cover=images[0], headline=headline,
-        tone="warm-sincere", style_tags=[], mask_spec=mask_spec,
+        tone="warm-sincere", style_tags=[],
     )
     composed = result.image
 

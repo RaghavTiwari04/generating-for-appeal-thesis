@@ -37,19 +37,56 @@ FONTS: dict[str, FontSpec] = {
 }
 
 
-# (tone, style_tag) -> ordered list of font keys (best fit first)
+# (tone, style_tag) -> ordered list of font keys (best fit first).
+# style_tag vocabulary (from brief_v1.txt): watercolour, illustrated,
+# photographic, typographic, bold-graphic, minimalist, hand-drawn, retro,
+# modern-serif. An empty style_tag "" is the per-tone fallback used by
+# select_fonts when no tag-specific rule matches — every tone has one, so a
+# card never silently drops to the global _DEFAULT.
 RULES: dict[tuple[str, str], tuple[str, ...]] = {
+    # -- warm-sincere (the eval default tone) — full tag coverage --
+    ("warm-sincere", "watercolour"): ("great_vibes", "lora", "cormorant"),
+    ("warm-sincere", "illustrated"): ("lora", "cormorant", "dancing_script"),
+    ("warm-sincere", "photographic"): ("lora", "spectral", "cormorant"),
+    ("warm-sincere", "typographic"): ("playfair", "cormorant", "rubik"),
+    ("warm-sincere", "bold-graphic"): ("anton", "bebas", "playfair"),
+    ("warm-sincere", "minimalist"): ("cormorant", "spectral", "lora"),
+    ("warm-sincere", "hand-drawn"): ("caveat", "dancing_script", "great_vibes"),
+    ("warm-sincere", "retro"): ("righteous", "rubik", "lora"),
+    ("warm-sincere", "modern-serif"): ("playfair", "cormorant", "spectral"),
+    ("warm-sincere", ""): ("great_vibes", "lora", "cormorant"),
+    # -- warm-humorous --
     ("warm-humorous", "watercolour"): ("caveat", "sacramento", "amatic"),
     ("warm-humorous", "illustrated"): ("caveat", "dancing_script", "amatic"),
-    ("warm-sincere", "watercolour"): ("great_vibes", "lora", "cormorant"),
-    ("warm-sincere", "minimalist"): ("cormorant", "spectral", "lora"),
-    ("formal-sincere", "minimalist"): ("cormorant", "playfair", "spectral"),
-    ("formal-sincere", "modern-serif"): ("playfair", "cormorant", "spectral"),
+    ("warm-humorous", "hand-drawn"): ("caveat", "amatic", "permanent_marker"),
+    ("warm-humorous", "bold-graphic"): ("permanent_marker", "anton", "righteous"),
+    ("warm-humorous", "typographic"): ("righteous", "anton", "rubik"),
+    ("warm-humorous", ""): ("caveat", "dancing_script", "amatic"),
+    # -- funny-irreverent --
     ("funny-irreverent", "bold-graphic"): ("bebas", "anton", "alfa_slab_one"),
     ("funny-irreverent", "typographic"): ("anton", "alfa_slab_one", "righteous"),
+    ("funny-irreverent", "hand-drawn"): ("permanent_marker", "amatic", "caveat"),
+    ("funny-irreverent", "retro"): ("righteous", "alfa_slab_one", "bebas"),
+    ("funny-irreverent", ""): ("anton", "bebas", "permanent_marker"),
+    # -- formal-sincere --
+    ("formal-sincere", "minimalist"): ("cormorant", "playfair", "spectral"),
+    ("formal-sincere", "modern-serif"): ("playfair", "cormorant", "spectral"),
+    ("formal-sincere", "typographic"): ("playfair", "spectral", "rubik"),
+    ("formal-sincere", ""): ("playfair", "cormorant", "spectral"),
+    # -- minimalist --
     ("minimalist", "minimalist"): ("rubik", "spectral", "lora"),
-    ("sentimental", "hand-drawn"): ("dancing_script", "great_vibes", "caveat"),
+    ("minimalist", "modern-serif"): ("spectral", "lora", "playfair"),
+    ("minimalist", "typographic"): ("rubik", "bebas", "spectral"),
+    ("minimalist", ""): ("rubik", "spectral", "lora"),
+    # -- religious --
     ("religious", "minimalist"): ("cormorant", "playfair", "spectral"),
+    ("religious", "modern-serif"): ("playfair", "cormorant", "spectral"),
+    ("religious", ""): ("cormorant", "playfair", "spectral"),
+    # -- sentimental --
+    ("sentimental", "hand-drawn"): ("dancing_script", "great_vibes", "caveat"),
+    ("sentimental", "watercolour"): ("great_vibes", "dancing_script", "lora"),
+    ("sentimental", "illustrated"): ("dancing_script", "lora", "cormorant"),
+    ("sentimental", ""): ("dancing_script", "great_vibes", "caveat"),
 }
 
 

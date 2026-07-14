@@ -4,7 +4,7 @@
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=64G
-#SBATCH --time=04:00:00
+#SBATCH --time=12:00:00
 #SBATCH --output=logs/slurm-%j-lora.out
 #SBATCH --error=logs/slurm-%j-lora.err
 #SBATCH --mail-type=END,FAIL
@@ -32,7 +32,7 @@ OCCASIONS=(
 
 for occ in "${OCCASIONS[@]}"; do
     echo "--- Training LoRA for: $occ ($(date)) ---"
-    python -m generation.image.loras.train_lora --occasion "$occ" --rank 8 --steps 500
+    python -m generation.image.loras.train_lora --occasion "$occ" --rank 32 --steps 1500 --lr 1e-5
 done
 
 echo "=== Done: $(date) ==="

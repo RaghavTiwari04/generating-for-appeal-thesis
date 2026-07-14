@@ -38,11 +38,11 @@ class DiffusionConfig:
     flux_fill_model_id: str = settings.flux_fill_model_id
     device: str = "cuda" if torch.cuda.is_available() else "cpu"
     dtype: torch.dtype = torch.bfloat16 if torch.cuda.is_available() else torch.float32
-    height: int = 1024
-    width: int = 1024
+    height: int = 1264   # portrait ≈ A6 aspect, near-uniform upscale to 1240×1748
+    width: int = 896
     gen_steps: int = 28
     gen_guidance: float = 3.5
-    lora_scale: float = 0.65
+    lora_scale: float = 0.4
     fill_steps: int = 50
     fill_guidance: float = 30.0
 

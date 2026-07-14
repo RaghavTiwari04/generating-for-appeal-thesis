@@ -152,6 +152,7 @@ def train(
     seed: int = 42,
     out_dir: str = "./artifacts/predictor",
     wandb: bool = True,
+    embed_text: bool = True,
 ) -> None:
     cfg = TrainConfig(
         epochs=epochs, batch_size=batch_size, lr=lr,
@@ -182,9 +183,24 @@ def train(
         raise SystemExit("No training data available. Run scrapers + feature extraction first.")
     splits = split_by_seller(df, SplitConfig(seed=cfg.seed))
 
-    train_ds = PredictorDataset(splits["train"])
-    val_ds = PredictorDataset(splits["val"])
-    test_ds = PredictorDataset(splits["test"])
+    # Wire a text embedder so text_emb is real (not zeros). The predictor is
+    # served real SigLIP text vectors at rerank time (pipeline/rerank.py), so
+    # training on zeros would create a train/serve mismatch and leave the text
+    # block of the trunk untrained. `embed_texts` L2-normalises to match rerank.
+    text_embedder = None
+    if embed_text:
+        try:
+            from data.features.clip_embed import CLIPEmbedder
+
+            _embedder = CLIPEmbedder()
+            text_embedder = _embedder.embed_texts
+            log.info("Text embedder wired: SigLIP text tower (extracted_text → text_emb)")
+        except Exception as e:  # noqa: BLE001 — degrade to zeros rather than fail training
+            log.warning(f"Text embedder unavailable ({e}); falling back to zero text_emb")
+
+    train_ds = PredictorDataset(splits["train"], text_embedder=text_embedder)
+    val_ds = PredictorDataset(splits["val"], text_embedder=text_embedder)
+    test_ds = PredictorDataset(splits["test"], text_embedder=text_embedder)
 
     # Log label coverage per head — confirms masked multi-task setup
     _log_mask_coverage(splits["train"], "train")

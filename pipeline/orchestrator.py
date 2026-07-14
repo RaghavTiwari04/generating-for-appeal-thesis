@@ -55,7 +55,11 @@ def generate(request: dict, cfg: OrchestratorConfig | None = None) -> list[Candi
     )
 
     diffusion = get_diffusion_runner()
-    mask_spec = LayoutMaskSpec()
+    # Reserve the headline region at *generation* resolution so the Fill pass
+    # clears it to whitespace. compose() derives its own bbox from the upscaled
+    # cover, so both stay proportionally aligned to the same fractional region.
+    gen_mask_spec = LayoutMaskSpec(width=diffusion.cfg.width, height=diffusion.cfg.height)
+    headline_mask, _ = build_headline_mask(gen_mask_spec)
 
     visual_prompt = brief.visual_prompt
     lora_dir = Path("generation/image/loras") / request["occasion"].replace("/", "_")
@@ -83,6 +87,7 @@ def generate(request: dict, cfg: OrchestratorConfig | None = None) -> list[Candi
             occasion=request["occasion"],
             seed=(cfg.image_seed_base + i) if cfg.image_seed_base is not None else None,
             n=1,
+            mask_image=headline_mask,
         )
         images.extend(img)
 
@@ -100,7 +105,6 @@ def generate(request: dict, cfg: OrchestratorConfig | None = None) -> list[Candi
             headline=brief.headline,
             tone=request["tone"],
             style_tags=list(brief.style_tags),
-            mask_spec=mask_spec,
         )
         candidates.append(
             Candidate(

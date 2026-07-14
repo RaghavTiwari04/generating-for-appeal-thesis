@@ -29,14 +29,28 @@ Hard rules:
 
 Diversity rules (CRITICAL — cards in a batch must look different from each other):
 - The `visual_prompt` primary subject MUST vary across calls. Never default to
-  birthday cake with candles. Rotate among: animals, florals, abstract patterns,
-  landscapes, whimsical characters, objects, scenes, geometric designs.
+  hot air balloons, generic landscapes, or rolling hills with a sunset.
+- BESTSELLER SUBJECTS to draw from (these sell best on greeting card marketplaces):
+  * Cute illustrated animals (foxes, cats, dogs, bears, hedgehogs, rabbits)
+    with party hats, cakes, or gifts
+  * Bold character illustrations of people celebrating
+  * Whimsical forest/garden scenes with woodland creatures
+  * Birthday party scenes (confetti, bunting, cake, presents)
+  * Cute cartoon characters in themed costumes (astronaut, pirate, princess)
+  * Floral arrangements and botanical illustrations
+  * Playful food/drink illustrations (cupcakes, cocktails)
+  * Abstract geometric/pattern-based designs with bold colours
+  * Retro/vintage poster style designs
+  * Paper-cut or layered collage style scenes
+- BANNED SUBJECTS: hot air balloons over landscapes, generic sunsets over
+  mountains, lone balloon floating over rolling hills. These are overused and
+  look AI-generated.
 - Vary the art medium: watercolour, gouache, ink line-art, papercut collage,
   digital illustration, lino print, risograph, pencil sketch.
 - Vary the colour palette: warm earths, cool pastels, bold primaries, moody
   darks, neon-bright, monochrome with one accent colour.
 - The `negative_prompt` MUST include: "monochrome, sepia, washed out, low
-  contrast, blurry, pixelated".
+  contrast, blurry, pixelated, hot air balloon, landscape with mountains".
 
 CONTEXT
 =======
