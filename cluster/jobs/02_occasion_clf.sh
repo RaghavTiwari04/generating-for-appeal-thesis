@@ -20,8 +20,7 @@ echo "=== Occasion classifier ==="
 echo "GPU: $(nvidia-smi --query-gpu=name --format=csv,noheader)"
 echo "Start: $(date)"
 
-python -m data.features.occasion_classifier train --epochs 5
-python -m data.features.occasion_classifier infer --limit 10000
+python -m data.features.occasion_classifier infer --reclassify-all --limit 50000
 python -m data.features.dedup
 
 echo "=== Done: $(date) ==="

@@ -1,16 +1,14 @@
-"""Tests for the occasion classifier — weak labels + model inference (no DB)."""
+"""Tests for the occasion classifier — keyword rules + pick_best_occasion (no DB)."""
 
 from __future__ import annotations
 
-import pytest
-import torch
-
 from data.features.occasion_classifier import (
+    _COOCCURRENCE_RULES,
     _RULES,
     IDX_TO_OCCASION,
     OCCASION_TO_IDX,
     OCCASIONS,
-    OccasionClassifier,
+    pick_best_occasion,
     weak_label,
 )
 
@@ -37,7 +35,6 @@ class TestWeakLabels:
         assert isinstance(labels, list)
 
     def test_multilabel_possible(self) -> None:
-        # Could match birthday AND thank_you
         labels = weak_label("Thank you for the birthday wishes")
         assert len(labels) >= 1
 
@@ -46,76 +43,82 @@ class TestWeakLabels:
         lower = weak_label("happy birthday card")
         assert set(upper) == set(lower)
 
+    def test_kids_birthday_detected_reversed_order(self) -> None:
+        labels = weak_label("Birthday Card for Kids - Party Animals")
+        assert "birthday/kids" in labels
+
+    def test_kids_birthday_via_cooccurrence(self) -> None:
+        labels = weak_label("Happy Birthday to my lovely Daughter")
+        assert "birthday/kids" in labels
+
+    def test_kids_age_birthday(self) -> None:
+        labels = weak_label("Happy 5th Birthday Little One!")
+        assert "birthday/kids" in labels
+
+    def test_relationship_birthday_detected(self) -> None:
+        labels = weak_label("Birthday Card for Husband - Love You")
+        assert "birthday/relationship" in labels
+
+    def test_relationship_via_cooccurrence(self) -> None:
+        labels = weak_label("Happy Birthday to my amazing Wife")
+        assert "birthday/relationship" in labels
+
+    def test_boyfriend_birthday(self) -> None:
+        labels = weak_label("Birthday Wishes for Boyfriend")
+        assert "birthday/relationship" in labels
+
     def test_all_rules_have_valid_occasions(self) -> None:
         from common.occasions import OCCASIONS as OCC_LIST
         for occ in _RULES:
             assert occ in OCC_LIST, f"{occ!r} not in canonical taxonomy"
 
+    def test_all_cooccurrence_rules_have_valid_occasions(self) -> None:
+        from common.occasions import OCCASIONS as OCC_LIST
+        for occ in _COOCCURRENCE_RULES:
+            assert occ in OCC_LIST, f"{occ!r} not in canonical taxonomy"
 
-class TestOccasionClassifierModel:
-    @pytest.fixture
-    def model(self):
-        """Build classifier with a tiny random DistilBERT-shaped encoder (no download)."""
-        from unittest.mock import MagicMock, patch
 
-        import torch.nn as nn
+class TestPickBestOccasion:
+    def test_sub_occasion_wins_over_general(self) -> None:
+        labels = ["birthday/general", "birthday/kids"]
+        assert pick_best_occasion(labels) == "birthday/kids"
 
-        # Stub the HuggingFace encoder with a minimal 2-layer transformer
-        tiny_encoder = nn.TransformerEncoder(
-            nn.TransformerEncoderLayer(d_model=768, nhead=8, batch_first=True, dim_feedforward=128),
-            num_layers=1,
-        )
-        # Give it .config.hidden_size so the classifier can read it
-        tiny_encoder.config = MagicMock(hidden_size=768)
+    def test_general_when_only_match(self) -> None:
+        labels = ["birthday/general"]
+        assert pick_best_occasion(labels) == "birthday/general"
 
-        class _FakeLM:
-            """Minimal stand-in for a HuggingFace model."""
-            config = MagicMock(hidden_size=768)
+    def test_empty_returns_none(self) -> None:
+        assert pick_best_occasion([]) is None
 
-            def __call__(self, input_ids, attention_mask):
-                B, T = input_ids.shape
-                import torch
-                fake_last_hidden = torch.randn(B, T, 768)
-                return MagicMock(last_hidden_state=fake_last_hidden)
+    def test_relationship_wins_over_general(self) -> None:
+        labels = ["birthday/general", "birthday/relationship"]
+        assert pick_best_occasion(labels) == "birthday/relationship"
 
-        with patch(
-            "data.features.occasion_classifier.AutoModel.from_pretrained",
-            return_value=_FakeLM(),
-        ):
-            clf = OccasionClassifier(n_labels=len(OCCASIONS))
-        return clf
+    def test_milestone_wins_over_general(self) -> None:
+        labels = ["birthday/general", "birthday/milestone"]
+        assert pick_best_occasion(labels) == "birthday/milestone"
 
-    def test_forward_shape(self, model: OccasionClassifier) -> None:
-        ids = torch.randint(0, 1000, (4, 16))
-        mask = torch.ones(4, 16, dtype=torch.long)
-        out = model(ids, mask)
-        assert out.shape == (4, len(OCCASIONS))
+    def test_full_pipeline_kids_card(self) -> None:
+        text = "Happy 3rd Birthday to a Special Little Boy"
+        labels = weak_label(text)
+        best = pick_best_occasion(labels)
+        assert best == "birthday/kids"
 
-    def test_output_in_0_1(self, model: OccasionClassifier) -> None:
-        ids = torch.randint(0, 1000, (2, 32))
-        mask = torch.ones(2, 32, dtype=torch.long)
-        out = model(ids, mask)
-        assert (out >= 0.0).all() and (out <= 1.0).all()
+    def test_full_pipeline_husband_card(self) -> None:
+        text = "To My Wonderful Husband Happy Birthday"
+        labels = weak_label(text)
+        best = pick_best_occasion(labels)
+        assert best == "birthday/relationship"
 
-    def test_no_nan(self, model: OccasionClassifier) -> None:
-        ids = torch.randint(0, 500, (3, 24))
-        mask = torch.ones(3, 24, dtype=torch.long)
-        out = model(ids, mask)
-        assert not torch.isnan(out).any()
-
-    def test_different_inputs_different_outputs(self, model: OccasionClassifier) -> None:
-        torch.manual_seed(0)
-        ids1 = torch.randint(0, 1000, (1, 16))
-        ids2 = torch.randint(0, 1000, (1, 16))
-        mask = torch.ones(1, 16, dtype=torch.long)
-        out1 = model(ids1, mask)
-        out2 = model(ids2, mask)
-        assert not torch.allclose(out1, out2)
+    def test_full_pipeline_generic_birthday(self) -> None:
+        text = "Happy Birthday Floral Watercolour Card"
+        labels = weak_label(text)
+        best = pick_best_occasion(labels)
+        assert best == "birthday/general"
 
 
 class TestOccasionIndex:
     def test_bijection(self) -> None:
-        """Every occasion maps to a unique index and back."""
         for i, occ in enumerate(OCCASIONS):
             assert OCCASION_TO_IDX[occ] == i
             assert IDX_TO_OCCASION[i] == occ

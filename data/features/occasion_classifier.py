@@ -50,8 +50,29 @@ IDX_TO_OCCASION = {i: o for i, o in enumerate(OCCASIONS)}
 _RULES: dict[str, list[str]] = {
     "birthday/general": ["birthday", "bday", "happy birthday"],
     "birthday/milestone": ["18th", "21st", "30th", "40th", "50th", "60th", "70th", "80th", "milestone"],
-    "birthday/kids": ["kids birthday", "children's birthday", "age 1", "age 2", "age 3", "age 4", "age 5"],
-    "birthday/relationship": ["boyfriend birthday", "girlfriend birthday", "husband birthday", "wife birthday", "partner birthday", "for him birthday", "for her birthday", "hubby birthday", "wifey birthday", "fiance birthday"],
+    "birthday/kids": [
+        "kids birthday", "birthday kids", "children's birthday", "birthday children",
+        "birthday child", "child's birthday", "birthday boy", "birthday girl",
+        "birthday son", "son birthday", "birthday daughter", "daughter birthday",
+        "birthday nephew", "birthday niece", "birthday grandson", "birthday granddaughter",
+        "1st birthday", "2nd birthday", "3rd birthday", "4th birthday", "5th birthday",
+        "6th birthday", "7th birthday", "8th birthday", "9th birthday", "10th birthday",
+        "11th birthday", "12th birthday",
+        "first birthday", "second birthday", "third birthday",
+        "age 1", "age 2", "age 3", "age 4", "age 5", "age 6", "age 7",
+        "age 8", "age 9", "age 10", "age 11", "age 12",
+        "little one", "toddler", "baby birthday",
+    ],
+    "birthday/relationship": [
+        "boyfriend birthday", "birthday boyfriend", "boyfriend card", "boyfriend happy",
+        "girlfriend birthday", "birthday girlfriend", "girlfriend card", "girlfriend happy",
+        "husband birthday", "birthday husband", "husband card", "hubby birthday", "hubby card",
+        "wife birthday", "birthday wife", "wife card", "wifey birthday", "wifey card",
+        "partner birthday", "birthday partner", "partner card",
+        "fiance birthday", "birthday fiance", "fiancee birthday", "birthday fiancee",
+        "for him birthday", "birthday for him", "for her birthday", "birthday for her",
+        "other half", "soulmate", "love of my life",
+    ],
     "christmas/general": ["christmas", "xmas", "festive", "merry christmas"],
     "christmas/humorous": ["christmas funny", "funny christmas", "humorous christmas"],
     "mothers_day": ["mother's day", "mothers day", "mum birthday", "mom birthday"],
@@ -76,6 +97,28 @@ _RULES: dict[str, list[str]] = {
     "just_because": ["just because", "no occasion", "thinking of you"],
 }
 
+_COOCCURRENCE_RULES: dict[str, list[tuple[str, ...]]] = {
+    "birthday/kids": [
+        ("birthday", "kid"), ("birthday", "child"), ("birthday", "children"),
+        ("birthday", "son"), ("birthday", "daughter"),
+        ("birthday", "nephew"), ("birthday", "niece"),
+        ("birthday", "grandson"), ("birthday", "granddaughter"),
+        ("birthday", "toddler"), ("birthday", "baby"),
+        ("birthday", "young"), ("birthday", "little"),
+        ("bday", "kid"), ("bday", "child"), ("bday", "son"), ("bday", "daughter"),
+    ],
+    "birthday/relationship": [
+        ("birthday", "husband"), ("birthday", "wife"),
+        ("birthday", "boyfriend"), ("birthday", "girlfriend"),
+        ("birthday", "partner"), ("birthday", "fiance"), ("birthday", "fiancee"),
+        ("birthday", "hubby"), ("birthday", "wifey"),
+        ("birthday", "for him"), ("birthday", "for her"),
+        ("birthday", "soulmate"), ("birthday", "other half"),
+        ("bday", "husband"), ("bday", "wife"),
+        ("bday", "boyfriend"), ("bday", "girlfriend"),
+    ],
+}
+
 
 def weak_label(text: str) -> list[str]:
     text_l = text.lower()
@@ -83,6 +126,13 @@ def weak_label(text: str) -> list[str]:
     for occasion, keywords in _RULES.items():
         if any(kw in text_l for kw in keywords):
             labels.append(occasion)
+    for occasion, word_groups in _COOCCURRENCE_RULES.items():
+        if occasion in labels:
+            continue
+        for words in word_groups:
+            if all(w in text_l for w in words):
+                labels.append(occasion)
+                break
     return labels
 
 
@@ -199,9 +249,18 @@ ORDER BY l.last_seen_at DESC
 LIMIT %(limit)s;
 """
 
+_SELECT_ALL = """
+SELECT l.listing_id,
+       COALESCE(l.title,'') || ' ' || COALESCE(l.description,'') AS text
+FROM listings l
+JOIN listing_features lf ON lf.listing_id = l.listing_id
+ORDER BY l.last_seen_at DESC
+LIMIT %(limit)s;
+"""
+
 _UPSERT = """
 INSERT INTO listing_features (listing_id, occasion, occasion_confidence, occasion_multilabel, feature_version)
-VALUES (%(listing_id)s, %(occasion)s, %(confidence)s, %(multilabel)s, 'occ-clf-v1')
+VALUES (%(listing_id)s, %(occasion)s, %(confidence)s, %(multilabel)s, 'keyword-v2')
 ON CONFLICT (listing_id) DO UPDATE
 SET occasion = EXCLUDED.occasion,
     occasion_confidence = EXCLUDED.occasion_confidence,
@@ -210,44 +269,63 @@ SET occasion = EXCLUDED.occasion,
 """
 
 
-@app.command()
-def infer(limit: int = 2000, ckpt: Path = CKPT_PATH, batch: int = 64) -> None:
-    model, tokenizer = load_model(ckpt)
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model = model.to(device).eval()
+_SPECIFICITY_ORDER = [o for o in OCCASIONS if not o.endswith("/general")] + \
+                     [o for o in OCCASIONS if o.endswith("/general")]
 
+
+def pick_best_occasion(labels: list[str]) -> str | None:
+    """Pick most specific occasion from a list of keyword matches.
+
+    Sub-occasions (kids, relationship, milestone) win over /general
+    when both match.
+    """
+    if not labels:
+        return None
+    for occ in _SPECIFICITY_ORDER:
+        if occ in labels:
+            return occ
+    return labels[0]
+
+
+@app.command()
+def infer(
+    limit: int = 50000,
+    reclassify_all: bool = typer.Option(True, help="Re-classify all listings"),
+) -> None:
+    """Classify listings using keyword rules (no model needed)."""
+    query = _SELECT_ALL if reclassify_all else _SELECT_MISSING
     with connection() as conn, conn.cursor() as cur:
-        cur.execute(_SELECT_MISSING, {"limit": limit})
+        cur.execute(query, {"limit": limit})
         rows = cur.fetchall()
 
-    log.info(f"Inferring occasions for {len(rows)} listings")
+    log.info(f"Classifying {len(rows)} listings with keyword rules")
     processed = 0
+    stats: dict[str, int] = {}
 
-    for start in range(0, len(rows), batch):
-        chunk = rows[start : start + batch]
-        texts = [r["text"] or "" for r in chunk]
-        enc = tokenizer(texts, truncation=True, padding=True, max_length=128, return_tensors="pt")
-        with torch.inference_mode():
-            probs = model(enc["input_ids"].to(device), enc["attention_mask"].to(device))
-        probs = probs.cpu().numpy()
+    with connection() as conn, conn.cursor() as cur:
+        for r in rows:
+            text = r["text"] or ""
+            labels = weak_label(text)
+            occasion = pick_best_occasion(labels)
+            if not occasion:
+                continue
+            confidence = 1.0 if len(labels) == 1 else 0.8
+            multilabel = {o: (1.0 if o in labels else 0.0) for o in OCCASIONS}
+            cur.execute(
+                _UPSERT,
+                {
+                    "listing_id": r["listing_id"],
+                    "occasion": occasion,
+                    "confidence": confidence,
+                    "multilabel": json.dumps(multilabel),
+                },
+            )
+            stats[occasion] = stats.get(occasion, 0) + 1
+            processed += 1
 
-        with connection() as conn, conn.cursor() as cur:
-            for r, prob_vec in zip(chunk, probs, strict=True):
-                top_idx = int(np.argmax(prob_vec))
-                cur.execute(
-                    _UPSERT,
-                    {
-                        "listing_id": r["listing_id"],
-                        "occasion": IDX_TO_OCCASION[top_idx],
-                        "confidence": float(prob_vec[top_idx]),
-                        "multilabel": json.dumps(
-                            {IDX_TO_OCCASION[i]: float(p) for i, p in enumerate(prob_vec)}
-                        ),
-                    },
-                )
-        processed += len(chunk)
-
-    log.info(f"Occasion inference complete: {processed} listings")
+    log.info(f"Keyword classification complete: {processed} listings")
+    for occ, n in sorted(stats.items(), key=lambda x: -x[1]):
+        log.info(f"  {occ}: {n}")
 
 
 if __name__ == "__main__":
