@@ -367,7 +367,7 @@ def _call_openai(
 ) -> str:
     from openai import OpenAI
 
-    model = model or "gpt-4.1-mini"
+    model = model or "gpt-4o"
     client = OpenAI(api_key=settings.openai_api_key)
 
     for attempt in range(api_retries):
@@ -580,7 +580,7 @@ class SSRScorer:
     def __post_init__(self):
         if not self.model:
             if self.provider == "openai":
-                self.model = "gpt-4.1-mini"
+                self.model = "gpt-4o"
             else:
                 self.model = settings.llm_model
 
