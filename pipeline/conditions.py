@@ -14,6 +14,7 @@ Conditions:
 from __future__ import annotations
 
 import random
+import time
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -257,23 +258,30 @@ INSERT INTO generated_cards (
 """
 
 
-def _persist_eval_card(card: EvalCard, seed: int) -> str:
-    with connection() as conn, conn.cursor() as cur:
-        cur.execute(
-            _INSERT,
-            {
-                "pv": f"eval_{card.condition}",
-                "ct": card.condition_tag,
-                "brief": Jsonb({"request": {"occasion": card.occasion}, "condition": card.condition}),
-                "cover_path": card.cover_path,
-                "inside_message": card.inside_message,
-                "headline_text": card.headline,
-                "predicted_scores": Jsonb(card.predicted_scores),
-                "seed": seed,
-            },
-        )
-        card_id = str(cur.fetchone()["card_id"])
-    return card_id
+def _persist_eval_card(card: EvalCard, seed: int, retries: int = 3) -> str:
+    for attempt in range(retries):
+        try:
+            with connection() as conn, conn.cursor() as cur:
+                cur.execute(
+                    _INSERT,
+                    {
+                        "pv": f"eval_{card.condition}",
+                        "ct": card.condition_tag,
+                        "brief": Jsonb({"request": {"occasion": card.occasion}, "condition": card.condition}),
+                        "cover_path": card.cover_path,
+                        "inside_message": card.inside_message,
+                        "headline_text": card.headline,
+                        "predicted_scores": Jsonb(card.predicted_scores),
+                        "seed": seed,
+                    },
+                )
+                card_id = str(cur.fetchone()["card_id"])
+            return card_id
+        except Exception as e:
+            log.warning(f"DB persist attempt {attempt+1}/{retries} failed: {e}")
+            if attempt < retries - 1:
+                time.sleep(10 * (attempt + 1))
+    raise RuntimeError(f"DB persist failed after {retries} attempts")
 
 
 # ---------------------------------------------------------------------------

@@ -156,50 +156,62 @@ def _persist(
     cfg: OrchestratorConfig,
     brief: Brief,
     inside_alternatives: list[str],
+    retries: int = 3,
 ) -> None:
+    import time
+
     out_dir = Path("./artifacts/generated_cards")
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    with connection() as conn, conn.cursor() as cur:
-        for rank, cand in enumerate(ranked):
-            buf = io.BytesIO()
-            cand.image.save(buf, format="PNG")
-            data = buf.getvalue()
+    for rank, cand in enumerate(ranked):
+        buf = io.BytesIO()
+        cand.image.save(buf, format="PNG")
+        data = buf.getvalue()
 
+        try:
+            _, storage_path = put_image(data, content_type="image/png")
+        except Exception as e:
+            import hashlib
+            occasion_slug = request.get("occasion", "unknown").replace("/", "_")
+            digest = hashlib.sha256(data).hexdigest()[:16]
+            local_path = out_dir / f"{occasion_slug}_{rank:02d}_{digest}.png"
+            local_path.write_bytes(data)
+            storage_path = str(local_path)
+            log.warning(f"MinIO upload failed ({e}), saved locally: {local_path}")
+
+        for attempt in range(retries):
             try:
-                _, storage_path = put_image(data, content_type="image/png")
-            except Exception as e:
-                import hashlib
-                occasion_slug = request.get("occasion", "unknown").replace("/", "_")
-                digest = hashlib.sha256(data).hexdigest()[:16]
-                local_path = out_dir / f"{occasion_slug}_{rank:02d}_{digest}.png"
-                local_path.write_bytes(data)
-                storage_path = str(local_path)
-                log.warning(f"MinIO upload failed ({e}), saved locally: {local_path}")
-
-            cur.execute(
-                _INSERT,
-                {
-                    "pipeline_version": PIPELINE_VERSION,
-                    "condition_tag": cfg.condition_tag,
-                    "brief": Jsonb(
+                with connection() as conn, conn.cursor() as cur:
+                    cur.execute(
+                        _INSERT,
                         {
-                            "request": request,
-                            "brief": brief.model_dump(),
-                            "inside_alternatives": inside_alternatives,
-                            "brief_prompt_version": BRIEF_VERSION,
-                        }
-                    ),
-                    "cover_path": storage_path,
-                    "inside_message": cand.inside_message,
-                    "headline_text": cand.headline,
-                    "predicted_scores": Jsonb(cand.scores or {}),
-                    "seed": cand.seed,
-                },
-            )
-            row = cur.fetchone()
-            if row:
-                cand.card_id = str(row["card_id"])
+                            "pipeline_version": PIPELINE_VERSION,
+                            "condition_tag": cfg.condition_tag,
+                            "brief": Jsonb(
+                                {
+                                    "request": request,
+                                    "brief": brief.model_dump(),
+                                    "inside_alternatives": inside_alternatives,
+                                    "brief_prompt_version": BRIEF_VERSION,
+                                }
+                            ),
+                            "cover_path": storage_path,
+                            "inside_message": cand.inside_message,
+                            "headline_text": cand.headline,
+                            "predicted_scores": Jsonb(cand.scores or {}),
+                            "seed": cand.seed,
+                        },
+                    )
+                    row = cur.fetchone()
+                    if row:
+                        cand.card_id = str(row["card_id"])
+                break
+            except Exception as e:
+                log.warning(f"DB persist attempt {attempt+1}/{retries} failed: {e}")
+                if attempt < retries - 1:
+                    time.sleep(10 * (attempt + 1))
+                else:
+                    log.error(f"DB persist failed after {retries} attempts for rank={rank}")
 
 
 if __name__ == "__main__":

@@ -24,6 +24,19 @@ echo "=== Card generation (all conditions) ==="
 echo "GPU: $(nvidia-smi --query-gpu=name,memory.total --format=csv,noheader)"
 echo "Start: $(date)"
 
+# Postgres watchdog — restart if it crashes during long generation
+PG_DIR="/vol/bitbucket/$USER/pgdata"
+(while true; do
+    sleep 60
+    if ! pg_isready -h localhost -p 5433 -q 2>/dev/null; then
+        echo "[watchdog] Postgres down, restarting... $(date)"
+        pg_ctl -D "$PG_DIR" -l "$PG_DIR/postgres.log" start 2>/dev/null || true
+        sleep 3
+    fi
+done) &
+WATCHDOG_PID=$!
+trap "kill $WATCHDOG_PID 2>/dev/null" EXIT
+
 OCCASIONS="birthday/general,birthday/milestone,birthday/kids,birthday/relationship"
 N_PER=5
 
