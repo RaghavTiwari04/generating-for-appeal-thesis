@@ -22,8 +22,35 @@ from psycopg.types.json import Jsonb
 from common.db import connection
 from common.logging import get_logger
 from common.storage import put_image
+from generation.brief.market_signals import bestseller_subjects_for_occasion
 
 log = get_logger(__name__)
+
+_subject_cache: dict[str, list[str]] = {}
+
+DEFAULT_SUBJECTS = [
+    "fox", "hedgehog", "owl", "elephant", "cat",
+    "dog", "bear", "butterfly", "rabbit", "penguin",
+    "dinosaur", "flamingo", "turtle", "koala", "deer",
+]
+
+
+def _get_subject_pool(occasion: str) -> list[str]:
+    """Get subject pool for occasion — mined from bestsellers, cached."""
+    if occasion in _subject_cache:
+        return _subject_cache[occasion]
+    try:
+        raw = bestseller_subjects_for_occasion(occasion)
+        subjects = [s.split(" (")[0] for s in raw]
+    except Exception as e:
+        log.warning(f"Failed to mine bestseller subjects ({e}), using fallback")
+        subjects = []
+    if len(subjects) < 10:
+        for fallback in DEFAULT_SUBJECTS:
+            if fallback not in subjects:
+                subjects.append(fallback)
+    _subject_cache[occasion] = subjects
+    return subjects
 
 CONDITION_TAGS = {
     "A": "A_naive_ai",
@@ -120,7 +147,9 @@ def _generate_naive(occasion: str, seed: int) -> EvalCard:
 # ---------------------------------------------------------------------------
 # Condition B — pipeline, no rerank (N=1)
 # ---------------------------------------------------------------------------
-def _generate_pipeline_no_rerank(occasion: str, seed: int, scorer: str = "predictor") -> EvalCard:
+def _generate_pipeline_no_rerank(
+    occasion: str, seed: int, scorer: str = "predictor", subject: str | None = None,
+) -> EvalCard:
     from pipeline.orchestrator import OrchestratorConfig, generate
 
     cfg = OrchestratorConfig(
@@ -130,7 +159,10 @@ def _generate_pipeline_no_rerank(occasion: str, seed: int, scorer: str = "predic
         condition_tag=CONDITION_TAGS["B"],
         scorer=scorer,
     )
-    ranked = generate({"occasion": occasion, "tone": "warm-sincere"}, cfg)
+    request: dict = {"occasion": occasion, "tone": "warm-sincere"}
+    if subject:
+        request["constraints"] = {"suggested_subject": subject}
+    ranked = generate(request, cfg)
     c = ranked[0]
     return EvalCard(
         condition="B",
@@ -147,7 +179,9 @@ def _generate_pipeline_no_rerank(occasion: str, seed: int, scorer: str = "predic
 # ---------------------------------------------------------------------------
 # Condition C — pipeline + rerank (N=8)
 # ---------------------------------------------------------------------------
-def _generate_pipeline_rerank(occasion: str, seed: int, scorer: str = "predictor") -> EvalCard:
+def _generate_pipeline_rerank(
+    occasion: str, seed: int, scorer: str = "predictor", subject: str | None = None,
+) -> EvalCard:
     from pipeline.orchestrator import OrchestratorConfig, generate
 
     cfg = OrchestratorConfig(
@@ -157,7 +191,10 @@ def _generate_pipeline_rerank(occasion: str, seed: int, scorer: str = "predictor
         condition_tag=CONDITION_TAGS["C"],
         scorer=scorer,
     )
-    ranked = generate({"occasion": occasion, "tone": "warm-sincere"}, cfg)
+    request: dict = {"occasion": occasion, "tone": "warm-sincere"}
+    if subject:
+        request["constraints"] = {"suggested_subject": subject}
+    ranked = generate(request, cfg)
     c = ranked[0]
     return EvalCard(
         condition="C",
@@ -252,16 +289,18 @@ def generate_eval_set(
 ) -> list[EvalCard]:
     cards: list[EvalCard] = []
     for occ_i, occasion in enumerate(occasions):
+        pool = _get_subject_pool(occasion)
         for cond_j, cond in enumerate(conditions):
             for k in range(n_per_condition_per_occasion):
                 seed = seed_base + occ_i * 1000 + cond_j * 100 + k
+                subject = pool[k % len(pool)]
                 try:
                     if cond == "A":
                         card = _generate_naive(occasion, seed)
                     elif cond == "B":
-                        card = _generate_pipeline_no_rerank(occasion, seed, scorer=scorer)
+                        card = _generate_pipeline_no_rerank(occasion, seed, scorer=scorer, subject=subject)
                     elif cond == "C":
-                        card = _generate_pipeline_rerank(occasion, seed, scorer=scorer)
+                        card = _generate_pipeline_rerank(occasion, seed, scorer=scorer, subject=subject)
                     elif cond == "D":
                         card = _sample_human_bestseller(occasion, seed)
                         if card is None:

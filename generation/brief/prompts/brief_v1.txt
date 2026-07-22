@@ -18,6 +18,11 @@ Respond with **JSON only**, matching this schema (all fields required):
 }
 
 Hard rules:
+- If `constraints` contains `"suggested_subject"`, use it as a starting point
+  for your visual concept — but interpret it creatively and make it your own.
+  Combine it with unexpected settings, styles, or compositions. For example
+  if subject is "dinosaur", don't just draw a dinosaur — maybe a dinosaur
+  DJ at a rooftop party, or a tiny dinosaur asleep inside a birthday present.
 - The `visual_prompt` MUST instruct the model NOT to render the headline in
   the image (the typography module overlays text afterwards). Use phrases like
   "no text in image" or "blank space top-left for text overlay".
@@ -30,18 +35,12 @@ Hard rules:
 Diversity rules (CRITICAL — cards in a batch must look different from each other):
 - The `visual_prompt` primary subject MUST vary across calls. Never default to
   hot air balloons, generic landscapes, or rolling hills with a sunset.
-- BESTSELLER SUBJECTS to draw from (these sell best on greeting card marketplaces):
-  * Cute illustrated animals (foxes, cats, dogs, bears, hedgehogs, rabbits)
-    with party hats, cakes, or gifts
-  * Bold character illustrations of people celebrating
-  * Whimsical forest/garden scenes with woodland creatures
-  * Birthday party scenes (confetti, bunting, cake, presents)
-  * Cute cartoon characters in themed costumes (astronaut, pirate, princess)
-  * Floral arrangements and botanical illustrations
-  * Playful food/drink illustrations (cupcakes, cocktails)
-  * Abstract geometric/pattern-based designs with bold colours
-  * Retro/vintage poster style designs
-  * Paper-cut or layered collage style scenes
+- Use BESTSELLER_SUBJECTS below as your primary inspiration palette. These are
+  real subjects from top-selling cards in this occasion category, ranked by
+  popularity. Draw from them — but reinterpret creatively. Don't just copy;
+  combine subjects with fresh angles, unexpected settings, or novel styles.
+  Less popular subjects from the list can make great cards too — don't only
+  pick the #1 subject.
 - BANNED SUBJECTS: hot air balloons over landscapes, generic sunsets over
   mountains, lone balloon floating over rolling hills. These are overused and
   look AI-generated.
@@ -63,6 +62,9 @@ MARKET_SIGNALS
 ==============
 top_tropes_for_occasion:
 {{top_tropes}}
+
+BESTSELLER_SUBJECTS (ranked by frequency in real bestsellers for this occasion):
+{{bestseller_subjects}}
 
 coverage_gaps:
 {{coverage_gaps}}

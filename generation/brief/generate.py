@@ -30,6 +30,7 @@ def _render_template(req: BriefRequest) -> str:
         .replace("{{tone}}", req.tone)
         .replace("{{constraints_json}}", json.dumps(req.constraints, ensure_ascii=False))
         .replace("{{top_tropes}}", signals["top_tropes"])
+        .replace("{{bestseller_subjects}}", signals["bestseller_subjects"])
         .replace("{{coverage_gaps}}", signals["coverage_gaps"])
         .replace("{{longevity_caution}}", signals["longevity_caution"])
     )
