@@ -217,9 +217,10 @@ SELECT l.listing_id, li.storage_path, l.title, lf.occasion
 FROM listings l
 JOIN listing_features lf USING (listing_id)
 JOIN listing_images li ON li.listing_id = l.listing_id AND li.is_primary
+LEFT JOIN saleability_labels sl
+  ON sl.listing_id = l.listing_id AND sl.label_source = 'vlm_5head_v1'
 WHERE lf.occasion = %(occasion)s
-  AND l.is_bestseller = TRUE
-ORDER BY COALESCE(l.review_count, 0) + COALESCE(l.favourite_count, 0) DESC
+ORDER BY COALESCE(sl.score, 0) DESC
 LIMIT %(limit)s;
 """
 

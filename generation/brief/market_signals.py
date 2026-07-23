@@ -82,7 +82,7 @@ SELECT lf.listing_id, lf.clip_embedding, COALESCE(lf.extracted_text, l.title) AS
 FROM listing_features lf
 JOIN listings l USING (listing_id)
 LEFT JOIN saleability_labels sl
-  ON sl.listing_id = lf.listing_id AND sl.label_source = 'vlm_4head_v1'
+  ON sl.listing_id = lf.listing_id AND sl.label_source = 'vlm_5head_v1'
 WHERE lf.occasion = %(occasion)s
   AND lf.clip_embedding IS NOT NULL
 ORDER BY COALESCE(sl.score, 0) DESC
@@ -128,10 +128,11 @@ _BESTSELLER_SUBJECTS_SQL = """
 SELECT l.title, l.description
 FROM listings l
 JOIN listing_features lf USING (listing_id)
+LEFT JOIN saleability_labels sl
+  ON sl.listing_id = l.listing_id AND sl.label_source = 'vlm_5head_v1'
 WHERE lf.occasion = %(occasion)s
-  AND l.is_bestseller = TRUE
-ORDER BY COALESCE(l.review_count, 0) + COALESCE(l.favourite_count, 0) DESC
-LIMIT 500;
+ORDER BY COALESCE(sl.score, 0) DESC
+LIMIT 200;
 """
 
 
