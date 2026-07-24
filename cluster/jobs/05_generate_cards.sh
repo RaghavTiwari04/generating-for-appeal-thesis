@@ -38,12 +38,12 @@ WATCHDOG_PID=$!
 trap "kill $WATCHDOG_PID 2>/dev/null" EXIT
 
 OCCASIONS="birthday/general,birthday/milestone,birthday/kids,birthday/relationship"
-N_PER=5
+N_PER=3
 
 python -m pipeline.conditions \
     --occasions "$OCCASIONS" \
     --conditions "A,B,C" \
     --n "$N_PER" \
-    --seed 10000
+    --seed 20000
 
 echo "=== Done: $(date) ==="

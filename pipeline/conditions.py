@@ -30,21 +30,33 @@ log = get_logger(__name__)
 _subject_cache: dict[str, list[str]] = {}
 
 DEFAULT_SUBJECTS = [
-    "fox", "hedgehog", "owl", "elephant", "cat",
-    "dog", "bear", "butterfly", "rabbit", "penguin",
-    "dinosaur", "flamingo", "turtle", "koala", "deer",
+    "cute tortoise with party hat",
+    "watercolour owl in a teacup",
+    "floral bouquet celebration",
+    "mermaid princess underwater",
+    "dinosaur birthday bash",
+    "cosmic birthday with stars and rockets",
+    "rainbow and balloons party",
+    "elegant botanical arrangement",
+    "woodland animals picnic",
+    "royal castle celebration",
+    "circus tent with bunting",
+    "unicorn and cake",
+    "vintage retro birthday",
+    "cowboy western theme",
+    "ice cream sundae celebration",
 ]
 
 
 def _get_subject_pool(occasion: str) -> list[str]:
-    """Get subject pool for occasion — mined from bestsellers, cached."""
+    """Get subject pool for occasion — top-selling card titles, cached."""
     if occasion in _subject_cache:
         return _subject_cache[occasion]
     try:
-        raw = bestseller_subjects_for_occasion(occasion)
-        subjects = [s.split(" (")[0] for s in raw]
+        raw = bestseller_subjects_for_occasion(occasion, limit=20)
+        subjects = [s.split(" (score:")[0].strip() for s in raw]
     except Exception as e:
-        log.warning(f"Failed to mine bestseller subjects ({e}), using fallback")
+        log.warning(f"Failed to load top titles ({e}), using fallback")
         subjects = []
     if len(subjects) < 10:
         for fallback in DEFAULT_SUBJECTS:

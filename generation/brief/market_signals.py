@@ -11,7 +11,6 @@ Four signals:
 
 from __future__ import annotations
 
-from collections import Counter
 from dataclasses import dataclass, field
 
 import numpy as np
@@ -24,50 +23,6 @@ LONGEVITY_CAUTION = (
     "Avoid current-events references, brand mentions, or anything that will "
     "feel dated within twelve months."
 )
-
-_SUBJECT_KEYWORDS: dict[str, list[str]] = {
-    "fox": ["fox", "foxes", "foxy"],
-    "hedgehog": ["hedgehog", "hedgehogs"],
-    "owl": ["owl", "owls"],
-    "elephant": ["elephant", "elephants", "ellie"],
-    "dinosaur": ["dinosaur", "dinosaurs", "dino", "dinos", "t-rex"],
-    "unicorn": ["unicorn", "unicorns"],
-    "cat": ["cat", "cats", "kitten", "kittens", "kitty"],
-    "dog": ["dog", "dogs", "puppy", "puppies", "pup"],
-    "bear": ["bear", "bears", "teddy"],
-    "rabbit": ["rabbit", "rabbits", "bunny", "bunnies"],
-    "penguin": ["penguin", "penguins"],
-    "flamingo": ["flamingo", "flamingos"],
-    "turtle": ["turtle", "turtles", "tortoise"],
-    "sloth": ["sloth", "sloths"],
-    "koala": ["koala", "koalas"],
-    "panda": ["panda", "pandas"],
-    "giraffe": ["giraffe", "giraffes"],
-    "lion": ["lion", "lions"],
-    "monkey": ["monkey", "monkeys"],
-    "deer": ["deer", "stag", "fawn"],
-    "bee": ["bee", "bees", "bumblebee"],
-    "butterfly": ["butterfly", "butterflies"],
-    "ladybug": ["ladybug", "ladybird"],
-    "frog": ["frog", "frogs"],
-    "duck": ["duck", "ducks", "duckling"],
-    "llama": ["llama", "llamas", "alpaca"],
-    "highland cow": ["highland cow", "highland"],
-    "otter": ["otter", "otters"],
-    "dragon": ["dragon", "dragons"],
-    "mermaid": ["mermaid", "mermaids"],
-    "astronaut": ["astronaut", "space", "rocket"],
-    "pirate": ["pirate", "pirates"],
-    "fairy": ["fairy", "fairies"],
-    "robot": ["robot", "robots"],
-    "floral arrangement": ["floral", "flowers", "flower", "botanical", "bouquet"],
-    "roses": ["roses", "rose"],
-    "sunflower": ["sunflower", "sunflowers"],
-    "daisy": ["daisy", "daisies"],
-    "jungle animals": ["jungle", "safari", "tropical"],
-    "ocean scene": ["ocean", "sea", "underwater"],
-}
-
 
 @dataclass
 class MarketSignals:
@@ -124,34 +79,31 @@ def top_tropes_for_occasion(occasion: str, *, k_clusters: int = 5, top_n: int = 
     return tropes
 
 
-_BESTSELLER_SUBJECTS_SQL = """
-SELECT l.title, l.description
+_TOP_TITLES_SQL = """
+SELECT l.title, COALESCE(sl.score, 0) AS score
 FROM listings l
 JOIN listing_features lf USING (listing_id)
 LEFT JOIN saleability_labels sl
   ON sl.listing_id = l.listing_id AND sl.label_source = 'vlm_5head_v1'
 WHERE lf.occasion = %(occasion)s
+  AND l.title IS NOT NULL
 ORDER BY COALESCE(sl.score, 0) DESC
-LIMIT 200;
+LIMIT %(limit)s;
 """
 
 
-def bestseller_subjects_for_occasion(occasion: str) -> list[str]:
-    """Return visual subjects ranked by frequency in bestseller titles/descriptions."""
-    df = pd.read_sql(_BESTSELLER_SUBJECTS_SQL, engine(), params={"occasion": occasion})
+def bestseller_subjects_for_occasion(occasion: str, limit: int = 30) -> list[str]:
+    """Return top-scoring listing titles for this occasion, as LLM inspiration."""
+    df = pd.read_sql(_TOP_TITLES_SQL, engine(), params={"occasion": occasion, "limit": limit})
     if df.empty:
         return []
-    counter: Counter = Counter()
-    total = len(df)
+    results = []
     for _, row in df.iterrows():
-        text = f"{row['title'] or ''} {row['description'] or ''}".lower()
-        for subject, keywords in _SUBJECT_KEYWORDS.items():
-            if any(kw in text for kw in keywords):
-                counter[subject] += 1
-    return [
-        f"{subj} ({count}/{total} bestsellers, {count/total*100:.0f}%)"
-        for subj, count in counter.most_common(20)
-    ]
+        title = (row["title"] or "").strip()
+        title = title.replace(" Greeting Card", "").replace(" greeting card", "").strip()
+        if title:
+            results.append(f"{title} (score: {row['score']:.2f})")
+    return results
 
 
 _GAP_SQL = """

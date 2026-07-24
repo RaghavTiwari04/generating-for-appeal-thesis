@@ -36,11 +36,10 @@ Diversity rules (CRITICAL — cards in a batch must look different from each oth
 - The `visual_prompt` primary subject MUST vary across calls. Never default to
   hot air balloons, generic landscapes, or rolling hills with a sunset.
 - Use BESTSELLER_SUBJECTS below as your primary inspiration palette. These are
-  real subjects from top-selling cards in this occasion category, ranked by
-  popularity. Draw from them — but reinterpret creatively. Don't just copy;
-  combine subjects with fresh angles, unexpected settings, or novel styles.
-  Less popular subjects from the list can make great cards too — don't only
-  pick the #1 subject.
+  real top-selling card titles in this occasion category, ranked by saleability
+  score. Study their themes, subjects, and styles — then reinterpret creatively.
+  Don't copy titles; extract what makes them work (subject choice, mood, style)
+  and combine with fresh angles. Draw from the full list, not just the top few.
 - BANNED SUBJECTS: hot air balloons over landscapes, generic sunsets over
   mountains, lone balloon floating over rolling hills. These are overused and
   look AI-generated.
@@ -63,7 +62,7 @@ MARKET_SIGNALS
 top_tropes_for_occasion:
 {{top_tropes}}
 
-BESTSELLER_SUBJECTS (ranked by frequency in real bestsellers for this occasion):
+BESTSELLER_SUBJECTS (top-selling card titles for this occasion, ranked by score):
 {{bestseller_subjects}}
 
 coverage_gaps:
