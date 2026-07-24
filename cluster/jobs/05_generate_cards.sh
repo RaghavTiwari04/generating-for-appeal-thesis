@@ -4,7 +4,7 @@
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=64G
-#SBATCH --time=08:00:00
+#SBATCH --time=24:00:00
 #SBATCH --output=logs/slurm-%j-generate.out
 #SBATCH --error=logs/slurm-%j-generate.err
 #SBATCH --mail-type=END,FAIL
@@ -38,7 +38,7 @@ WATCHDOG_PID=$!
 trap "kill $WATCHDOG_PID 2>/dev/null" EXIT
 
 OCCASIONS="birthday/general,birthday/milestone,birthday/kids,birthday/relationship"
-N_PER=3
+N_PER=5
 
 python -m pipeline.conditions \
     --occasions "$OCCASIONS" \

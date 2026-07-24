@@ -27,43 +27,19 @@ from generation.brief.market_signals import bestseller_subjects_for_occasion
 
 log = get_logger(__name__)
 
-_subject_cache: dict[str, list[str]] = {}
+_subject_cache: dict[str, int] = {}
 
-DEFAULT_SUBJECTS = [
-    "cute tortoise with party hat",
-    "watercolour owl in a teacup",
-    "floral bouquet celebration",
-    "mermaid princess underwater",
-    "dinosaur birthday bash",
-    "cosmic birthday with stars and rockets",
-    "rainbow and balloons party",
-    "elegant botanical arrangement",
-    "woodland animals picnic",
-    "royal castle celebration",
-    "circus tent with bunting",
-    "unicorn and cake",
-    "vintage retro birthday",
-    "cowboy western theme",
-    "ice cream sundae celebration",
-]
-
-
-def _get_subject_pool(occasion: str) -> list[str]:
-    """Get subject pool for occasion — top-selling card titles, cached."""
+def _get_subject_pool_size(occasion: str) -> int:
+    """Return number of bestseller titles available for this occasion."""
     if occasion in _subject_cache:
         return _subject_cache[occasion]
     try:
-        raw = bestseller_subjects_for_occasion(occasion, limit=20)
-        subjects = [s.split(" (score:")[0].strip() for s in raw]
-    except Exception as e:
-        log.warning(f"Failed to load top titles ({e}), using fallback")
-        subjects = []
-    if len(subjects) < 10:
-        for fallback in DEFAULT_SUBJECTS:
-            if fallback not in subjects:
-                subjects.append(fallback)
-    _subject_cache[occasion] = subjects
-    return subjects
+        raw = bestseller_subjects_for_occasion(occasion, limit=30)
+        n = len(raw)
+    except Exception:
+        n = 15
+    _subject_cache[occasion] = max(n, 5)
+    return _subject_cache[occasion]
 
 CONDITION_TAGS = {
     "A": "A_naive_ai",
@@ -310,18 +286,18 @@ def generate_eval_set(
 ) -> list[EvalCard]:
     cards: list[EvalCard] = []
     for occ_i, occasion in enumerate(occasions):
-        pool = _get_subject_pool(occasion)
+        pool_size = _get_subject_pool_size(occasion)
         for cond_j, cond in enumerate(conditions):
             for k in range(n_per_condition_per_occasion):
                 seed = seed_base + occ_i * 1000 + cond_j * 100 + k
-                subject = pool[k % len(pool)]
+                bestseller_idx = (k % pool_size) + 1
                 try:
                     if cond == "A":
                         card = _generate_naive(occasion, seed)
                     elif cond == "B":
-                        card = _generate_pipeline_no_rerank(occasion, seed, scorer=scorer, subject=subject)
+                        card = _generate_pipeline_no_rerank(occasion, seed, scorer=scorer, subject=str(bestseller_idx))
                     elif cond == "C":
-                        card = _generate_pipeline_rerank(occasion, seed, scorer=scorer, subject=subject)
+                        card = _generate_pipeline_rerank(occasion, seed, scorer=scorer, subject=str(bestseller_idx))
                     elif cond == "D":
                         card = _sample_human_bestseller(occasion, seed)
                         if card is None:

@@ -137,9 +137,13 @@ def gather(occasion: str) -> MarketSignals:
 
 
 def render_for_prompt(signals: MarketSignals) -> dict[str, str]:
+    if signals.bestseller_subjects:
+        bs = "\n".join(f"{i+1}. {s}" for i, s in enumerate(signals.bestseller_subjects))
+    else:
+        bs = "  (none yet)"
     return {
         "top_tropes": "\n".join(f"- {t}" for t in signals.top_tropes) or "  (none yet)",
-        "bestseller_subjects": "\n".join(f"- {s}" for s in signals.bestseller_subjects) or "  (none yet)",
+        "bestseller_subjects": bs,
         "coverage_gaps": "\n".join(f"- {g}" for g in signals.coverage_gaps) or "  (none yet)",
         "longevity_caution": signals.longevity_caution,
     }

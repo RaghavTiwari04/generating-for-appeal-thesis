@@ -18,11 +18,11 @@ Respond with **JSON only**, matching this schema (all fields required):
 }
 
 Hard rules:
-- If `constraints` contains `"suggested_subject"`, use it as a starting point
-  for your visual concept — but interpret it creatively and make it your own.
-  Combine it with unexpected settings, styles, or compositions. For example
-  if subject is "dinosaur", don't just draw a dinosaur — maybe a dinosaur
-  DJ at a rooftop party, or a tiny dinosaur asleep inside a birthday present.
+- If `constraints` contains `"suggested_subject"`, it is a number pointing to
+  an entry in the BESTSELLER_SUBJECTS list below. Use that entry's theme as a
+  starting point — but interpret it creatively and make it your own. Extract
+  what makes it appealing (subject, mood, style) and combine with unexpected
+  settings, compositions, or mediums. Do NOT recreate the listed card.
 - The `visual_prompt` MUST instruct the model NOT to render the headline in
   the image (the typography module overlays text afterwards). Use phrases like
   "no text in image" or "blank space top-left for text overlay".
