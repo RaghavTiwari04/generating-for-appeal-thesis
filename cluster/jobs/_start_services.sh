@@ -26,17 +26,33 @@ fi
 # Do NOT manually rm postmaster.pid — causes NFS cache invalidation issues
 # that make Postgres shut down immediately after start.
 pg_ctl -D "$PG_DIR" -l "$PG_DIR/postgres.log" start 2>/dev/null || true
-sleep 3
-# Verify Postgres is accepting connections
-if ! pg_isready -h localhost -p 5433 -q 2>/dev/null; then
-    # Retry: stop any zombie, clean PID, restart
-    pg_ctl -D "$PG_DIR" stop -m immediate 2>/dev/null || true
-    sleep 2
-    rm -f "$PG_DIR/postmaster.pid"
-    sleep 1
+
+# Poll until Postgres actually answers. Crash recovery on NFS can fsync for
+# several minutes, far longer than pg_ctl's own start timeout, so a fixed
+# sleep here silently hands a not-yet-ready DB to the pipeline.
+pg_wait() {
+    local deadline=$((SECONDS + ${1:-600}))
+    while [ $SECONDS -lt $deadline ]; do
+        if pg_isready -h localhost -p 5433 -d greeting_cards -q 2>/dev/null; then
+            return 0
+        fi
+        sleep 5
+    done
+    return 1
+}
+
+if ! pg_wait 600; then
+    echo "Postgres not ready after 600s, restarting cleanly..."
+    # -m fast is a CLEAN shutdown; -m immediate would force crash recovery
+    # on the next start and make the problem compound run over run.
+    pg_ctl -D "$PG_DIR" stop -m fast -w -t 300 2>/dev/null || true
     pg_ctl -D "$PG_DIR" -l "$PG_DIR/postgres.log" start 2>/dev/null || true
-    sleep 3
+    if ! pg_wait 600; then
+        echo "FATAL: Postgres would not come up; aborting before generation." >&2
+        return 1 2>/dev/null || exit 1
+    fi
 fi
+echo "Postgres ready after ${SECONDS}s"
 
 # Start MinIO — use 9002 to avoid port conflicts with system services
 MINIO_PORT="${MINIO_PORT:-9002}"

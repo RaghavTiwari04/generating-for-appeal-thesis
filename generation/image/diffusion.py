@@ -29,6 +29,13 @@ log = get_logger(__name__)
 LORA_ROOT = Path(__file__).parent / "loras"
 
 
+def _vram_gb() -> float:
+    """Total VRAM on device 0, or 0.0 when no CUDA device is present."""
+    if not torch.cuda.is_available():
+        return 0.0
+    return torch.cuda.get_device_properties(0).total_memory / 1024**3
+
+
 @dataclass
 class DiffusionConfig:
     backend: str = settings.diffusion_backend
@@ -45,6 +52,10 @@ class DiffusionConfig:
     lora_scale: float = 0.4
     fill_steps: int = 50
     fill_guidance: float = 30.0
+    # Holding Flux + Flux-Fill resident costs ~48GB. On an 80GB card that fits,
+    # and keeping them avoids re-reading ~24GB from NFS on every generate()
+    # call — which cost 6-14 min per load and dominated total runtime.
+    free_between_passes: bool = _vram_gb() < 60.0
 
 
 class DiffusionRunner:
@@ -55,6 +66,7 @@ class DiffusionRunner:
         self._pipe: Any = None
         self._fill_pipe: Any = None
         self._active_loras: list[str] = []
+        self._lora_occasion: str | None = None
 
     def _sdxl_load_kwargs(self) -> dict[str, Any]:
         kw: dict[str, Any] = {"torch_dtype": self.cfg.dtype, "use_safetensors": True}
@@ -133,9 +145,25 @@ class DiffusionRunner:
             pipe.load_lora_weights(str(lora_dir))
             pipe.fuse_lora(lora_scale=self.cfg.lora_scale)
             self._active_loras.append(str(lora_dir))
+            self._lora_occasion = occasion
             log.info(f"Loaded LoRA: {lora_dir.name} (scale={self.cfg.lora_scale})")
         except Exception as e:
             log.warning(f"LoRA load failed for {occasion}: {e}")
+
+    def _ensure_occasion(self, occasion: str | None) -> None:
+        """Drop a cached pipeline whose fused LoRA belongs to another occasion.
+
+        `fuse_lora` bakes weights into the pipeline irreversibly, so a resident
+        pipeline cannot be re-targeted — loading a second LoRA would stack on
+        top of the first. Reloading is only needed when the occasion changes.
+        """
+        if self._lora_occasion is not None and occasion != self._lora_occasion:
+            log.info(
+                f"Occasion changed ({self._lora_occasion} -> {occasion}), "
+                "reloading pipeline to avoid stacking fused LoRAs"
+            )
+            self._free_pipeline()
+            self._lora_occasion = None
 
     def unload_loras(self) -> None:
         for pipe in (self._pipe, self._fill_pipe):
@@ -178,6 +206,7 @@ class DiffusionRunner:
         **kwargs: Any,
     ) -> list[Image.Image]:
         base_seed = seed if seed is not None else int(torch.randint(0, 2**31, (1,)).item())
+        self._ensure_occasion(occasion)
 
         # Pass 1: generate all cover images with FluxPipeline
         covers: list[Image.Image] = []
@@ -200,11 +229,13 @@ class DiffusionRunner:
 
         # Pass 2: inpaint headline regions with FluxFillPipeline
         if mask_image is not None:
-            self._free_pipeline()
+            if self.cfg.free_between_passes:
+                self._free_pipeline()
             for i, cover in enumerate(covers):
                 covers[i] = self._inpaint_headline_region(cover, mask_image, prompt, base_seed + i)
                 log.info(f"Inpainted headline {i + 1}/{n}")
-            self._free_fill_pipeline()
+            if self.cfg.free_between_passes:
+                self._free_fill_pipeline()
 
         if upscale_to_print_res:
             from generation.image.upscaler import upscale_to_print

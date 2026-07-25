@@ -28,19 +28,26 @@ echo "Start: $(date)"
 PG_DIR="/vol/bitbucket/$USER/pgdata"
 (while true; do
     sleep 60
-    if ! pg_isready -h localhost -p 5433 -q 2>/dev/null; then
+    if ! pg_isready -h localhost -p 5433 -d greeting_cards -q 2>/dev/null; then
         echo "[watchdog] Postgres down, restarting... $(date)"
         pg_ctl -D "$PG_DIR" -l "$PG_DIR/postgres.log" start 2>/dev/null || true
         sleep 3
     fi
 done) &
 WATCHDOG_PID=$!
-trap "kill $WATCHDOG_PID 2>/dev/null" EXIT
+# Kill the watchdog first, then shut Postgres down cleanly — an unclean exit
+# forces crash recovery on the next job's startup.
+cleanup() {
+    kill $WATCHDOG_PID 2>/dev/null || true
+    pg_ctl -D "$PG_DIR" stop -m fast -w -t 300 2>/dev/null || true
+}
+trap cleanup EXIT
 
 OCCASIONS="birthday/general,birthday/milestone,birthday/kids,birthday/relationship"
 N_PER=5
 
-python -m pipeline.conditions \
+export PYTHONUNBUFFERED=1
+python -u -m pipeline.conditions \
     --occasions "$OCCASIONS" \
     --conditions "A,B,C" \
     --n "$N_PER" \

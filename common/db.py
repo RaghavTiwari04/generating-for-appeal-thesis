@@ -18,6 +18,10 @@ from sqlalchemy.engine import Engine
 
 from common.config import settings
 
+# Fail fast rather than blocking forever when Postgres is mid-crash-recovery
+# (NFS fsync can leave it accepting TCP but not answering for minutes).
+CONNECT_TIMEOUT_S = 15
+
 
 @contextmanager
 def connection() -> Iterator[psycopg.Connection]:
@@ -27,7 +31,7 @@ def connection() -> Iterator[psycopg.Connection]:
     rolls back on exception.
     """
     dsn = settings.postgres_dsn.replace("postgresql+psycopg://", "postgresql://")
-    conn = psycopg.connect(dsn, row_factory=dict_row)
+    conn = psycopg.connect(dsn, row_factory=dict_row, connect_timeout=CONNECT_TIMEOUT_S)
     try:
         register_vector(conn)
         yield conn
@@ -46,5 +50,9 @@ def engine() -> Engine:
     """Lazily-built SQLAlchemy engine. Use for ORM / pandas IO."""
     global _engine
     if _engine is None:
-        _engine = create_engine(settings.postgres_dsn, pool_pre_ping=True)
+        _engine = create_engine(
+            settings.postgres_dsn,
+            pool_pre_ping=True,
+            connect_args={"connect_timeout": CONNECT_TIMEOUT_S},
+        )
     return _engine

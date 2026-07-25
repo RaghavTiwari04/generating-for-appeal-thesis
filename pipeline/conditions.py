@@ -36,7 +36,9 @@ def _get_subject_pool_size(occasion: str) -> int:
     try:
         raw = bestseller_subjects_for_occasion(occasion, limit=30)
         n = len(raw)
-    except Exception:
+        log.info(f"Loaded {n} bestseller titles for {occasion}")
+    except Exception as e:
+        log.warning(f"Failed to load bestseller titles for {occasion} ({e}), using default pool size")
         n = 15
     _subject_cache[occasion] = max(n, 5)
     return _subject_cache[occasion]
@@ -285,6 +287,10 @@ def generate_eval_set(
     scorer: str = "predictor",
 ) -> list[EvalCard]:
     cards: list[EvalCard] = []
+    log.info(
+        f"Starting eval set: occasions={occasions} conditions={conditions} "
+        f"n_per={n_per_condition_per_occasion} seed_base={seed_base}"
+    )
     for occ_i, occasion in enumerate(occasions):
         pool_size = _get_subject_pool_size(occasion)
         for cond_j, cond in enumerate(conditions):
