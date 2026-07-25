@@ -41,6 +41,9 @@ _KID_WORDS = [
 _REL_WORDS = [
     "husband", "wife", "boyfriend", "girlfriend", "partner", "fiance", "fiancee",
     "hubby", "wifey", "soulmate", "other half", "love of my life",
+    # "Birthday Card - For Him" is how these are actually titled. Without
+    # these the audit flags correctly-labelled relationship cards.
+    "for him", "for her",
 ]
 
 _SQL = """
