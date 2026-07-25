@@ -25,13 +25,61 @@ from data.scrapers.parsing import (
 )
 
 
-def _flat_image_url(url: str) -> str:
-    """Rewrite Redbubble mockup URLs (papergc = tilted 3D) to flat artwork."""
-    return re.sub(
-        r"/papergc,[^/]+\.jpg",
-        "/flat,600x600,075,f.jpg",
-        url,
-    )
+# Redbubble serves one artwork under several transforms, e.g.
+#   .../image.1072219682.1798/papergc,300x,...,f8f8f8.u1.jpg   <- tilted card
+#   .../image.1072219682.1798/flat,750x,075,f-pad,...,f8f8f8.u1.webp  <- artwork
+# Training on the tilted mockup teaches paper edges and perspective instead of
+# card design, so always prefer the `flat` variant.
+#
+# Constructing a flat URL is unreliable — the exact transform string varies
+# and a guessed one 404s. The page contains every variant, so collect them all
+# and pick the best per artwork id instead.
+_RB_IMAGE_URL_RE = re.compile(
+    r"https://ih\d+\.redbubble\.net/image\.[^\"'\s\\]+?\.(?:jpg|jpeg|png|webp)",
+    re.IGNORECASE,
+)
+_RB_IMAGE_ID_RE = re.compile(r"/image\.([0-9.]+)/")
+
+
+def _image_id(url: str) -> str | None:
+    m = _RB_IMAGE_ID_RE.search(url)
+    return m.group(1) if m else None
+
+
+def _variant_rank(url: str) -> tuple[int, int]:
+    """Lower is better: flat artwork first, then jpg over webp."""
+    lowered = url.lower()
+    if "/flat," in lowered:
+        kind = 0
+    elif "/papergc," in lowered:
+        kind = 2      # tilted card mockup — last resort
+    else:
+        kind = 1
+    ext = 0 if lowered.endswith((".jpg", ".jpeg")) else 1
+    return (kind, ext)
+
+
+def _best_variants(html: str) -> dict[str, str]:
+    """Map artwork id -> best available image URL found anywhere in the page."""
+    best: dict[str, str] = {}
+    for url in _RB_IMAGE_URL_RE.findall(html):
+        img_id = _image_id(url)
+        if not img_id:
+            continue
+        current = best.get(img_id)
+        if current is None or _variant_rank(url) < _variant_rank(current):
+            best[img_id] = url
+    return best
+
+
+def _flat_image_url(url: str, variants: dict[str, str] | None = None) -> str:
+    """Swap a mockup URL for the flat variant of the same artwork, if present."""
+    if not variants:
+        return url
+    img_id = _image_id(url)
+    if not img_id:
+        return url
+    return variants.get(img_id, url)
 
 
 class RedbubbleScraper(Scraper):
@@ -77,6 +125,9 @@ class RedbubbleScraper(Scraper):
         id_match = re.search(r"/(\d{6,})", url)
         source_listing_id = id_match.group(1) if id_match else url
 
+        # Every transform of every artwork on the page, best variant per id.
+        variants = _best_variants(html)
+
         # Primary: JSON-LD
         ld = _extract_jsonld(tree, "Product")
         title = description = seller_id = None
@@ -113,7 +164,7 @@ class RedbubbleScraper(Scraper):
             if isinstance(imgs, str):
                 imgs = [imgs]
             image_urls = [
-                _flat_image_url(i) for i in imgs
+                _flat_image_url(i, variants) for i in imgs
                 if isinstance(i, str) and i.startswith("http")
             ]
 
@@ -144,7 +195,7 @@ class RedbubbleScraper(Scraper):
                 for img in tree.css("img[src*='ih1.redbubble.net'], img[src*='rdbl.co']")
                 if img.attributes
             ]
-            image_urls = [_flat_image_url(u) for u in image_urls if u.startswith("http")]
+            image_urls = [_flat_image_url(u, variants) for u in image_urls if u.startswith("http")]
 
         return ParsedListing(
             source_listing_id=source_listing_id,
