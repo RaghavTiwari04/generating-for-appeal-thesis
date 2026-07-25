@@ -8,16 +8,17 @@ Thin CLI wrapper around diffusers' official `train_dreambooth_lora_flux.py`
 there). We own only data prep and bookkeeping, so each occasion's LoRA stays
 reproducible from the command line that produced it.
 
-Note: text encoders are NOT trained (no `--train_text_encoder`), so "TOK" in
-the instance prompt is not a learned token — the style lives in the
-transformer LoRA and applies whether or not the trigger appears at inference.
+Note: text encoders are NOT trained (no `--train_text_encoder`), so "TOK" is
+not a learned token — it is a consistent conditioning phrase that the
+transformer LoRA keys on. It is kept identical between training captions and
+inference prompts so that association holds.
 
 Usage — mirrors cluster/jobs/04_train_lora.sh:
     python -m generation.image.loras.train_lora \
         --occasion birthday/general \
         --rank 32 \
-        --steps 1500 \
-        --lr 1e-5
+        --steps 1000 \
+        --lr 1e-4
 """
 
 from __future__ import annotations
@@ -89,14 +90,97 @@ def _erase_text_regions(img: Image.Image) -> Image.Image:
     return Image.fromarray(cv2.cvtColor(inpainted, cv2.COLOR_BGR2RGB))
 
 
+def _pad_to_square(img: Image.Image, size: int) -> Image.Image:
+    """Fit the whole card into a square canvas without cropping.
+
+    The diffusers dreambooth script resizes to `--resolution` and then crops
+    square. Greeting cards are portrait, so that crop discards the top and
+    bottom — exactly the border and headline regions that define card
+    composition. Pre-padding to square makes that crop a no-op.
+
+    Padding uses the median colour of the image border, which for card art is
+    usually the background itself, so the LoRA is not taught hard letterbox
+    edges as a feature.
+    """
+    w, h = img.size
+    if w == h == size:
+        return img
+    scale = size / max(w, h)
+    nw, nh = max(1, round(w * scale)), max(1, round(h * scale))
+    img = img.resize((nw, nh), Image.LANCZOS)
+
+    arr = np.array(img)
+    edges = np.concatenate(
+        [arr[0, :, :], arr[-1, :, :], arr[:, 0, :], arr[:, -1, :]], axis=0
+    )
+    bg = tuple(int(v) for v in np.median(edges, axis=0))
+
+    canvas = Image.new("RGB", (size, size), bg)
+    canvas.paste(img, ((size - nw) // 2, (size - nh) // 2))
+    return canvas
+
+
+def _caption_images(paths: list[Path]) -> list[str] | None:
+    """BLIP-caption each training image; None if captioning is unavailable.
+
+    Training every image on one fixed caption teaches the LoRA the *average*
+    of the set and weakens prompt conditioning. Per-image captions keep the
+    text-to-image association intact so detailed inference prompts still steer
+    the output.
+    """
+    try:
+        import torch
+        from transformers import BlipForConditionalGeneration, BlipProcessor
+    except Exception as e:
+        log.warning(f"Captioning unavailable ({e}), falling back to a fixed instance prompt")
+        return None
+
+    model_id = "Salesforce/blip-image-captioning-base"
+    try:
+        processor = BlipProcessor.from_pretrained(model_id)
+        model = BlipForConditionalGeneration.from_pretrained(model_id)
+    except Exception as e:
+        log.warning(f"Could not load {model_id} ({e}), falling back to a fixed instance prompt")
+        return None
+
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    model = model.to(device).eval()
+
+    captions: list[str] = []
+    for p in paths:
+        try:
+            img = Image.open(p).convert("RGB")
+            inputs = processor(img, return_tensors="pt").to(device)
+            with torch.no_grad():
+                out = model.generate(**inputs, max_new_tokens=40)
+            captions.append(processor.decode(out[0], skip_special_tokens=True).strip())
+        except Exception as e:
+            log.warning(f"Captioning failed for {p.name} ({e}), using empty caption")
+            captions.append("")
+
+    del model
+    if device == "cuda":
+        torch.cuda.empty_cache()
+
+    log.info(f"Captioned {len(captions)} training images")
+    return captions
+
+
 def _materialise_training_images(
     occasion: str, limit: int, dest: Path, *, erase_text: bool = True,
+    resolution: int = 1024,
 ) -> list[Path]:
     import pandas as pd
 
     df = pd.read_sql(_TOP_FOR_OCC_SQL, engine(), params={"occasion": occasion, "limit": limit})
     paths: list[Path] = []
     dest.mkdir(parents=True, exist_ok=True)
+    # Clear prior runs. `--instance_data_dir` opens every file in the directory
+    # as an image, so a leftover metadata.jsonl would crash training, and stale
+    # PNGs from a different --resolution would silently join the training set.
+    for stale in dest.iterdir():
+        if stale.is_file():
+            stale.unlink()
     for i, row in df.iterrows():
         try:
             data = get_object(row["storage_path"])
@@ -106,6 +190,7 @@ def _materialise_training_images(
                     img = _erase_text_regions(img)
                 except Exception as te:
                     log.debug(f"Text erasure skipped (tesseract unavailable): {te}")
+            img = _pad_to_square(img, resolution)
             out = dest / f"{i:04d}.png"
             img.save(out)
             paths.append(out)
@@ -118,10 +203,12 @@ def _materialise_training_images(
 def train(
     occasion: str = typer.Option(...),
     rank: int = 32,
-    steps: int = 1500,
-    lr: float = 1e-5,
+    steps: int = 1000,
+    lr: float = 1e-4,
     n_images: int = 150,
+    resolution: int = 1024,
     erase_text: bool = typer.Option(True, help="Inpaint text regions out of training images"),
+    caption_images: bool = typer.Option(True, help="BLIP-caption each image instead of one fixed prompt"),
     base_model: str = "black-forest-labs/FLUX.1-dev",
     out_root: Path = Path(__file__).parent,
 ) -> None:
@@ -137,7 +224,9 @@ def train(
     out_dir = out_root / occasion.replace("/", "_")
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    paths = _materialise_training_images(occasion, n_images, image_dir, erase_text=erase_text)
+    paths = _materialise_training_images(
+        occasion, n_images, image_dir, erase_text=erase_text, resolution=resolution,
+    )
     if not paths:
         log.warning(f"No training images for occasion '{occasion}' — skipping LoRA training")
         return
@@ -155,16 +244,35 @@ def train(
     occasion_tag = occasion.replace("_", " ").replace("/", " ")
     instance_prompt = f"a TOK greeting card for {occasion_tag}"
     warmup_steps = max(1, steps // 10)
+
+    # Per-image captions go through the dataset path; instance_data_dir applies
+    # one fixed prompt to every image and cannot carry them.
+    captions = _caption_images(paths) if caption_images else None
+    if captions:
+        metadata = image_dir / "metadata.jsonl"
+        with metadata.open("w", encoding="utf-8") as fh:
+            for path, cap in zip(paths, captions):
+                text = f"TOK {cap}, a greeting card for {occasion_tag}" if cap else instance_prompt
+                fh.write(json.dumps({"file_name": path.name, "prompt": text}) + "\n")
+        log.info(f"Wrote per-image captions to {metadata}")
+        data_args = [
+            f"--dataset_name={image_dir}",
+            "--image_column=image",
+            "--caption_column=prompt",
+        ]
+    else:
+        data_args = [f"--instance_data_dir={image_dir}"]
+
     cmd = [
         "accelerate",
         "launch",
         "--mixed_precision=bf16",
         str(train_script),
         f"--pretrained_model_name_or_path={base_model}",
-        f"--instance_data_dir={image_dir}",
+        *data_args,
         f"--output_dir={out_dir}",
         f"--instance_prompt={instance_prompt}",
-        "--resolution=1024",
+        f"--resolution={resolution}",
         "--train_batch_size=1",
         "--gradient_accumulation_steps=4",
         f"--learning_rate={lr}",
@@ -186,6 +294,8 @@ def train(
                 "steps": steps,
                 "lr": lr,
                 "n_images": n_images,
+                "resolution": resolution,
+                "captioned": bool(captions),
                 "base_model": base_model,
             },
             indent=2,

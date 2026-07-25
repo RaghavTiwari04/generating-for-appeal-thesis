@@ -32,7 +32,7 @@ OCCASIONS=(
 
 for occ in "${OCCASIONS[@]}"; do
     echo "--- Training LoRA for: $occ ($(date)) ---"
-    python -m generation.image.loras.train_lora --occasion "$occ" --rank 32 --steps 1500 --lr 1e-5
+    python -m generation.image.loras.train_lora --occasion "$occ" --rank 32 --steps 1000 --lr 1e-4
 done
 
 echo "=== Done: $(date) ==="
