@@ -4,13 +4,18 @@
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=24G
-#SBATCH --time=02:00:00
+#SBATCH --time=06:00:00
 #SBATCH --output=logs/slurm-%j-nli.out
 #SBATCH --error=logs/slurm-%j-nli.err
 
 # Zero-shot birthday subtype classification from titles via NLI entailment.
 #
 # Classifies every listing title. Needs a GPU for bart-large-mnli.
+#
+# Generous time limit: importing torch/transformers from the NFS venv on a
+# cold node took over an hour, before the 1.6GB model download. Inference
+# itself is minutes. Subsequent runs are far faster — the model is cached
+# under HF_HOME on /vol/bitbucket.
 #
 # DRY_RUN=1 (default) reports what would change without writing.
 # DRY_RUN=0 applies the labels.
