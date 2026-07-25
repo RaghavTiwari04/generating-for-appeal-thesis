@@ -255,7 +255,8 @@ def train(
 # ---------------------------------------------------------------------------
 _SELECT_MISSING = """
 SELECT l.listing_id,
-       COALESCE(l.title,'') || ' ' || COALESCE(l.description,'') AS text
+       COALESCE(l.title,'')       AS title,
+       COALESCE(l.description,'') AS description
 FROM listings l
 LEFT JOIN listing_features lf ON lf.listing_id = l.listing_id
 WHERE lf.occasion IS NULL
@@ -265,11 +266,24 @@ LIMIT %(limit)s;
 
 _SELECT_ALL = """
 SELECT l.listing_id,
-       COALESCE(l.title,'') || ' ' || COALESCE(l.description,'') AS text
+       COALESCE(l.title,'')       AS title,
+       COALESCE(l.description,'') AS description
 FROM listings l
 JOIN listing_features lf ON lf.listing_id = l.listing_id
 ORDER BY l.last_seen_at DESC
 LIMIT %(limit)s;
+"""
+
+# Clear a stale label when nothing matches. Without this, re-running infer
+# leaves whatever a previous pass wrote — which is how 312 listings with no
+# occasion keyword at all ("Surgeon Greeting Card") stayed on birthday/general.
+_CLEAR = """
+UPDATE listing_features
+SET occasion = NULL,
+    occasion_confidence = NULL,
+    occasion_multilabel = NULL,
+    computed_at = NOW()
+WHERE listing_id = %(listing_id)s;
 """
 
 _UPSERT = """
@@ -305,6 +319,13 @@ def pick_best_occasion(labels: list[str]) -> str | None:
 def infer(
     limit: int = 50000,
     reclassify_all: bool = typer.Option(True, help="Re-classify all listings"),
+    use_description: bool = typer.Option(
+        False,
+        help="Also match against the description. Off by default: marketplace "
+             "descriptions are vendor/template boilerplate and outvote the "
+             "actual card content (it put all 500 Greetings Island cards in "
+             "birthday/kids, none of which say 'kid' in the title).",
+    ),
 ) -> None:
     """Classify listings using keyword rules (no model needed)."""
     query = _SELECT_ALL if reclassify_all else _SELECT_MISSING
@@ -312,16 +333,24 @@ def infer(
         cur.execute(query, {"limit": limit})
         rows = cur.fetchall()
 
-    log.info(f"Classifying {len(rows)} listings with keyword rules")
+    src = "title + description" if use_description else "title only"
+    log.info(f"Classifying {len(rows)} listings with keyword rules ({src})")
     processed = 0
+    cleared = 0
     stats: dict[str, int] = {}
 
     with connection() as conn, conn.cursor() as cur:
         for r in rows:
-            text = r["text"] or ""
+            text = r["title"] or ""
+            if use_description:
+                text = f"{text} {r['description'] or ''}"
             labels = weak_label(text)
             occasion = pick_best_occasion(labels)
             if not occasion:
+                # Clear rather than skip, so a stale label from an earlier pass
+                # does not survive a re-classification.
+                cur.execute(_CLEAR, {"listing_id": r["listing_id"]})
+                cleared += 1
                 continue
             confidence = 1.0 if len(labels) == 1 else 0.8
             multilabel = {o: (1.0 if o in labels else 0.0) for o in OCCASIONS}
@@ -337,7 +366,7 @@ def infer(
             stats[occasion] = stats.get(occasion, 0) + 1
             processed += 1
 
-    log.info(f"Keyword classification complete: {processed} listings")
+    log.info(f"Keyword classification complete: {processed} labelled, {cleared} cleared")
     for occ, n in sorted(stats.items(), key=lambda x: -x[1]):
         log.info(f"  {occ}: {n}")
 
