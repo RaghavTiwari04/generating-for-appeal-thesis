@@ -93,7 +93,7 @@ done
 
 echo ""
 echo "--- Deleting trained artifacts ---"
-rm -rf artifacts/predictor/ artifacts/occasion_classifier.pt \
+rm -rf artifacts/predictor/ \
        artifacts/generated_cards/ artifacts/lora_train/ artifacts/llm_system_eval/
 find generation/image/loras/ -mindepth 1 -maxdepth 1 -type d -exec rm -rf {} + 2>/dev/null || true
 

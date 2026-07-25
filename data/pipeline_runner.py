@@ -103,12 +103,12 @@ def step_complexity(limit: int) -> int:
     return run_complexity_missing(limit)
 
 
-@_step("clf-infer", "Occasion classification (keyword rules)")
+@_step("clf-infer", "Occasion classification (NLI zero-shot)")
 def step_clf_infer(limit: int) -> int:
     import subprocess
     import sys
     result = subprocess.run(
-        [sys.executable, "-m", "data.features.occasion_classifier", "infer", f"--limit={limit}"],
+        [sys.executable, "-m", "data.features.occasion_nli", f"--limit={limit}"],
         check=False,
     )
     return 0 if result.returncode == 0 else -1

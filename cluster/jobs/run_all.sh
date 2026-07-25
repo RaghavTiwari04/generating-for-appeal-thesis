@@ -59,9 +59,9 @@ echo "Step 1: Feature extraction..."
 JOB1=$(sbatch --parsable $AFTER_CLEAN cluster/jobs/01_clip_embed.sh)
 echo "  Submitted: $JOB1"
 
-# --- Step 2: Occasion classifier + dedup (needs CLIP from step 1) ---
-echo "Step 2: Occasion classifier + dedup..."
-JOB2=$(sbatch --parsable --dependency=afterok:$JOB1 cluster/jobs/02_occasion_clf.sh)
+# --- Step 2: Occasion classification (NLI zero-shot over titles) ---
+echo "Step 2: Occasion classification..."
+JOB2=$(DRY_RUN=0 sbatch --parsable --dependency=afterok:$JOB1 cluster/jobs/14_nli_subtypes.sh)
 echo "  Submitted: $JOB2"
 
 # --- Step 3: VLM labelling (needs occasion from step 2) ---

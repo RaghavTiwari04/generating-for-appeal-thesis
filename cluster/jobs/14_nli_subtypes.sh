@@ -10,8 +10,7 @@
 
 # Zero-shot birthday subtype classification from titles via NLI entailment.
 #
-# Runs the keyword pass first so explicit cases are settled by rules, then NLI
-# only where the rules had no evidence. Needs a GPU for bart-large-mnli.
+# Classifies every listing title. Needs a GPU for bart-large-mnli.
 #
 # DRY_RUN=1 (default) reports what would change without writing.
 # DRY_RUN=0 applies the labels.
@@ -32,12 +31,8 @@ echo "Node: $(hostname)  Start: $(date)  dry_run=$DRY_RUN threshold=$THRESHOLD"
 nvidia-smi --query-gpu=name --format=csv,noheader || true
 
 echo ""
-echo "--- Keyword pass (settles explicit cases) ---"
-python -u -m data.features.occasion_classifier infer
-
-echo ""
-echo "--- Distribution after keyword rules ---"
-python -u -m scripts.audit_labels --stored
+echo "--- Distribution before ---"
+python -u -m scripts.audit_labels
 
 echo ""
 if [ "$DRY_RUN" = "1" ]; then
@@ -48,7 +43,7 @@ else
     python -u -m data.features.occasion_nli --threshold "$THRESHOLD"
     echo ""
     echo "--- Distribution after NLI ---"
-    python -u -m scripts.audit_labels --stored
+    python -u -m scripts.audit_labels
 fi
 
 echo "=== Done: $(date) ==="

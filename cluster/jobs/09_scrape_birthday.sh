@@ -48,18 +48,16 @@ echo ""
 echo "--- Downloading images ---"
 python -u -m data.scrapers.image_downloader --limit 20000
 
-echo ""
-echo "--- Classifying occasions (titles only) ---"
-python -u -m data.features.occasion_classifier infer
 
 echo ""
 echo "--- After ---"
 $PSQL -c "SELECT source, COUNT(*) AS n FROM listings GROUP BY 1 ORDER BY 2 DESC;"
-$PSQL -c "SELECT lf.occasion, COUNT(*) AS n FROM listing_features lf GROUP BY 1 ORDER BY 2 DESC;"
 $PSQL -c "SELECT COUNT(*) AS listings_without_images
           FROM listings l
           WHERE NOT EXISTS (SELECT 1 FROM listing_images li
                             WHERE li.listing_id = l.listing_id
                               AND li.storage_path IS NOT NULL);"
 
+echo ""
+echo "Next: sbatch cluster/jobs/14_nli_subtypes.sh   (occasion classification, needs a GPU)"
 echo "=== Done: $(date) ==="

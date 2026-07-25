@@ -1,27 +1,23 @@
-"""Zero-shot birthday subtype classification from titles, via NLI entailment.
+"""Occasion classification from listing titles, via NLI zero-shot entailment.
 
-Keyword rules only fire on explicit evidence. Titles like "Fabulous at Fifty"
-or "My little monster's big day" carry the subtype semantically with no
-matchable token, and land in birthday/general by default.
+Every title is scored against one hypothesis per birthday subtype plus a
+"not a birthday card" option, using a natural language inference model
+(Yin et al., 2019). No training data, no API, runs locally on the cluster GPU.
 
-This scores each title against one hypothesis per subtype with a natural
-language inference model (Yin et al., 2019) — no training data, no API, runs
-locally on the cluster GPU.
+This replaces the keyword rules as the labelling method. Rules could only fire
+on explicit tokens, so semantic titles ("Fabulous at Fifty", "To my one and
+only") defaulted to general, while substring matching mislabelled adult cards
+as kids. A supervised classifier was not an option: the only labels available
+were the rules' own output, so it could at best imitate them.
 
-Deliberately a hybrid, not a replacement:
+Anything failing to clear `threshold` falls back to birthday/general; a
+confident "not a birthday card" clears the occasion so the listing is excluded
+from training.
 
-  1. Not a birthday card by the rules  -> left alone
-  2. Explicit age evidence in the title -> rules win. "30th Birthday" is
-     milestone regardless of what an entailment model thinks; parsed ages are
-     the higher-precision signal.
-  3. Everything else                    -> NLI decides, falling back to
-     general when no hypothesis clears the threshold.
+Writes listing_features.occasion with feature_version 'nli-v1'.
 
-Writes listing_features.occasion with feature_version 'nli-v1', so a run can
-be told apart from the keyword pass.
-
-    python -m data.features.occasion_nli run
-    python -m data.features.occasion_nli run --dry-run --limit 200
+    python -m data.features.occasion_nli --dry-run --limit 200
+    python -m data.features.occasion_nli
 """
 
 from __future__ import annotations
@@ -32,11 +28,6 @@ import typer
 
 from common.db import connection
 from common.logging import get_logger
-from data.features.occasion_classifier import (
-    _ages_in,
-    pick_best_occasion,
-    weak_label,
-)
 from common.occasions import ACTIVE_OCCASIONS as OCCASIONS
 
 log = get_logger(__name__)
@@ -77,24 +68,6 @@ SET occasion = EXCLUDED.occasion,
 """
 
 
-def _needs_nli(title: str) -> bool:
-    """True when the rules have no explicit evidence to go on.
-
-    Includes titles the rules could not label at all: "Fabulous at Fifty" is a
-    milestone card that never says "birthday", so restricting NLI to
-    rule-confirmed birthday cards would exclude the very cases it exists for.
-    """
-    labels = weak_label(title)
-    if _ages_in(title.lower()):
-        return False                      # parsed age beats an entailment score
-    subtype = pick_best_occasion(labels)
-    if subtype is None:
-        return True                       # unlabelled — let NLI try
-    if not subtype.startswith("birthday/"):
-        return False                      # rules found a non-birthday occasion
-    return subtype == "birthday/general"  # rules found nothing more specific
-
-
 def classify(
     limit: int = 100000,
     model_id: str = DEFAULT_MODEL,
@@ -109,11 +82,8 @@ def classify(
         cur.execute(_SELECT, {"limit": limit})
         rows = cur.fetchall()
 
-    todo = [r for r in rows if _needs_nli(r["title"])]
-    log.info(
-        f"{len(rows)} listings; {len(todo)} need NLI "
-        f"(rest have explicit evidence or are not birthday cards)"
-    )
+    todo = rows
+    log.info(f"Classifying {len(todo)} titles with NLI")
     if not todo:
         return
 

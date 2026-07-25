@@ -1,6 +1,6 @@
 """CLI driver: sweep a site's birthday catalogue into `listings`.
 
-Scrape broadly first, then let `data.features.occasion_classifier` split the
+Scrape broadly first, then let `data.features.occasion_nli` split the
 result into subtypes — the search term must not decide the label, or the
 subtype distribution just reflects how many queries we wrote per subtype.
 
