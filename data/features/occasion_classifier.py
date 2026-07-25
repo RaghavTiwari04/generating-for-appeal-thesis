@@ -144,12 +144,15 @@ ORDER BY l.last_seen_at DESC
 LIMIT %(limit)s;
 """
 
+# LEFT JOIN: a freshly scraped listing has no listing_features row yet, and an
+# inner join silently classified nothing after a full wipe. The upsert below
+# creates the row, so it does not need to pre-exist.
 _SELECT_ALL = """
 SELECT l.listing_id,
        COALESCE(l.title,'')       AS title,
        COALESCE(l.description,'') AS description
 FROM listings l
-JOIN listing_features lf ON lf.listing_id = l.listing_id
+LEFT JOIN listing_features lf ON lf.listing_id = l.listing_id
 ORDER BY l.last_seen_at DESC
 LIMIT %(limit)s;
 """
