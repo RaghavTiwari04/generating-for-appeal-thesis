@@ -73,15 +73,19 @@ def _generate_naive(occasion: str, seed: int) -> EvalCard:
     Uses the same inpainting mask and layout composer as B/C so the only
     difference is prompt quality and LoRA — not card format.
     """
-    from generation.image.diffusion import DiffusionConfig, DiffusionRunner
+    from generation.image.diffusion import get_runner
     from generation.image.headline_mask import LayoutMaskSpec, build_headline_mask
     from generation.layout.compose import compose
 
     naive_prompt = f"a greeting card for {occasion.replace('/', ' ').replace('_', ' ')}, digital art"
     headline = f"Happy {occasion.replace('_', ' ').replace('/', ' ').title()}"
 
-    cfg = DiffusionConfig()
-    runner = DiffusionRunner(cfg)
+    # Share the process-wide runner. A private DiffusionRunner would hold a
+    # second copy of Flux + Flux-Fill (~48GB) alongside the shared one and OOM
+    # an 80GB card. Passing occasion=None makes _ensure_occasion drop any
+    # LoRA-fused pipeline and reload clean, preserving A's no-LoRA baseline.
+    runner = get_runner()
+    cfg = runner.cfg
     mask_spec = LayoutMaskSpec(width=cfg.width, height=cfg.height)
     mask_image, _ = build_headline_mask(mask_spec)
 
