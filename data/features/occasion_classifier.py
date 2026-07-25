@@ -23,11 +23,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-import numpy as np
-import torch
 import typer
-from torch import nn
-from transformers import AutoModel, AutoTokenizer
 
 from common.db import connection
 from common.logging import get_logger
@@ -139,27 +135,43 @@ def weak_label(text: str) -> list[str]:
 # ---------------------------------------------------------------------------
 # Model
 # ---------------------------------------------------------------------------
-class OccasionClassifier(nn.Module):
-    def __init__(self, n_labels: int = len(OCCASIONS)):
-        super().__init__()
-        self.encoder = AutoModel.from_pretrained(MODEL_ID)
-        hidden = self.encoder.config.hidden_size
-        self.head = nn.Sequential(
-            nn.Linear(hidden, 256),
-            nn.GELU(),
-            nn.Dropout(0.1),
-            nn.Linear(256, n_labels),
-        )
+def _model_cls():
+    """Build the DistilBERT classifier class on demand.
 
-    def forward(self, input_ids: torch.Tensor, attention_mask: torch.Tensor) -> torch.Tensor:
-        out = self.encoder(input_ids=input_ids, attention_mask=attention_mask)
-        cls = out.last_hidden_state[:, 0]
-        return torch.sigmoid(self.head(cls))
+    torch and transformers are needed only by this model path — `infer` runs
+    pure keyword rules. Importing them at module scope cost several minutes
+    on NFS for every caller that just wanted `weak_label`.
+    """
+    import torch
+    from torch import nn
+    from transformers import AutoModel
+
+    class OccasionClassifier(nn.Module):
+        def __init__(self, n_labels: int = len(OCCASIONS)):
+            super().__init__()
+            self.encoder = AutoModel.from_pretrained(MODEL_ID)
+            hidden = self.encoder.config.hidden_size
+            self.head = nn.Sequential(
+                nn.Linear(hidden, 256),
+                nn.GELU(),
+                nn.Dropout(0.1),
+                nn.Linear(256, n_labels),
+            )
+
+        def forward(self, input_ids, attention_mask):
+            out = self.encoder(input_ids=input_ids, attention_mask=attention_mask)
+            cls = out.last_hidden_state[:, 0]
+            return torch.sigmoid(self.head(cls))
+
+    return OccasionClassifier
 
 
-def load_model(ckpt: Path | None = None) -> tuple[OccasionClassifier, AutoTokenizer]:
+def load_model(ckpt: Path | None = None):
+    import torch
+    from transformers import AutoTokenizer
+
     tokenizer = AutoTokenizer.from_pretrained(MODEL_ID)
-    model = OccasionClassifier()
+    model = _model_cls()()
     if ckpt and ckpt.exists():
         state = torch.load(ckpt, map_location="cpu")
         model.load_state_dict(state)
@@ -177,6 +189,8 @@ def train(
     ckpt: Path = CKPT_PATH,
 ) -> None:
     import pandas as pd
+    import torch
+    from torch import nn
     from torch.utils.data import DataLoader, TensorDataset
 
     from common.db import engine
