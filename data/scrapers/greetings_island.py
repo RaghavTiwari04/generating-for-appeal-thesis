@@ -43,6 +43,7 @@ class GreetingsIslandScraper(Scraper):
     source = "greetings_island"
     use_playwright = False  # Static HTML works
     ignores_query = True    # crawls _BIRTHDAY_PATHS, not the query
+    require_birthday = True # guard in case a category page bleeds
     BASE = "https://www.greetingsisland.com"
 
     async def discover(  # type: ignore[override]

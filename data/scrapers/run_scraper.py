@@ -82,6 +82,8 @@ async def _run(
                     count += 1
                     total += 1
             log.info(f"[{source}] query={query!r} -> {count} new listings")
+        if scraper.skipped_off_topic:
+            log.info(f"[{source}] skipped {scraper.skipped_off_topic} non-birthday listings")
     return total
 
 

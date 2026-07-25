@@ -40,6 +40,18 @@ from common.storage import put_raw_html
 
 log = get_logger(__name__)
 
+def _is_birthday_title(title: str) -> bool:
+    """True if the occasion classifier would file this title under birthday/*.
+
+    Reuses the classifier's own rules rather than a second keyword list, so the
+    scrape gate cannot drift from what the classifier will accept. A hand-rolled
+    regex was both too strict ("Fabulous at 40th" matches the milestone rules
+    but contains no "birthday") and too loose in the other direction.
+    """
+    from data.features.occasion_classifier import weak_label
+
+    return any(lbl.startswith("birthday/") for lbl in weak_label(title))
+
 
 @dataclass
 class ParsedListing:
@@ -93,6 +105,10 @@ class Scraper(ABC):
     # True when discover() enumerates fixed category pages and ignores the
     # query, so the driver runs it once instead of once per query.
     ignores_query: bool = False
+    # Drop listings whose title has no birthday marker. Marketplace search is
+    # relevance-ranked, so deep pages drift off-topic ("Surgeon Greeting
+    # Card"); without this they reach the DB and have to be cleaned up later.
+    require_birthday: bool = False
 
     def __init__(
         self,
@@ -111,6 +127,7 @@ class Scraper(ABC):
         self.cache_ttl = timedelta(days=cache_ttl_days or settings.scraper_raw_html_ttl_days)
         self._client: httpx.AsyncClient | None = None
         self._browser: Any = None  # playwright Browser
+        self.skipped_off_topic = 0
         self._pw: Any = None       # playwright async API
 
     # -- to be implemented by subclasses --------------------------------------
@@ -234,6 +251,12 @@ class Scraper(ABC):
             return await self._pw_fetch(url, wait_selector=wait_selector)
         return await self._fetch(url)
 
+    def should_store(self, parsed: ParsedListing) -> bool:
+        """Gate a parsed listing before it reaches the database."""
+        if self.require_birthday and not _is_birthday_title(parsed.title or ""):
+            return False
+        return True
+
     async def fetch_and_store(self, url: str, *, use_cache: bool = True,
                                wait_selector: str | None = None) -> ParsedListing | None:
         """Fetch (cached or network), parse, persist raw HTML + upsert listing."""
@@ -250,6 +273,11 @@ class Scraper(ABC):
             parsed = self.parse(html, url)
         except Exception as e:
             log.exception(f"Parse failed for {url}: {e}")
+            return None
+
+        if not self.should_store(parsed):
+            self.skipped_off_topic += 1
+            log.debug(f"Skipping non-birthday listing: {(parsed.title or url)[:80]}")
             return None
 
         # Persist raw HTML to MinIO for re-parsing later.
