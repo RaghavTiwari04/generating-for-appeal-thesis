@@ -43,12 +43,6 @@ echo ""
 echo "--- Scraping greetings_island ---"
 python -u -m data.scrapers.run_scraper --source greetings_island --limit "$LIMIT"
 
-# Zazzle needs Playwright and has previously yielded very little; do not let
-# it abort the run.
-echo ""
-echo "--- Scraping zazzle (best effort) ---"
-python -u -m data.scrapers.run_scraper --source zazzle --limit "$LIMIT" || \
-    echo "zazzle failed, continuing"
 
 echo ""
 echo "--- Downloading images ---"

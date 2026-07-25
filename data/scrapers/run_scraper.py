@@ -26,14 +26,11 @@ def _make_scraper(source: str):
     if source == "redbubble":
         from data.scrapers.redbubble import RedbubbleScraper
         return RedbubbleScraper()
-    elif source == "zazzle":
-        from data.scrapers.zazzle import ZazzleScraper
-        return ZazzleScraper()
     elif source == "greetings_island":
         from data.scrapers.greetings_island import GreetingsIslandScraper
         return GreetingsIslandScraper()
     else:
-        raise ValueError(f"Unknown source: {source!r}. Choose from redbubble, zazzle, greetings_island")
+        raise ValueError(f"Unknown source: {source!r}. Choose from redbubble, greetings_island")
 
 
 # Sweep the whole birthday catalogue, then let the occasion classifier split
@@ -90,7 +87,7 @@ async def _run(
 
 @app.command()
 def run(
-    source: str = typer.Option(..., help="redbubble | zazzle | greetings_island"),
+    source: str = typer.Option(..., help="redbubble | greetings_island"),
     queries: str | None = typer.Option(
         None,
         help="Comma-separated search queries. Defaults to a broad birthday sweep.",

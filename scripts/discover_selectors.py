@@ -22,7 +22,6 @@ import typer
 
 TEST_URLS = {
     "redbubble": "https://www.redbubble.com/i/greeting-card/Birthday-by-test/1234567890.5MT14",
-    "zazzle": "https://www.zazzle.com/happy_birthday_card-137590148547323136",
     "greetings_island": "https://www.greetingsisland.com/cards/birthday/general/1",
 }
 
@@ -77,16 +76,14 @@ def _report(source: str, listing) -> None:
 
 @app.command()
 def run(
-    source: str = typer.Option("all", help="all | redbubble | zazzle | greetings_island"),
+    source: str = typer.Option("all", help="all | redbubble | greetings_island"),
     url: str | None = typer.Option(None, help="Override URL for testing"),
 ) -> None:
     from data.scrapers.greetings_island import GreetingsIslandScraper
     from data.scrapers.redbubble import RedbubbleScraper
-    from data.scrapers.zazzle import ZazzleScraper
 
     scraper_map = {
         "redbubble":         RedbubbleScraper(),
-        "zazzle":            ZazzleScraper(),
         "greetings_island":  GreetingsIslandScraper(),
     }
     sources = list(scraper_map.keys()) if source == "all" else [source]

@@ -50,7 +50,7 @@ def _step(name: str, description: str):
 # Step definitions
 # ---------------------------------------------------------------------------
 
-@_step("scrape", "Scrape Redbubble, Zazzle, Greetings Island")
+@_step("scrape", "Scrape Redbubble, Greetings Island")
 def step_scrape(limit: int) -> int:
     import asyncio
 
@@ -61,7 +61,7 @@ def step_scrape(limit: int) -> int:
         return o.replace("/", " ").replace("_", " ") + " greeting card"
 
     queries = [_occasion_query(o) for o in ACTIVE_OCCASIONS]
-    sources = ["redbubble", "zazzle", "greetings_island"]
+    sources = ["redbubble", "greetings_island"]
     total = 0
     for src in sources:
         try:
