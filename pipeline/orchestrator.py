@@ -11,7 +11,6 @@ calibrated saleability score.
 from __future__ import annotations
 
 import io
-import random
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -65,24 +64,17 @@ def generate(request: dict, cfg: OrchestratorConfig | None = None) -> list[Candi
     lora_dir = Path("generation/image/loras") / request["occasion"].replace("/", "_")
     has_lora = lora_dir.exists()
 
-    STYLE_PREFIXES = [
-        "",
-        "watercolour illustration of ",
-        "3D rendered cartoon of ",
-        "paper cut collage of ",
-        "flat vector illustration of ",
-        "oil painting of ",
-        "whimsical pencil sketch of ",
-        "retro vintage poster of ",
-    ]
+    # The brief already specifies an art medium (see the "Vary the art medium"
+    # rule in brief_v1.txt). Prepending a second, randomly chosen medium here
+    # produced contradictory prompts like "oil painting of a papercut collage
+    # of ...". Candidate variation now comes from the seed and from the
+    # per-card bestseller-index rotation in pipeline/conditions.py.
+    prompt = f"TOK {visual_prompt}" if has_lora else visual_prompt
 
     images = []
-    rng = random.Random(cfg.image_seed_base or 0)
     for i in range(cfg.n_candidates):
-        style = rng.choice(STYLE_PREFIXES)
-        prompt_i = f"TOK {style}{visual_prompt}" if has_lora else f"{style}{visual_prompt}"
         img = diffusion.generate(
-            prompt=prompt_i,
+            prompt=prompt,
             negative_prompt=brief.negative_prompt,
             occasion=request["occasion"],
             seed=(cfg.image_seed_base + i) if cfg.image_seed_base is not None else None,
