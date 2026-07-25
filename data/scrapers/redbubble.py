@@ -100,8 +100,6 @@ def _cover_first(urls: list[str]) -> list[str]:
 class RedbubbleScraper(Scraper):
     source = "redbubble"
     BASE = "https://www.redbubble.com"
-    # Search is relevance-ranked, so deep pages drift off-topic.
-    require_birthday = True
 
     async def discover(  # type: ignore[override]
         self, *, query: str, max_results: int = 100
