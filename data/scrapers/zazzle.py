@@ -17,7 +17,7 @@ from selectolax.parser import HTMLParser
 
 from common.logging import get_logger
 from data.scrapers.base import ParsedListing, Scraper
-from data.scrapers.etsy import (
+from data.scrapers.parsing import (
     _attr,
     _extract_jsonld,
     _parse_price,

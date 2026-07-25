@@ -39,28 +39,6 @@ def print_res_img() -> Image.Image:
 
 # ── HTML fixture helpers ──────────────────────────────────────────────────────
 
-ETSY_LISTING_HTML = dedent("""\
-    <html><head>
-    <script type="application/ld+json">
-    {
-      "@type": "Product",
-      "name": "Happy Birthday Mum — Watercolour Floral Card",
-      "description": "A beautiful watercolour card for mum",
-      "brand": {"name": "FloralPaperCo"},
-      "offers": {"price": "3.99", "priceCurrency": "GBP"},
-      "aggregateRating": {"reviewCount": 127, "ratingValue": 4.9},
-      "image": ["https://i.etsystatic.com/123/card.jpg"]
-    }
-    </script>
-    </head><body>
-    <h1 data-buy-box-listing-title>Happy Birthday Mum — Watercolour Floral Card</h1>
-    <a href="/shop/FloralPaperCo">FloralPaperCo</a>
-    <div data-buy-box-region="price">£3.99</div>
-    <span data-favorites-count>2,341</span>
-    <span data-bestseller-badge>Bestseller</span>
-    </body></html>
-""")
-
 REDBUBBLE_LISTING_HTML = dedent("""\
     <html><body>
     <h1>Birthday Watercolour Card</h1>
@@ -72,9 +50,6 @@ REDBUBBLE_LISTING_HTML = dedent("""\
 """)
 
 
-@pytest.fixture
-def etsy_html() -> str:
-    return ETSY_LISTING_HTML
 
 
 @pytest.fixture

@@ -11,7 +11,7 @@ Run once after TOS review to verify selectors before a production scrape:
     python scripts/discover_selectors.py
 
 Or target one source:
-    python scripts/discover_selectors.py --source etsy
+    python scripts/discover_selectors.py --source redbubble
 """
 
 from __future__ import annotations
@@ -21,7 +21,6 @@ import asyncio
 import typer
 
 TEST_URLS = {
-    "etsy": "https://www.etsy.com/uk/listing/1234567890/",   # replace with a real listing
     "redbubble": "https://www.redbubble.com/i/greeting-card/Birthday-by-test/1234567890.5MT14",
     "zazzle": "https://www.zazzle.com/happy_birthday_card-137590148547323136",
     "greetings_island": "https://www.greetingsisland.com/cards/birthday/general/1",
@@ -78,16 +77,14 @@ def _report(source: str, listing) -> None:
 
 @app.command()
 def run(
-    source: str = typer.Option("all", help="all | etsy | redbubble | zazzle | greetings_island"),
+    source: str = typer.Option("all", help="all | redbubble | zazzle | greetings_island"),
     url: str | None = typer.Option(None, help="Override URL for testing"),
 ) -> None:
-    from data.scrapers.etsy import EtsyScraper
     from data.scrapers.greetings_island import GreetingsIslandScraper
     from data.scrapers.redbubble import RedbubbleScraper
     from data.scrapers.zazzle import ZazzleScraper
 
     scraper_map = {
-        "etsy":              EtsyScraper(),
         "redbubble":         RedbubbleScraper(),
         "zazzle":            ZazzleScraper(),
         "greetings_island":  GreetingsIslandScraper(),

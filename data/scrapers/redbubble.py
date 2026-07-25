@@ -15,7 +15,7 @@ from urllib.parse import quote_plus
 from selectolax.parser import HTMLParser
 
 from data.scrapers.base import ParsedListing, Scraper
-from data.scrapers.etsy import (
+from data.scrapers.parsing import (
     _attr,
     _extract_jsonld,
     _parse_price,

@@ -2,7 +2,7 @@
 
 Each concrete scraper subclasses `Scraper` and implements:
 
-- `source: str`               (class attribute, e.g. "etsy")
+- `source: str`               (class attribute, e.g. "redbubble")
 - `discover(query, ...)`      -> iterable of listing URLs to fetch
 - `parse(html, url)`          -> a `ParsedListing` dataclass
 
@@ -90,6 +90,9 @@ class Scraper(ABC):
 
     source: str = ""
     use_playwright: bool = False
+    # True when discover() enumerates fixed category pages and ignores the
+    # query, so the driver runs it once instead of once per query.
+    ignores_query: bool = False
 
     def __init__(
         self,

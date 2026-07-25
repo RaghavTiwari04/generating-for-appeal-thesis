@@ -17,7 +17,7 @@ from selectolax.parser import HTMLParser
 
 from common.logging import get_logger
 from data.scrapers.base import ParsedListing, Scraper
-from data.scrapers.etsy import (
+from data.scrapers.parsing import (
     _extract_jsonld,
     _parse_price,
     _text,
@@ -42,38 +42,47 @@ _BIRTHDAY_PATHS = [
 class GreetingsIslandScraper(Scraper):
     source = "greetings_island"
     use_playwright = False  # Static HTML works
+    ignores_query = True    # crawls _BIRTHDAY_PATHS, not the query
     BASE = "https://www.greetingsisland.com"
 
     async def discover(  # type: ignore[override]
         self, *, query: str, max_results: int = 100
     ) -> AsyncIterator[str]:
-        """Crawl birthday category pages for /preview/cards/ links."""
+        """Crawl birthday category pages for /preview/cards/ links.
+
+        Each path gets an equal share of the budget on a first pass, then any
+        shortfall is filled on a second unrestricted pass. Draining the budget
+        path-by-path meant `/cards/birthday` consumed the whole limit and the
+        subcategory paths below it were never fetched at all.
+        """
         emitted = 0
         seen: set[str] = set()
 
-        # Use category browsing instead of search (more reliable)
+        # Category browsing is more reliable than search here.
         paths = list(_BIRTHDAY_PATHS)
-        # Also try search as fallback
-        from urllib.parse import quote_plus
-        search_url = f"{self.BASE}/cards/all?search={quote_plus(query)}"
-        paths.append(search_url)
+        # Search as a fallback, only if a query was supplied.
+        if query:
+            from urllib.parse import quote_plus
+            paths.append(f"{self.BASE}/cards/all?search={quote_plus(query)}")
 
-        for path in paths:
-            if emitted >= max_results:
+        async def crawl(path: str, budget: int):
+            nonlocal emitted
+            if budget <= 0:
                 return
             url = path if path.startswith("http") else self.BASE + path
+            got = 0
             page_num = 1
-            while emitted < max_results:
+            while got < budget and emitted < max_results:
                 page_url = f"{url}/{page_num}" if page_num > 1 else url
                 try:
                     html = await self._fetch(page_url)
                 except Exception as e:
                     log.debug(f"GI page failed: {page_url}: {e}")
-                    break
+                    return
                 tree = HTMLParser(html)
                 links = tree.css("a[href*='/preview/cards/']")
                 if not links:
-                    break
+                    return
                 new_count = 0
                 for a in links:
                     href = a.attributes.get("href", "")
@@ -85,15 +94,28 @@ class GreetingsIslandScraper(Scraper):
                         continue
                     seen.add(full)
                     new_count += 1
+                    got += 1
                     emitted += 1
                     yield full
-                    if emitted >= max_results:
+                    if got >= budget or emitted >= max_results:
                         return
                 if new_count == 0:
-                    break
+                    return
                 page_num += 1
-                if page_num > 10:
-                    break
+                if page_num > 40:
+                    return
+
+        per_path = max(1, max_results // max(1, len(paths)))
+        for path in paths:
+            async for url in crawl(path, per_path):
+                yield url
+
+        # Second pass: top up from whichever paths still have pages.
+        for path in paths:
+            if emitted >= max_results:
+                return
+            async for url in crawl(path, max_results - emitted):
+                yield url
 
     def parse(self, html: str, url: str) -> ParsedListing:
         tree = HTMLParser(html)
