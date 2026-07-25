@@ -17,6 +17,7 @@ Usage:
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 import typer
@@ -24,6 +25,7 @@ import typer
 from common.db import connection
 from common.logging import get_logger
 from common.occasions import ACTIVE_OCCASIONS as OCCASIONS
+from common.occasions import MILESTONE_AGES
 
 log = get_logger(__name__)
 
@@ -39,22 +41,20 @@ IDX_TO_OCCASION = {i: o for i, o in enumerate(OCCASIONS)}
 
 
 # ---------------------------------------------------------------------------
-# Keyword rules (weak supervision seed)
+# Keyword rules
 # ---------------------------------------------------------------------------
+# Ages are parsed as numbers, never as substrings. Matching "9th birthday"
+# inside "Happy 29th Birthday", or "3rd birthday" inside "33rd Birthday", put
+# adult cards in birthday/kids. See _ages_in().
 _RULES: dict[str, list[str]] = {
     "birthday/general": ["birthday", "bday", "happy birthday"],
-    "birthday/milestone": ["18th", "21st", "30th", "40th", "50th", "60th", "70th", "80th", "milestone"],
+    "birthday/milestone": ["milestone"],
     "birthday/kids": [
         "kids birthday", "birthday kids", "children's birthday", "birthday children",
         "birthday child", "child's birthday", "birthday boy", "birthday girl",
         "birthday son", "son birthday", "birthday daughter", "daughter birthday",
         "birthday nephew", "birthday niece", "birthday grandson", "birthday granddaughter",
-        "1st birthday", "2nd birthday", "3rd birthday", "4th birthday", "5th birthday",
-        "6th birthday", "7th birthday", "8th birthday", "9th birthday", "10th birthday",
-        "11th birthday", "12th birthday",
         "first birthday", "second birthday", "third birthday",
-        "age 1", "age 2", "age 3", "age 4", "age 5", "age 6", "age 7",
-        "age 8", "age 9", "age 10", "age 11", "age 12",
         "little one", "toddler", "baby birthday",
     ],
     "birthday/relationship": [
@@ -114,19 +114,59 @@ _COOCCURRENCE_RULES: dict[str, list[tuple[str, ...]]] = {
 }
 
 
+KID_AGE_MAX = 12
+
+# "18th", "3rd", "29th" — the whole number, so "29th" cannot match as "9th".
+_ORDINAL_RE = re.compile(r"\b(\d{1,3})(?:st|nd|rd|th)\b")
+_AGE_RE = re.compile(r"\bage\s+(\d{1,3})\b")
+_YEARS_OLD_RE = re.compile(r"\b(\d{1,3})\s*(?:years?|yrs?)\s*old\b")
+
+# In-laws are adults. Without this "Birthday to Future Son in Law" matches the
+# (birthday, son) rule and lands in kids.
+_IN_LAW_RE = re.compile(r"\b(son|daughter|mother|father|brother|sister)[\s-]+in[\s-]+law\b")
+
+
+def _ages_in(text: str) -> set[int]:
+    """Every age mentioned, parsed as a number rather than matched as text."""
+    ages: set[int] = set()
+    for pattern in (_ORDINAL_RE, _AGE_RE, _YEARS_OLD_RE):
+        ages.update(int(m) for m in pattern.findall(text))
+    return ages
+
+
+def _has_phrase(text: str, phrase: str) -> bool:
+    """Whole-word match. Substring matching put 'Colin Robinson' in kids."""
+    return re.search(rf"(?<!\w){re.escape(phrase)}(?!\w)", text) is not None
+
+
 def weak_label(text: str) -> list[str]:
     text_l = text.lower()
+    # Neutralise in-law phrases before any family-term matching.
+    text_l = _IN_LAW_RE.sub("inlaw", text_l)
+
     labels = []
     for occasion, keywords in _RULES.items():
-        if any(kw in text_l for kw in keywords):
+        if any(_has_phrase(text_l, kw) for kw in keywords):
             labels.append(occasion)
     for occasion, word_groups in _COOCCURRENCE_RULES.items():
         if occasion in labels:
             continue
         for words in word_groups:
-            if all(w in text_l for w in words):
+            if all(_has_phrase(text_l, w) for w in words):
                 labels.append(occasion)
                 break
+
+    # Ages decide kids vs milestone, so a wrong ordinal cannot mislabel a card.
+    ages = _ages_in(text_l)
+    if ages:
+        if any(a in MILESTONE_AGES for a in ages) and "birthday/milestone" not in labels:
+            labels.append("birthday/milestone")
+        if any(a <= KID_AGE_MAX for a in ages) and "birthday/kids" not in labels:
+            labels.append("birthday/kids")
+        # An adult age present with no kid age must not stay in kids.
+        if all(a > KID_AGE_MAX for a in ages) and "birthday/kids" in labels:
+            labels.remove("birthday/kids")
+
     return labels
 
 
