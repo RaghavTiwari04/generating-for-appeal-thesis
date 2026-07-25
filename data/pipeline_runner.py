@@ -10,7 +10,6 @@ Steps:
   4. ocr         — headline OCR
   5. palette     — LAB palette
   6. complexity  — image complexity score
-  7. clf-train   — train occasion classifier on weak labels
   8. clf-infer   — run occasion classifier on unlabelled listings
   9. dedup       — cluster duplicates
 
@@ -104,18 +103,7 @@ def step_complexity(limit: int) -> int:
     return run_complexity_missing(limit)
 
 
-@_step("clf-train", "Train occasion classifier (DistilBERT, weak labels)")
-def step_clf_train(limit: int) -> int:
-    import subprocess
-    import sys
-    result = subprocess.run(
-        [sys.executable, "-m", "data.features.occasion_classifier", "train", "--epochs", "5"],
-        check=False,
-    )
-    return 0 if result.returncode == 0 else -1
-
-
-@_step("clf-infer", "Occasion classifier inference on unlabelled listings")
+@_step("clf-infer", "Occasion classification (keyword rules)")
 def step_clf_infer(limit: int) -> int:
     import subprocess
     import sys

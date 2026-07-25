@@ -59,7 +59,6 @@ SQL
 # --- Artifact cleanup ---
 echo "Cleaning artifacts..."
 rm -rf artifacts/predictor/
-rm -rf artifacts/occasion_classifier.pt
 rm -rf artifacts/generated_cards/
 rm -rf artifacts/lora_train/
 rm -rf artifacts/llm_system_eval/

@@ -1,20 +1,16 @@
-"""Multi-label occasion classifier.
+"""Occasion classifier: keyword rules over listing titles.
 
-Two-stage training:
-1. Weak supervision from keyword rules → produce a noisy initial dataset
-2. Fine-tune DistilBERT multi-label on confident keyword-rule positives;
-   bootstrap: iteratively retrain on model-confident predictions.
+Assigns each listing one occasion from ACTIVE_OCCASIONS, writing
+listing_features.occasion plus a multilabel vector.
 
-Input:  listing title + description + tags (space-joined)
-Output: multi-label over OCCASIONS with per-label confidence
+Rules, not a model. A DistilBERT variant was trained on weak keyword labels
+in an earlier design, but it never outperformed the rules it was distilled
+from and inference always used the rules; it has been removed.
 
-Predictions stored in listing_features.occasion (top-1), occasion_confidence,
-and occasion_multilabel (full probability vector).
+`weak_label` is also the scraper's birthday gate (data/scrapers/base.py), so
+a listing cannot be stored that this module would then refuse to label.
 
 Usage:
-    # Train
-    python -m data.features.occasion_classifier train --epochs 5
-    # Infer missing
     python -m data.features.occasion_classifier infer
 """
 
@@ -33,8 +29,10 @@ log = get_logger(__name__)
 
 app = typer.Typer()
 
-MODEL_ID = "distilbert-base-uncased"
-CKPT_PATH = Path("./artifacts/occasion_classifier.pt")
+
+@app.callback()
+def _cli() -> None:
+    """Occasion classification via keyword rules."""
 
 OCCASION_TO_IDX = {o: i for i, o in enumerate(OCCASIONS)}
 IDX_TO_OCCASION = {i: o for i, o in enumerate(OCCASIONS)}
@@ -130,124 +128,6 @@ def weak_label(text: str) -> list[str]:
                 labels.append(occasion)
                 break
     return labels
-
-
-# ---------------------------------------------------------------------------
-# Model
-# ---------------------------------------------------------------------------
-def _model_cls():
-    """Build the DistilBERT classifier class on demand.
-
-    torch and transformers are needed only by this model path — `infer` runs
-    pure keyword rules. Importing them at module scope cost several minutes
-    on NFS for every caller that just wanted `weak_label`.
-    """
-    import torch
-    from torch import nn
-    from transformers import AutoModel
-
-    class OccasionClassifier(nn.Module):
-        def __init__(self, n_labels: int = len(OCCASIONS)):
-            super().__init__()
-            self.encoder = AutoModel.from_pretrained(MODEL_ID)
-            hidden = self.encoder.config.hidden_size
-            self.head = nn.Sequential(
-                nn.Linear(hidden, 256),
-                nn.GELU(),
-                nn.Dropout(0.1),
-                nn.Linear(256, n_labels),
-            )
-
-        def forward(self, input_ids, attention_mask):
-            out = self.encoder(input_ids=input_ids, attention_mask=attention_mask)
-            cls = out.last_hidden_state[:, 0]
-            return torch.sigmoid(self.head(cls))
-
-    return OccasionClassifier
-
-
-def load_model(ckpt: Path | None = None):
-    import torch
-    from transformers import AutoTokenizer
-
-    tokenizer = AutoTokenizer.from_pretrained(MODEL_ID)
-    model = _model_cls()()
-    if ckpt and ckpt.exists():
-        state = torch.load(ckpt, map_location="cpu")
-        model.load_state_dict(state)
-    return model, tokenizer
-
-
-# ---------------------------------------------------------------------------
-# Training
-# ---------------------------------------------------------------------------
-@app.command()
-def train(
-    epochs: int = 5,
-    batch_size: int = 32,
-    lr: float = 2e-5,
-    ckpt: Path = CKPT_PATH,
-) -> None:
-    import pandas as pd
-    import torch
-    from torch import nn
-    from torch.utils.data import DataLoader, TensorDataset
-
-    from common.db import engine
-
-    df = pd.read_sql(
-        "SELECT listing_id, title, description FROM listings", engine()
-    )
-    texts = (
-        df["title"].fillna("") + " " + df["description"].fillna("")
-    ).str.strip().tolist()
-
-    model, tokenizer = load_model()
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model = model.to(device)
-
-    ys = []
-    keep = []
-    for i, t in enumerate(texts):
-        lbls = weak_label(t)
-        if not lbls:
-            continue
-        vec = [0.0] * len(OCCASIONS)
-        for lbl in lbls:
-            if lbl in OCCASION_TO_IDX:
-                vec[OCCASION_TO_IDX[lbl]] = 1.0
-        ys.append(vec)
-        keep.append(i)
-
-    if not keep:
-        log.error("No weak labels found — check listings table is populated")
-        raise SystemExit(1)
-
-    texts_keep = [texts[i] for i in keep]
-    enc = tokenizer(texts_keep, truncation=True, padding=True, max_length=128, return_tensors="pt")
-    y_tensor = torch.tensor(ys, dtype=torch.float32)
-    ds = TensorDataset(enc["input_ids"], enc["attention_mask"], y_tensor)
-    loader = DataLoader(ds, batch_size=batch_size, shuffle=True)
-
-    opt = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-2)
-    loss_fn = nn.BCELoss()
-
-    for epoch in range(epochs):
-        model.train()
-        running = 0.0
-        for ids, mask, labels in loader:
-            ids, mask, labels = ids.to(device), mask.to(device), labels.to(device)
-            pred = model(ids, mask)
-            loss = loss_fn(pred, labels)
-            opt.zero_grad()
-            loss.backward()
-            opt.step()
-            running += loss.item()
-        log.info(f"epoch={epoch} loss={running/len(loader):.4f}")
-
-    ckpt.parent.mkdir(parents=True, exist_ok=True)
-    torch.save(model.state_dict(), ckpt)
-    log.info(f"Saved {ckpt}")
 
 
 # ---------------------------------------------------------------------------
