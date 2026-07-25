@@ -1,19 +1,23 @@
-"""Per-occasion LoRA fine-tuning on Flux.1-dev (rank 8-16, ~1000 steps).
+"""Per-occasion LoRA fine-tuning on Flux.1-dev.
 
-Trains a small LoRA on the top-saleability images for a single occasion.
-PEFT-based; meant to run on a rented A100 in a training sprint. Saves LoRA
-weights to `generation/image/loras/<occasion>/`.
+Trains a style LoRA on the top-saleability images for a single occasion and
+saves the weights to `generation/image/loras/<occasion>/`.
 
-This is a CLI wrapper around diffusers + peft. We keep training-script
-configuration explicit in the CLI so each occasion's LoRA is reproducible
-from the command line that produced it.
+Thin CLI wrapper around diffusers' official `train_dreambooth_lora_flux.py`
+(flow-matching loss, timestep sampling and weight serialisation all come from
+there). We own only data prep and bookkeeping, so each occasion's LoRA stays
+reproducible from the command line that produced it.
 
-Usage (rented A100):
+Note: text encoders are NOT trained (no `--train_text_encoder`), so "TOK" in
+the instance prompt is not a learned token — the style lives in the
+transformer LoRA and applies whether or not the trigger appears at inference.
+
+Usage — mirrors cluster/jobs/04_train_lora.sh:
     python -m generation.image.loras.train_lora \
         --occasion birthday/general \
-        --rank 8 \
-        --steps 1000 \
-        --lr 1e-4
+        --rank 32 \
+        --steps 1500 \
+        --lr 1e-5
 """
 
 from __future__ import annotations
@@ -39,7 +43,7 @@ FROM listings l
 JOIN listing_features lf USING (listing_id)
 JOIN listing_images li ON li.listing_id = l.listing_id AND li.is_primary
 LEFT JOIN saleability_labels sl
-  ON sl.listing_id = l.listing_id AND sl.label_source = 'vlm_4head_v1'
+  ON sl.listing_id = l.listing_id AND sl.label_source = 'vlm_5head_v1'
 WHERE lf.occasion = %(occasion)s
 ORDER BY COALESCE(sl.score, 0) DESC
 LIMIT %(limit)s;
