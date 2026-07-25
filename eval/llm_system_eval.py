@@ -76,25 +76,35 @@ def _load_generated_cards(conditions: list[str]) -> pd.DataFrame:
 
 
 def _load_human_bestsellers(occasions: list[str], per_occasion: int = 5) -> pd.DataFrame:
+    # Rank WITHIN each occasion. A global ORDER BY score would fill the whole
+    # D sample from the highest-scoring occasions and drop others entirely,
+    # leaving D with a different occasion mix from the balanced A/B/C sets —
+    # so a C-vs-D difference would partly reflect occasion mix, not quality.
     sql = """
-    SELECT li.listing_id::text AS card_key,
-           'D_human_bestseller' AS condition_tag,
-           li.storage_path AS cover_path,
-           l.title AS headline_text,
-           '' AS inside_message,
-           lf.occasion
-    FROM listings l
-    JOIN listing_features lf USING (listing_id)
-    JOIN listing_images li ON li.listing_id = l.listing_id AND li.is_primary
-    LEFT JOIN saleability_labels sl
-      ON sl.listing_id = l.listing_id AND sl.label_source = 'vlm_5head_v1'
-    WHERE lf.occasion = ANY(%(occasions)s)
-    ORDER BY COALESCE(sl.score, 0) DESC
-    LIMIT %(limit)s
+    SELECT card_key, condition_tag, cover_path, headline_text, inside_message, occasion
+    FROM (
+        SELECT li.listing_id::text AS card_key,
+               'D_human_bestseller' AS condition_tag,
+               li.storage_path AS cover_path,
+               l.title AS headline_text,
+               '' AS inside_message,
+               lf.occasion,
+               ROW_NUMBER() OVER (
+                   PARTITION BY lf.occasion
+                   ORDER BY COALESCE(sl.score, 0) DESC, l.listing_id
+               ) AS rn
+        FROM listings l
+        JOIN listing_features lf USING (listing_id)
+        JOIN listing_images li ON li.listing_id = l.listing_id AND li.is_primary
+        LEFT JOIN saleability_labels sl
+          ON sl.listing_id = l.listing_id AND sl.label_source = 'vlm_5head_v1'
+        WHERE lf.occasion = ANY(%(occasions)s)
+    ) ranked
+    WHERE rn <= %(per_occasion)s
     """
     return pd.read_sql(
         sql, engine(),
-        params={"occasions": occasions, "limit": per_occasion * len(occasions)},
+        params={"occasions": occasions, "per_occasion": per_occasion},
     )
 
 

@@ -27,20 +27,29 @@ FROM generated_cards gc
 WHERE gc.condition_tag = ANY(%(conditions)s)
 """
 
+# Rank WITHIN each occasion — a global ORDER BY score fills the sample from
+# the highest-scoring occasions and drops the rest, so the gallery would not
+# show the same occasion mix as the balanced A/B/C conditions.
 _HUMAN_SQL = """
-SELECT li.listing_id::text AS card_key,
-       'D_human_bestseller' AS condition_tag,
-       li.storage_path AS cover_path,
-       l.title AS headline_text,
-       lf.occasion
-FROM listings l
-JOIN listing_features lf USING (listing_id)
-JOIN listing_images li ON li.listing_id = l.listing_id AND li.is_primary
-LEFT JOIN saleability_labels sl
-  ON sl.listing_id = l.listing_id AND sl.label_source = 'vlm_5head_v1'
-WHERE lf.occasion = ANY(%(occasions)s)
-ORDER BY COALESCE(sl.score, 0) DESC
-LIMIT %(limit)s
+SELECT card_key, condition_tag, cover_path, headline_text, occasion
+FROM (
+    SELECT li.listing_id::text AS card_key,
+           'D_human_bestseller' AS condition_tag,
+           li.storage_path AS cover_path,
+           l.title AS headline_text,
+           lf.occasion,
+           ROW_NUMBER() OVER (
+               PARTITION BY lf.occasion
+               ORDER BY COALESCE(sl.score, 0) DESC, l.listing_id
+           ) AS rn
+    FROM listings l
+    JOIN listing_features lf USING (listing_id)
+    JOIN listing_images li ON li.listing_id = l.listing_id AND li.is_primary
+    LEFT JOIN saleability_labels sl
+      ON sl.listing_id = l.listing_id AND sl.label_source = 'vlm_5head_v1'
+    WHERE lf.occasion = ANY(%(occasions)s)
+) ranked
+WHERE rn <= %(per_occasion)s
 """
 
 DIMS = ["purchase_intent", "occasion_fit", "aesthetic", "emotional_resonance", "distinctiveness"]
@@ -81,7 +90,7 @@ def export(
 
     human_df = pd.read_sql(
         _HUMAN_SQL, engine(),
-        params={"occasions": occasions, "limit": d_per_occasion * len(occasions)},
+        params={"occasions": occasions, "per_occasion": d_per_occasion},
     )
     log.info(f"Loaded {len(human_df)} human bestseller cards (D)")
 
