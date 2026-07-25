@@ -39,7 +39,10 @@ WATCHDOG_PID=$!
 # forces crash recovery on the next job's startup.
 cleanup() {
     kill $WATCHDOG_PID 2>/dev/null || true
-    pg_ctl -D "$PG_DIR" stop -m fast -w -t 300 2>/dev/null || true
+    # SLURM allows only ~30s between SIGTERM and SIGKILL on scancel, so a long
+    # timeout here just gets killed mid-shutdown and forces crash recovery on
+    # the next start — the very thing this is trying to avoid.
+    pg_ctl -D "$PG_DIR" stop -m fast -w -t 20 2>/dev/null || true
 }
 trap cleanup EXIT
 
