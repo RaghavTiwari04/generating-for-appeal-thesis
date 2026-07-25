@@ -41,7 +41,6 @@ _BIRTHDAY_PATHS = [
 
 class GreetingsIslandScraper(Scraper):
     source = "greetings_island"
-    use_playwright = False  # Static HTML works
     ignores_query = True    # crawls _BIRTHDAY_PATHS, not the query
     require_birthday = True # guard in case a category page bleeds
     BASE = "https://www.greetingsisland.com"
@@ -59,12 +58,9 @@ class GreetingsIslandScraper(Scraper):
         emitted = 0
         seen: set[str] = set()
 
-        # Category browsing is more reliable than search here.
+        # Category browsing only. The birthday paths cover the catalogue, and
+        # /cards/all?search= reaches non-birthday cards, so it is not used.
         paths = list(_BIRTHDAY_PATHS)
-        # Search as a fallback, only if a query was supplied.
-        if query:
-            from urllib.parse import quote_plus
-            paths.append(f"{self.BASE}/cards/all?search={quote_plus(query)}")
 
         async def crawl(path: str, budget: int):
             nonlocal emitted

@@ -9,8 +9,9 @@ Each concrete scraper subclasses `Scraper` and implements:
 `fetch_and_store(url)` is implemented here and handles the polite-fetch
 pipeline (rate limit, cache check, network, store raw HTML, upsert listing).
 
-For sites with bot-detection or JS-rendered content, subclasses can set
-`use_playwright = True` to use a headless Chromium browser instead of httpx.
+Both live scrapers (Redbubble, Greetings Island) serve static HTML, so this
+uses plain httpx. The Playwright path was only ever needed by the Zazzle
+scraper and went with it.
 """
 
 from __future__ import annotations
@@ -95,13 +96,9 @@ class Scraper(ABC):
 
     Subclasses must set the `source` class attribute and implement
     `discover` / `parse`. `fetch_and_store` is provided.
-
-    Set `use_playwright = True` for sites that require JS rendering
-    or have bot-detection blocking plain HTTP requests.
     """
 
     source: str = ""
-    use_playwright: bool = False
     # True when discover() enumerates fixed category pages and ignores the
     # query, so the driver runs it once instead of once per query.
     ignores_query: bool = False
@@ -126,9 +123,7 @@ class Scraper(ABC):
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         self.cache_ttl = timedelta(days=cache_ttl_days or settings.scraper_raw_html_ttl_days)
         self._client: httpx.AsyncClient | None = None
-        self._browser: Any = None  # playwright Browser
         self.skipped_off_topic = 0
-        self._pw: Any = None       # playwright async API
 
     # -- to be implemented by subclasses --------------------------------------
     @abstractmethod
@@ -148,70 +143,12 @@ class Scraper(ABC):
             follow_redirects=True,
             verify=ssl_ctx,
         )
-        if self.use_playwright:
-            from playwright.async_api import async_playwright
-            self._pw = await async_playwright().start()
-            self._browser = await self._pw.chromium.launch(
-                headless=True,
-                args=["--disable-blink-features=AutomationControlled"],
-            )
-            log.info(f"[{self.source}] Playwright browser launched")
         return self
 
     async def __aexit__(self, *exc: Any) -> None:
         if self._client is not None:
             await self._client.aclose()
             self._client = None
-        if self._browser is not None:
-            await self._browser.close()
-            self._browser = None
-        if self._pw is not None:
-            await self._pw.stop()
-            self._pw = None
-
-    async def _new_page(self):
-        """Create a new Playwright page with stealth-ish settings."""
-        assert self._browser is not None, "Playwright not initialised"
-        ctx = await self._browser.new_context(
-            user_agent=(
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/125.0.0.0 Safari/537.36"
-            ),
-            viewport={"width": 1920, "height": 1080},
-            locale="en-GB",
-        )
-        page = await ctx.new_page()
-        # Basic stealth: hide webdriver flag
-        await page.add_init_script("""
-            Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
-        """)
-        return page
-
-    async def _pw_fetch(self, url: str, *, wait_selector: str | None = None,
-                         wait_ms: int = 3000) -> str:
-        """Fetch a URL via Playwright, return rendered HTML.
-
-        Args:
-            url: Page to load.
-            wait_selector: CSS selector to wait for before extracting HTML.
-            wait_ms: Extra time (ms) to let JS finish after navigation.
-        """
-        await self.rate_limiter.acquire()
-        page = await self._new_page()
-        try:
-            log.debug(f"PW GET {url}")
-            await page.goto(url, wait_until="domcontentloaded", timeout=30000)
-            if wait_selector:
-                try:
-                    await page.wait_for_selector(wait_selector, timeout=10000)
-                except Exception:
-                    pass  # best-effort; page may still have content
-            # Extra settle time for lazy-loaded content
-            await page.wait_for_timeout(wait_ms)
-            return await page.content()
-        finally:
-            await page.context.close()
 
     def _cache_path(self, url: str) -> Path:
         import hashlib
@@ -245,25 +182,18 @@ class Scraper(ABC):
         resp.raise_for_status()
         return resp.text
 
-    async def _smart_fetch(self, url: str, *, wait_selector: str | None = None) -> str:
-        """Fetch via Playwright if enabled, else httpx."""
-        if self.use_playwright:
-            return await self._pw_fetch(url, wait_selector=wait_selector)
-        return await self._fetch(url)
-
     def should_store(self, parsed: ParsedListing) -> bool:
         """Gate a parsed listing before it reaches the database."""
         if self.require_birthday and not _is_birthday_title(parsed.title or ""):
             return False
         return True
 
-    async def fetch_and_store(self, url: str, *, use_cache: bool = True,
-                               wait_selector: str | None = None) -> ParsedListing | None:
+    async def fetch_and_store(self, url: str, *, use_cache: bool = True) -> ParsedListing | None:
         """Fetch (cached or network), parse, persist raw HTML + upsert listing."""
         html: str | None = self._cache_get(url) if use_cache else None
         if html is None:
             try:
-                html = await self._smart_fetch(url, wait_selector=wait_selector)
+                html = await self._fetch(url)
             except Exception as e:
                 log.warning(f"Fetch failed for {url}: {e}")
                 return None

@@ -14,6 +14,7 @@ from urllib.parse import quote_plus
 
 from selectolax.parser import HTMLParser
 
+from common.logging import get_logger
 from data.scrapers.base import ParsedListing, Scraper
 from data.scrapers.parsing import (
     _attr,
@@ -23,6 +24,9 @@ from data.scrapers.parsing import (
     _to_float,
     _to_int,
 )
+
+
+log = get_logger(__name__)
 
 
 # Redbubble serves one artwork under several transforms, e.g.
@@ -80,6 +84,17 @@ def _flat_image_url(url: str, variants: dict[str, str] | None = None) -> str:
     if not img_id:
         return url
     return variants.get(img_id, url)
+
+
+def _cover_first(urls: list[str]) -> list[str]:
+    """Order so the cover (index 0) is flat artwork wherever one exists.
+
+    Only the first URL is downloaded, and mapping variants per artwork is not
+    enough on its own — if the page lists a different artwork first, the cover
+    could still end up a mockup. Sorting is stable, so ordering is otherwise
+    preserved.
+    """
+    return sorted(dict.fromkeys(urls), key=_variant_rank)
 
 
 class RedbubbleScraper(Scraper):
@@ -198,6 +213,10 @@ class RedbubbleScraper(Scraper):
                 if img.attributes
             ]
             image_urls = [_flat_image_url(u, variants) for u in image_urls if u.startswith("http")]
+
+        image_urls = _cover_first(image_urls)
+        if image_urls and "/flat," not in image_urls[0].lower():
+            log.debug(f"No flat artwork variant for {url}; cover is a mockup")
 
         return ParsedListing(
             source_listing_id=source_listing_id,
