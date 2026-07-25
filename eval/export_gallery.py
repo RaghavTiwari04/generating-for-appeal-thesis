@@ -59,9 +59,9 @@ DIM_SHORT = {"purchase_intent": "PI", "occasion_fit": "OF", "aesthetic": "AE",
 
 def _fetch_image_bytes(cover_path: str) -> bytes | None:
     try:
-        if cover_path.startswith("s3://") or cover_path.startswith("greeting-cards"):
-            return get_object(cover_path)
-        return Path(cover_path).read_bytes()
+        # get_object handles s3://, file:// and plain filesystem paths, so
+        # locally-stored blobs from the MinIO fallback resolve too.
+        return get_object(cover_path)
     except Exception as e:
         log.warning(f"Failed to load {cover_path}: {e}")
         return None

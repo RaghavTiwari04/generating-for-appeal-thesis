@@ -112,10 +112,9 @@ def _load_image(cover_path: str) -> Image.Image | None:
     import io
 
     try:
-        if cover_path.startswith("s3://") or cover_path.startswith("greeting-cards"):
-            data = get_object(cover_path)
-        else:
-            data = Path(cover_path).read_bytes()
+        # get_object handles s3://, file:// and plain filesystem paths, so
+        # locally-stored blobs from the MinIO fallback resolve too.
+        data = get_object(cover_path)
         return Image.open(io.BytesIO(data)).convert("RGB")
     except Exception as e:
         short_path = cover_path.rsplit("/", 1)[-1][:20] if "/" in cover_path else cover_path[:20]
