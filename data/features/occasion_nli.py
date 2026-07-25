@@ -75,9 +75,9 @@ def classify(
     batch_size: int = 32,
     dry_run: bool = False,
 ) -> None:
-    import torch
-    from transformers import pipeline
-
+    # Query and report before the heavy imports. torch and transformers take
+    # minutes to load cold from the NFS venv, and importing them first made a
+    # working run indistinguishable from a hang: no output, idle GPU.
     with connection() as conn, conn.cursor() as cur:
         cur.execute(_SELECT, {"limit": limit})
         rows = cur.fetchall()
@@ -86,6 +86,10 @@ def classify(
     log.info(f"Classifying {len(todo)} titles with NLI")
     if not todo:
         return
+
+    log.info("Importing torch + transformers (slow on first use, NFS venv)...")
+    import torch
+    from transformers import pipeline
 
     device = 0 if torch.cuda.is_available() else -1
     log.info(f"Loading {model_id} on {'gpu' if device == 0 else 'cpu'}")
