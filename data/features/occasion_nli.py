@@ -10,6 +10,11 @@ only") defaulted to general, while substring matching mislabelled adult cards
 as kids. A supervised classifier was not an option: the only labels available
 were the rules' own output, so it could at best imitate them.
 
+An explicit, decisive age overrides the model: a title saying "3rd Birthday"
+or "50 years old" is settled by parsing the number, because NLI scored
+"14 Year Old Birthday Gift" as kids at 0.99. Ages that decide nothing under
+the taxonomy (14, 16, 29) fall through to NLI.
+
 Anything failing to clear `threshold` falls back to birthday/general; a
 confident "not a birthday card" clears the occasion so the listing is excluded
 from training.
@@ -29,6 +34,7 @@ import typer
 from common.db import connection
 from common.logging import get_logger
 from common.occasions import ACTIVE_OCCASIONS as OCCASIONS
+from common.occasions import occasion_from_age
 
 log = get_logger(__name__)
 
@@ -114,7 +120,15 @@ def classify(
     for row, res in zip(todo, results):
         top_label = label_of[res["labels"][0]]
         top_score = float(res["scores"][0])
-        if top_label == NOT_BIRTHDAY:
+
+        # An explicit, decisive age beats the model. NLI scored "14 Year Old
+        # Birthday Gift" as kids at 0.99; a parsed number is not a judgement
+        # call. Ages that decide nothing (14, 16, 29) fall through to NLI.
+        by_age = occasion_from_age(row["title"])
+        if by_age is not None:
+            occasion = by_age
+            top_score = 1.0
+        elif top_label == NOT_BIRTHDAY:
             occasion = None if top_score >= threshold else "birthday/general"
         else:
             occasion = top_label if top_score >= threshold else "birthday/general"
