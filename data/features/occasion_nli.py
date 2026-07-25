@@ -34,7 +34,7 @@ import typer
 from common.db import connection
 from common.logging import get_logger
 from common.occasions import ACTIVE_OCCASIONS as OCCASIONS
-from common.occasions import occasion_from_age
+from common.occasions import ages_rule_out_kids, occasion_from_age
 
 log = get_logger(__name__)
 
@@ -132,6 +132,12 @@ def classify(
             occasion = None if top_score >= threshold else "birthday/general"
         else:
             occasion = top_label if top_score >= threshold else "birthday/general"
+
+        # "16th Birthday Girl" and "14 Year Old" scored kids: those ages are not
+        # decisive enough for occasion_from_age to claim them, but they still
+        # rule out a card for a young child.
+        if occasion == "birthday/kids" and ages_rule_out_kids(row["title"]):
+            occasion = "birthday/general"
         dist[occasion or "(none)"] = dist.get(occasion or "(none)", 0) + 1
         if occasion != row["occasion"]:
             changed += 1

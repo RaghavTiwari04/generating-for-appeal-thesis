@@ -96,13 +96,14 @@ KID_AGE_MAX: int = 12
 _ORDINAL_RE = re.compile(r"\b(\d{1,3})(?:st|nd|rd|th)\b")
 _AGE_RE = re.compile(r"\bage\s+(\d{1,3})\b")
 _YEARS_OLD_RE = re.compile(r"\b(\d{1,3})\s*(?:years?|yrs?)\s*old\b")
+_BARE_AGE_RE = re.compile(r"\b(?:at|turning)\s+(\d{1,3})\b")
 
 
 def parse_ages(text: str) -> set[int]:
     """Every age mentioned in the text, as numbers."""
     lowered = text.lower()
     ages: set[int] = set()
-    for pattern in (_ORDINAL_RE, _AGE_RE, _YEARS_OLD_RE):
+    for pattern in (_ORDINAL_RE, _AGE_RE, _YEARS_OLD_RE, _BARE_AGE_RE):
         ages.update(int(m) for m in pattern.findall(lowered))
     return ages
 
@@ -121,3 +122,15 @@ def occasion_from_age(text: str) -> str | None:
     if any(a in MILESTONE_AGES for a in ages):
         return "birthday/milestone"
     return None
+
+
+def ages_rule_out_kids(text: str) -> bool:
+    """True when every age present is above the child range.
+
+    occasion_from_age stays silent on 13-16 because they are neither a child
+    age nor a milestone, which let a zero-shot model label "16th Birthday
+    Girl" as kids. The ages still rule kids out even when they decide nothing
+    else.
+    """
+    ages = parse_ages(text)
+    return bool(ages) and all(a > KID_AGE_MAX for a in ages)
