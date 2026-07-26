@@ -246,7 +246,16 @@ def stats(label_source: str = typer.Option(LABEL_SOURCE)) -> None:
     if df.empty:
         print(f"No labels for {label_source}.")
         return
-    print(f"{len(df)} cards scored, composite mean {df['score'].mean():.3f}")
+    import numpy as np
+
+    print(
+        f"{len(df)} cards scored, composite mean {df['score'].mean():.3f} "
+        f"sd {df['score'].std():.3f}"
+    )
+    # Spread matters more than the mean: a dimension every card scores the same
+    # on carries no signal for the predictor to learn, however sensible its
+    # average looks.
+    print(f"  {'dimension':22s} {'mean':>6s} {'sd':>6s} {'min':>6s} {'max':>6s}    n")
     for dim in DIMS:
         vals = [
             r.get(dim)
@@ -254,7 +263,11 @@ def stats(label_source: str = typer.Option(LABEL_SOURCE)) -> None:
             if isinstance(r, dict) and r.get(dim) is not None
         ]
         if vals:
-            print(f"  {dim:22s} mean={sum(vals) / len(vals):.3f}  n={len(vals)}")
+            a = np.asarray(vals, dtype=float)
+            print(
+                f"  {dim:22s} {a.mean():6.3f} {a.std(ddof=1) if len(a) > 1 else 0.0:6.3f} "
+                f"{a.min():6.3f} {a.max():6.3f} {len(a):4d}"
+            )
 
 
 if __name__ == "__main__":
