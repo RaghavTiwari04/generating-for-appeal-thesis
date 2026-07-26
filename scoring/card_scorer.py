@@ -246,10 +246,16 @@ _RUBRICS: dict[str, tuple[str, str, str]] = {
     ),
 }
 
+# No score-distribution instruction. An earlier version told the judge that
+# "most cards should score 4-7", which compresses scores toward the middle —
+# and the headline result is a TOST equivalence test at delta=0.02, so anything
+# that shrinks between-condition differences makes equivalence easier to
+# demonstrate whether or not it holds. MT-Bench uses a plain assistant system
+# prompt; the domain framing is kept, the anchoring is not.
 JUDGE_SYSTEM_PROMPT = (
     "You are an expert greeting card designer and market analyst serving as an "
-    "impartial judge. Be objective and calibrated. Use the full 1-10 range — most "
-    "cards should score 4-7. Do not let verbosity or elaborateness bias your judgment."
+    "impartial judge. Be objective. Do not let verbosity or elaborateness bias "
+    "your judgment."
 )
 
 # FastChat's patterns: "[[7]]" preferred, bare "[7]" as fallback.
