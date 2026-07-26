@@ -57,7 +57,7 @@ echo "This may take a while on first run..."
 python -c "
 from transformers import AutoModel, AutoTokenizer
 print('Downloading SigLIP...')
-AutoModel.from_pretrained('google/siglip-base-patch16-224')
+AutoModel.from_pretrained('google/siglip-base-patch16-384')
 print('SigLIP cached.')
 " 2>/dev/null || echo "SigLIP download failed — try manually"
 

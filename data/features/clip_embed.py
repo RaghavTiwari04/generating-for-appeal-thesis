@@ -4,8 +4,14 @@ We use a single frozen vision-language backbone for both:
 - image embeddings → stored in `listing_features.clip_embedding` (pgvector)
 - joint image+text embeddings → consumed by predictor + dedup
 
-Backbone choice (SigLIP-base or CLIP-ViT-L) configurable via env var. SigLIP
-default — better text-image alignment per evals.
+Backbone is set by CLIP_MODEL_ID. Note the pooling below reads
+`vision_model(...).pooler_output`, which is correct for SigLIP (no projection
+head) but not for CLIP, where the projected `get_image_features()` is wanted —
+so swapping to a CLIP checkpoint needs a code change, not just the env var.
+
+The processor resizes to a square, so portrait cards are distorted or cropped.
+That applies to every CLIP-style backbone and is a limitation of the approach
+rather than of this checkpoint.
 """
 
 from __future__ import annotations
@@ -25,7 +31,15 @@ from common.logging import get_logger
 log = get_logger(__name__)
 
 
-DEFAULT_MODEL_ID = os.environ.get("CLIP_MODEL_ID", "google/siglip-base-patch16-224")
+# 384px rather than 224px: cards carry fine typography and illustration detail,
+# and the predictor is asked to judge aesthetic and distinctiveness, which live
+# in exactly that detail. Same architecture and still 768-d, so it drops into
+# the VECTOR(768) column and the predictor's image_dim without a migration —
+# roughly 2.9x the pixels for ~3x the embedding compute, once.
+#
+# siglip-so400m-patch14-384 is stronger again but emits 1152-d, which needs a
+# schema change and a predictor config change.
+DEFAULT_MODEL_ID = os.environ.get("CLIP_MODEL_ID", "google/siglip-base-patch16-384")
 EMBED_DIM = 768  # matches migrations/0001_init.sql VECTOR(768)
 
 
@@ -109,7 +123,7 @@ COMMIT_EVERY = 200
 
 def run_embed_missing(
     limit: int = 100_000,
-    feature_version: str = "siglip-base-v1",
+    feature_version: str = "siglip-base-384-v1",
     batch_size: int = 32,
 ) -> int:
     """Embed cover images for listings with no CLIP feature. Returns count written.
