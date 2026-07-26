@@ -3,7 +3,7 @@
 The gallery shows large clusters holding visibly different cards. Union-find
 takes a transitive closure, so a cluster can be held together by a chain of
 merely-similar pairs without any two ends resembling each other. This measures
-that directly: for each cluster it recomputes pairwise pHash, CLIP and title
+that directly: for each cluster it recomputes pairwise pHash and CLIP
 similarity, counts how many pairs actually clear each threshold, and reports
 the weakest pair.
 
@@ -26,7 +26,6 @@ from common.db import engine
 from data.features.dedup import (
     CLIP_COSINE_THRESHOLD,
     PHASH_HAMMING_THRESHOLD,
-    TFIDF_THRESHOLD,
     hamming,
 )
 
@@ -56,14 +55,6 @@ def _as_vec(v) -> np.ndarray | None:
     return np.asarray(v, dtype=np.float32)
 
 
-def _title_sim(a: str, b: str) -> float:
-    """Word-level Jaccard — a cheap stand-in for the TF-IDF cosine."""
-    wa, wb = set((a or "").lower().split()), set((b or "").lower().split())
-    if not wa or not wb:
-        return 0.0
-    return len(wa & wb) / len(wa | wb)
-
-
 def inspect(clusters: int, members_shown: int) -> None:
     df = pd.read_sql(_SQL, engine())
     if df.empty:
@@ -80,7 +71,7 @@ def inspect(clusters: int, members_shown: int) -> None:
         ]
         titles = list(g["title"])
 
-        pairs = phash_links = clip_links = title_links = 0
+        pairs = phash_links = clip_links = 0
         weakest_cos = 1.0
         for i in range(n):
             for j in range(i + 1, n):
@@ -93,10 +84,8 @@ def inspect(clusters: int, members_shown: int) -> None:
                     weakest_cos = min(weakest_cos, cos)
                     if cos >= CLIP_COSINE_THRESHOLD:
                         clip_links += 1
-                if _title_sim(titles[i], titles[j]) >= TFIDF_THRESHOLD:
-                    title_links += 1
 
-        linked = max(phash_links, clip_links, title_links)
+        linked = max(phash_links, clip_links)
         density = linked / pairs if pairs else 0.0
         verdict = (
             "dense — genuine duplicates"
@@ -105,7 +94,7 @@ def inspect(clusters: int, members_shown: int) -> None:
         )
         print(f"\n{'=' * 78}")
         print(f"cluster {str(cluster_id)[:8]}  members={n}  {verdict}")
-        print(f"  pairs={pairs}  phash>=thr={phash_links}  clip>=thr={clip_links}  title>=thr={title_links}")
+        print(f"  pairs={pairs}  phash>=thr={phash_links}  clip>=thr={clip_links}")
         print(f"  qualifying-pair density={density:.2f}  (a chain needs only {n - 1})")
         print(f"  weakest CLIP cosine between any two members={weakest_cos:.3f}")
         for t in titles[:members_shown]:
