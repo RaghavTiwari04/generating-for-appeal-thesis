@@ -40,9 +40,11 @@ from __future__ import annotations
 
 import base64
 import io
+import json
 import re
 import threading
 import time
+from collections import Counter
 from dataclasses import dataclass, field
 
 import numpy as np
@@ -92,14 +94,26 @@ class Usage:
     long_edge_min: int = 0
     long_edge_max: int = 0
     images_over_cap: int = 0
+    # Which upstream actually served each call. Gateways load-balance across
+    # hosts running different quantisations of the same nominal weights, so an
+    # unrecorded route makes a run unreproducible and its noise unattributable.
+    served_by: Counter = field(default_factory=Counter)
 
     _lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
 
     def record_call(
-        self, *, inp: int, out: int, cache_write: int = 0, cache_read: int = 0
+        self,
+        *,
+        inp: int,
+        out: int,
+        cache_write: int = 0,
+        cache_read: int = 0,
+        served_by: str | None = None,
     ) -> None:
         with self._lock:
             self.calls += 1
+            if served_by:
+                self.served_by[served_by] += 1
             self.input_tokens += inp
             self.output_tokens += out
             self.cache_write_tokens += cache_write
@@ -137,6 +151,16 @@ class Usage:
             ]
             if self.cache_write_tokens == 0 and self.cache_read_tokens == 0:
                 lines.append("  (no caching active on this run)")
+
+            if self.served_by:
+                lines += ["", "Served by"]
+                for name, n in self.served_by.most_common():
+                    lines.append(f"  {name:34s} {n} calls")
+                if len(self.served_by) > 1:
+                    lines.append(
+                        "  more than one upstream served this run; pin with "
+                        "--route before treating the scores as reproducible."
+                    )
 
             if self.images:
                 mean_edge = self.long_edge_sum / self.images
@@ -476,6 +500,22 @@ OPENAI_COMPATIBLE: dict[str, tuple[str | None, str, str | None]] = {
 }
 
 
+def openrouter_route(spec: str | None) -> dict | None:
+    """Build a gateway routing constraint from a CLI spec.
+
+    A bare name pins one upstream and forbids fallback, which is what a
+    reproducible run needs. A JSON object is passed through untouched so the
+    gateway's full routing vocabulary stays reachable without this function
+    having to track it.
+    """
+    if not spec or not spec.strip():
+        return None
+    spec = spec.strip()
+    if spec.startswith("{"):
+        return json.loads(spec)
+    return {"order": [spec], "allow_fallbacks": False}
+
+
 def call_vlm(
     image_b64: str,
     system_prompt: str,
@@ -486,6 +526,7 @@ def call_vlm(
     temperature: float = 0.0,
     max_tokens: int = 512,
     retries: int = 5,
+    route: dict | None = None,
 ) -> str:
     """One VLM call returning raw text, with exponential backoff. "" on failure."""
     # Resolved before the retry loop: a missing key or unknown provider is a
@@ -518,6 +559,7 @@ def call_vlm(
                 client = OpenAI(api_key=api_key, base_url=base_url)
                 resp = client.chat.completions.create(
                     model=chosen,
+                    **({"extra_body": {"provider": route}} if route else {}),
                     max_tokens=max_tokens,
                     temperature=temperature,
                     messages=[
@@ -544,6 +586,7 @@ def call_vlm(
                         inp=u.prompt_tokens or 0,
                         out=u.completion_tokens or 0,
                         cache_read=getattr(details, "cached_tokens", 0) or 0,
+                        served_by=(resp.model_extra or {}).get("provider"),
                     )
                 choice = resp.choices[0] if resp.choices else None
                 return (choice.message.content or "") if choice else ""
@@ -599,6 +642,7 @@ class CardScorer:
     provider: str = "anthropic"
     model: str | None = None
     profiles: tuple[dict, ...] = CONSUMER_PROFILES
+    route: dict | None = None
     samples_per_persona: int = SSR_SAMPLES_PER_PERSONA
     # The paper restricts its study to epsilon = 0 and T = 1; these match.
     ssr_temperature: float = 1.0
@@ -638,6 +682,7 @@ class CardScorer:
                     question,
                     provider=self.provider,
                     model=self.model,
+                    route=self.route,
                     temperature=SSR_ELICITATION_TEMPERATURE,
                     max_tokens=200,
                 ) or "I am unsure about this card."
@@ -661,6 +706,7 @@ class CardScorer:
                 meta + rubric_prompt(dim),
                 provider=self.provider,
                 model=self.model,
+                route=self.route,
                 temperature=JUDGE_TEMPERATURE,
                 max_tokens=1024,
             )

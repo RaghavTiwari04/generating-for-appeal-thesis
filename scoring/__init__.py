@@ -5,7 +5,8 @@ from scoring.card_scorer import (
     RUBRIC_DIMS,
     USAGE,
     CardScorer,
+    openrouter_route,
     quality_composite,
 )
 
-__all__ = ["DIMS", "RUBRIC_DIMS", "USAGE", "CardScorer", "quality_composite"]
+__all__ = ["DIMS", "RUBRIC_DIMS", "USAGE", "CardScorer", "openrouter_route", "quality_composite"]

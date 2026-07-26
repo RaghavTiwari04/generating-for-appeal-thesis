@@ -34,7 +34,14 @@ from psycopg.types.json import Jsonb
 from common.config import settings
 from common.db import connection, engine
 from common.logging import get_logger
-from scoring import DIMS, RUBRIC_DIMS, USAGE, CardScorer, quality_composite
+from scoring import (
+    DIMS,
+    RUBRIC_DIMS,
+    USAGE,
+    CardScorer,
+    openrouter_route,
+    quality_composite,
+)
 
 log = get_logger(__name__)
 
@@ -207,6 +214,13 @@ def label(
     label_source: str = typer.Option(LABEL_SOURCE, help="Label source tag"),
     limit: int | None = typer.Option(None, help="Score only the first N cards"),
     force: bool = typer.Option(False, help="Re-score cards that already have labels"),
+    route: str | None = typer.Option(
+        None,
+        help=(
+            "Gateway routing: an upstream name (pins it, no fallback) or a JSON "
+            "object passed through. Pin before treating scores as reproducible."
+        ),
+    ),
 ) -> None:
     """Score listings on all five dimensions and persist the results."""
     pool = _load_pool()
@@ -227,7 +241,9 @@ def label(
         log.info("Nothing to do.")
         return
 
-    scorer = CardScorer(provider=provider, model=model)
+    scorer = CardScorer(
+        provider=provider, model=model, route=openrouter_route(route)
+    )
     per_card = len(scorer.profiles) * scorer.samples_per_persona + len(RUBRIC_DIMS)
     log.info(
         f"{len(cards)} cards x {per_card} calls = {len(cards) * per_card} "

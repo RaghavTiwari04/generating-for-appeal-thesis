@@ -35,6 +35,9 @@ LIMIT="${LIMIT:-}"
 LABEL_SOURCE="${LABEL_SOURCE:-}"
 # Override the provider's default model, e.g. a specific GLM vision build.
 MODEL="${MODEL:-}"
+# Pin the gateway upstream. Hosts serve different quantisations of the same
+# open weights, so an unpinned run is not reproducible.
+ROUTE="${ROUTE:-}"
 # Re-score cards that already have labels. Needed when overwriting a run made
 # with a different provider or scoring config.
 FORCE="${FORCE:-}"
@@ -42,11 +45,12 @@ FORCE="${FORCE:-}"
 echo "=== LLM labelling (SSR + rubric judge) ==="
 echo "Node: $(hostname)  Start: $(date)"
 echo "provider=$PROVIDER model=${MODEL:-default} limit=${LIMIT:-all}"
-echo "source=${LABEL_SOURCE:-default} force=${FORCE:-no}"
+echo "source=${LABEL_SOURCE:-default} force=${FORCE:-no} route=${ROUTE:-auto}"
 
 ARGS=(--provider "$PROVIDER")
 [ -n "$LIMIT" ] && ARGS+=(--limit "$LIMIT")
 [ -n "$MODEL" ] && ARGS+=(--model "$MODEL")
+[ -n "$ROUTE" ] && ARGS+=(--route "$ROUTE")
 [ -n "$LABEL_SOURCE" ] && ARGS+=(--label-source "$LABEL_SOURCE")
 [ -n "$FORCE" ] && ARGS+=(--force)
 
