@@ -128,6 +128,7 @@ def run_dedup(limit: int | None = None) -> DedupStats:
     """Materialise duplicate clusters into listing_features.duplicate_cluster_id."""
     uf = UnionFind()
 
+    log.info("Dedup stage 1/3: pHash")
     with connection() as conn, conn.cursor() as cur:
         # Stage 1: pHash. Already stored at ingest (listing_images.phash).
         cur.execute(
@@ -144,7 +145,10 @@ def run_dedup(limit: int | None = None) -> DedupStats:
                     if hamming(bucket[i][1], bucket[j][1]) <= PHASH_HAMMING_THRESHOLD:
                         uf.union(bucket[i][0], bucket[j][0])
 
+        log.info(f"  pHash: {len(rows)} primary images compared")
+
         # Stage 2: CLIP semantic
+        log.info("Dedup stage 2/3: CLIP nearest neighbours")
         cur.execute("SELECT listing_id FROM listing_features WHERE clip_embedding IS NOT NULL")
         for r in cur.fetchall():
             for neighbour, cos in find_clip_neighbours(str(r["listing_id"]), k=10):
@@ -152,6 +156,7 @@ def run_dedup(limit: int | None = None) -> DedupStats:
                     uf.union(str(r["listing_id"]), neighbour)
 
         # Stage 3: TF-IDF on title+description (small batches)
+        log.info("Dedup stage 3/3: TF-IDF over titles and descriptions")
         cur.execute(
             "SELECT listing_id, COALESCE(title,'') || ' ' || COALESCE(description,'') AS t "
             "FROM listings"
@@ -184,6 +189,7 @@ def run_dedup(limit: int | None = None) -> DedupStats:
             for m in members:
                 updates.append((cluster_id, size, m))
 
+        log.info(f"  {len(clusters)} clusters covering {len(updates)} listings")
         cur.executemany(
             """
             INSERT INTO listing_features (listing_id, duplicate_cluster_id, duplicate_cluster_size, feature_version)
@@ -197,6 +203,10 @@ def run_dedup(limit: int | None = None) -> DedupStats:
         )
 
     duplicates = sum(1 for u in updates if u[1] > 1)
+    log.info(
+        f"Dedup complete: {len(updates)} listings in {len(clusters)} clusters, "
+        f"{duplicates} flagged as duplicates"
+    )
     return DedupStats(
         listings_total=len(updates),
         clusters=len(clusters),
@@ -204,7 +214,16 @@ def run_dedup(limit: int | None = None) -> DedupStats:
     )
 
 
+def main(limit: int | None = None) -> None:
+    stats = run_dedup(limit)
+    # typer.run does not print a return value, so the job logged nothing at all.
+    print(
+        f"Dedup: {stats.listings_total} listings, {stats.clusters} clusters, "
+        f"{stats.duplicates} duplicates"
+    )
+
+
 if __name__ == "__main__":
     import typer
 
-    typer.run(run_dedup)
+    typer.run(main)
