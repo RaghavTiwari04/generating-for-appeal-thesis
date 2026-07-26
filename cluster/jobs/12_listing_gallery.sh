@@ -18,8 +18,6 @@ source /vol/bitbucket/$USER/venvs/gc/bin/activate
 cd "$SLURM_SUBMIT_DIR"
 source cluster/jobs/_start_services.sh
 
-PG_DIR="/vol/bitbucket/$USER/pgdata"
-trap 'pg_ctl -D "$PG_DIR" stop -m fast -w -t 20 2>/dev/null || true' EXIT
 
 PER_OCCASION="${PER_OCCASION:-40}"
 
