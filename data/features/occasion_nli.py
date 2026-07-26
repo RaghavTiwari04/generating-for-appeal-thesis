@@ -19,7 +19,7 @@ Anything failing to clear `threshold` falls back to birthday/general; a
 confident "not a birthday card" clears the occasion so the listing is excluded
 from training.
 
-Writes listing_features.occasion with feature_version 'nli-v1'.
+Writes listing_features.occasion with feature_version 'nli-v2'.
 
     python -m data.features.occasion_nli --dry-run --limit 200
     python -m data.features.occasion_nli
@@ -38,7 +38,16 @@ from common.occasions import ages_rule_out_kids, occasion_from_age
 
 log = get_logger(__name__)
 
-DEFAULT_MODEL = "facebook/bart-large-mnli"
+# bart-large-mnli (2019) was the classic zero-shot NLI checkpoint but is dated
+# and over-fired on the relationship hypothesis — "Happy Birthday Old Chap!"
+# and a wall-art poster both scored as romantic. deberta-v3-large-zeroshot-v2.0
+# is trained specifically for zero-shot classification and handles that nuance
+# better.
+DEFAULT_MODEL = "MoritzLaurer/deberta-v3-large-zeroshot-v2.0"
+# Pass --revision <commit-sha> to pin the checkpoint. Worth doing before the
+# labels are used in reported results: an upstream update silently changes
+# them, and nothing else in the pipeline would reveal it.
+DEFAULT_REVISION: str | None = None
 
 # Phrased as sentence completions for the hypothesis template below.
 NOT_BIRTHDAY = "__not_birthday__"
@@ -65,7 +74,7 @@ LIMIT %(limit)s;
 
 _UPSERT = """
 INSERT INTO listing_features (listing_id, occasion, occasion_confidence, occasion_multilabel, feature_version)
-VALUES (%(listing_id)s, %(occasion)s, %(confidence)s, %(multilabel)s, 'nli-v1')
+VALUES (%(listing_id)s, %(occasion)s, %(confidence)s, %(multilabel)s, 'nli-v2')
 ON CONFLICT (listing_id) DO UPDATE
 SET occasion = EXCLUDED.occasion,
     occasion_confidence = EXCLUDED.occasion_confidence,
@@ -77,6 +86,7 @@ SET occasion = EXCLUDED.occasion,
 def classify(
     limit: int = 100000,
     model_id: str = DEFAULT_MODEL,
+    revision: str | None = DEFAULT_REVISION,
     threshold: float = 0.55,
     batch_size: int = 32,
     dry_run: bool = False,
@@ -98,10 +108,11 @@ def classify(
     from transformers import pipeline
 
     device = 0 if torch.cuda.is_available() else -1
-    log.info(f"Loading {model_id} on {'gpu' if device == 0 else 'cpu'}")
+    log.info(f"Loading {model_id}@{revision or 'latest'} on {'gpu' if device == 0 else 'cpu'}")
     clf = pipeline(
         "zero-shot-classification",
         model=model_id,
+        revision=revision,
         device=device,
         batch_size=batch_size,
     )
@@ -175,6 +186,7 @@ def classify(
 def main(
     limit: int = 100000,
     model_id: str = DEFAULT_MODEL,
+    revision: str | None = typer.Option(DEFAULT_REVISION, help="Pin the model checkpoint to a commit sha"),
     threshold: float = 0.55,
     batch_size: int = 32,
     dry_run: bool = typer.Option(False, help="Report what would change without writing"),
@@ -182,6 +194,7 @@ def main(
     classify(
         limit=limit,
         model_id=model_id,
+        revision=revision,
         threshold=threshold,
         batch_size=batch_size,
         dry_run=dry_run,
