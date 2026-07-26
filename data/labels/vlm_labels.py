@@ -57,7 +57,7 @@ COMMIT_EVERY = 25
 _POOL_SQL = """
 SELECT listing_id, title, occasion, image_url
 FROM (
-    SELECT DISTINCT ON (COALESCE(lf.duplicate_cluster_id, l.listing_id::text))
+    SELECT DISTINCT ON (COALESCE(lf.duplicate_cluster_id::text, l.listing_id::text))
            l.listing_id::text AS listing_id,
            l.title,
            lf.occasion,
@@ -69,7 +69,7 @@ FROM (
       AND jsonb_array_length(l.raw_metadata->'image_urls') > 0
       AND (l.raw_metadata->'image_urls'->>0) IS NOT NULL
       AND lf.occasion IS NOT NULL
-    ORDER BY COALESCE(lf.duplicate_cluster_id, l.listing_id::text), l.listing_id
+    ORDER BY COALESCE(lf.duplicate_cluster_id::text, l.listing_id::text), l.listing_id
 ) one_per_design
 ORDER BY last_seen_at DESC
 """

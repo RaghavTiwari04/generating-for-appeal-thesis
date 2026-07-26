@@ -41,6 +41,10 @@ else
     python -u -m data.labels.vlm_labels label --provider "$PROVIDER"
 fi
 
+# Per-dimension means over everything scored so far — the check that matters
+# after a smoke run, since bunched-up scores mean the rubric is not separating.
+python -u -m data.labels.vlm_labels stats
+
 echo ""
 echo "--- Label stats ---"
 python -u -m data.labels.vlm_labels stats
