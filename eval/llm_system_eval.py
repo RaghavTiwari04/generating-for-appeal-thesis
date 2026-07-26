@@ -1,8 +1,10 @@
 """LLM-as-judge system evaluation (synthetic consumer panel).
 
 Replaces Prolific human study with hybrid LLM evaluation:
-    - Purchase intent: SSR (Maier et al. 2025, arXiv:2510.08338) — 90%
-      of human test-retest reliability, KS similarity > 0.85
+    - Purchase intent: SSR (Maier et al. 2025, arXiv:2510.08338).
+      The paper's KS>0.85 result concerns reproducing response
+      *distributions*; here three personas are averaged to a point
+      estimate, so that validation does not transfer.
     - Other dims: Rubric-guided LLM judge (Zheng et al. 2023, NeurIPS)
       — >80% agreement with human annotators
 
@@ -134,8 +136,9 @@ def _score_cards(
     Each card is evaluated by 3 synthetic consumer profiles (SSR)
     SSR elicits free-text responses from the LLM, then maps them to
     Likert distributions via embedding similarity to reference statements.
-    This produces realistic response distributions (KS>0.85) unlike
-    direct numerical ratings (KS=0.26).
+    Free-text elicitation avoids the known failure of asking an LLM for a
+    number directly; the distributional validation in the paper applies to
+    population-level use, not to this per-card point estimate.
     """
     scorer = CardScorer(provider=provider, model=model)
     log.info(

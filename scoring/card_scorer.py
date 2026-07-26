@@ -14,6 +14,13 @@ Two methods, each following its source:
       5-point Likert scale. Direct numeric self-reports are what SSR exists
       to avoid, so the personas are told not to give ratings.
 
+      SSR is a method for reproducing a population's *distribution* of survey
+      responses. Collapsing three personas to one number is an adaptation, so
+      the paper's KS>0.85 validation does not carry over to this use. Averaging
+      the per-persona expectations equals the expectation of the averaged PMF,
+      which is what the reference aggregates, so the point estimate itself is
+      consistent with it.
+
   occasion_fit, aesthetic, emotional_resonance, distinctiveness —
       rubric-guided judge (Zheng et al. 2023, MT-Bench;
       github.com/lm-sys/FastChat/tree/main/fastchat/llm_judge). Explanation
@@ -54,7 +61,13 @@ QUALITY_DIMS = RUBRIC_DIMS
 # ---------------------------------------------------------------------------
 # SSR — purchase intent
 # ---------------------------------------------------------------------------
-# Several anchor sets averaged, as the reference implementation does.
+# Three anchor sets, averaged per response.
+#
+# This is an extension, not the reference behaviour: pymc-labs' API takes one
+# reference_set_id per call (get_response_pmfs(reference_set_id=...)), and its
+# example carries two sets to choose between. Averaging is intended to reduce
+# sensitivity to any single phrasing; it is our choice and should be described
+# that way rather than attributed to the paper.
 SSR_REFERENCE_SETS: tuple[tuple[str, ...], ...] = (
     (
         "I would never buy this card",
@@ -79,7 +92,8 @@ SSR_REFERENCE_SETS: tuple[tuple[str, ...], ...] = (
     ),
 )
 
-# The paper varies age and income as the most influential demographics.
+# Synthetic consumers. The reference does not prescribe personas, so the
+# spread of age, income and region is our choice.
 CONSUMER_PROFILES: tuple[dict, ...] = (
     {"age": 28, "gender": "female", "income": "moderate", "region": "urban UK"},
     {"age": 45, "gender": "male", "income": "above average", "region": "suburban UK"},
@@ -90,6 +104,9 @@ CONSUMER_PROFILES: tuple[dict, ...] = (
 SSR_ELICITATION_TEMPERATURE = 0.8
 JUDGE_TEMPERATURE = 0.0
 
+# The reference repo does not state its embedding model, so this is our choice
+# rather than a documented default. Any change to it changes every score, so
+# it belongs in the writeup's reproducibility notes.
 _EMBED_MODEL = "all-MiniLM-L6-v2"
 _embedder = None
 _ref_cache: dict[tuple[str, ...], np.ndarray] = {}
@@ -147,8 +164,8 @@ def ssr_score(response: str, temperature: float = 1.0, epsilon: float = 0.0) -> 
         sims = _cosine(emb.reshape(1, -1), _ref_cache[refs])[0]
         pmfs.append(similarities_to_pmf(sims, epsilon))
 
-    # Temperature is applied after averaging the anchor sets, matching the
-    # reference implementation.
+    # Temperature is applied after averaging the anchor sets. The reference
+    # scales a single set's PMF; with one set the two are identical.
     pmf = scale_pmf(np.mean(pmfs, axis=0), temperature)
     expected = float(np.dot(pmf, np.arange(1, 6)))
     return {"pmf": pmf.tolist(), "likert": expected, "score": (expected - 1) / 4}
