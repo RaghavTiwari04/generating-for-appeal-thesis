@@ -197,7 +197,7 @@ class TestOrchestrator:
             "generation.image.diffusion.get_runner": MagicMock(return_value=MagicMock(
                 generate=MagicMock(return_value=[dummy_cover] * 2)
             )),
-            "generation.layout.compose.compose": composed,
+            "generation.image.headline_text.render_card": composed,
             "generation.message.generate.generate_message": inside,
             "pipeline.orchestrator.PredictorRunner": MagicMock(return_value=MagicMock(
                 score=MagicMock(return_value=[dummy_scores] * 2)
@@ -212,7 +212,9 @@ class TestOrchestrator:
     def test_orchestrator_returns_candidates(
         self, dummy_brief: Brief, dummy_cover: Image.Image, dummy_scores: dict
     ) -> None:
-        composed_mock = MagicMock(image=dummy_cover, headline=dummy_brief.headline)
+        # render_card returns a RenderedCard; the orchestrator reads .image
+        # and .text_in_image from it.
+        rendered_mock = MagicMock(image=dummy_cover, text_in_image=True, match_score=1.0)
         cursor_mock = MagicMock(
             fetchone=MagicMock(return_value={"card_id": "uuid-1"})
         )
@@ -226,7 +228,7 @@ class TestOrchestrator:
              patch("pipeline.orchestrator.get_diffusion_runner", return_value=MagicMock(
                  return_value=MagicMock(generate=MagicMock(return_value=[dummy_cover] * 2))
              )), \
-             patch("pipeline.orchestrator.compose", return_value=composed_mock), \
+             patch("pipeline.orchestrator.render_card", return_value=rendered_mock), \
              patch("pipeline.orchestrator.generate_message", return_value=InsideMessage(
                  primary="Happy Birthday", alternatives=[]
              )), \

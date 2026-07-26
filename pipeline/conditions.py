@@ -1,8 +1,8 @@
 """Generate cards for all four evaluation conditions.
 
 Conditions:
-  A  Naive AI        — Flux + naive occasion prompt + headline overlay, no LoRA, no brief LLM
-  B  Pipeline no-rerank — full pipeline (LoRA + inpainting mask + layout + LLM message), N=1
+  A  Naive AI        — Flux + naive occasion prompt, no LoRA, no brief LLM
+  B  Pipeline no-rerank — full pipeline (LoRA + brief LLM + LLM message), N=1
   C  Pipeline + rerank  — full pipeline, predictor best-of-N (N=8)
   D  Human bestsellers  — pulled from `listings` table (no generation)
 
@@ -68,14 +68,13 @@ class EvalCard:
 # Condition A — naive AI
 # ---------------------------------------------------------------------------
 def _generate_naive(occasion: str, seed: int) -> EvalCard:
-    """Naive prompt + headline mask + typography overlay, no LoRA, no brief LLM.
+    """Naive prompt, no LoRA, no brief LLM.
 
-    Uses the same inpainting mask and layout composer as B/C so the only
-    difference is prompt quality and LoRA — not card format.
+    Uses the same headline rendering as B/C so the only difference is prompt
+    quality and the absence of a LoRA — not card format.
     """
     from generation.image.diffusion import get_runner
-    from generation.image.headline_mask import LayoutMaskSpec, build_headline_mask
-    from generation.layout.compose import compose
+    from generation.image.headline_text import render_card
 
     naive_prompt = f"a greeting card for {occasion.replace('/', ' ').replace('_', ' ')}, digital art"
     headline = f"Happy {occasion.replace('_', ' ').replace('/', ' ').title()}"
@@ -85,23 +84,20 @@ def _generate_naive(occasion: str, seed: int) -> EvalCard:
     # an 80GB card. Passing occasion=None makes _ensure_occasion drop any
     # LoRA-fused pipeline and reload clean, preserving A's no-LoRA baseline.
     runner = get_runner()
-    cfg = runner.cfg
-    mask_spec = LayoutMaskSpec(width=cfg.width, height=cfg.height)
-    mask_image, _ = build_headline_mask(mask_spec)
 
-    images = runner.generate(
-        prompt=naive_prompt,
+    # Same card format as B and C — headline lettered into the artwork where
+    # the model manages it, overlaid where it does not. A must differ only in
+    # prompt quality and the absence of a LoRA, not in how text is applied.
+    card = render_card(
+        runner,
+        visual_prompt=naive_prompt,
+        headline=headline,
+        tone="warm-sincere",
+        style_tags=[],
         occasion=None,     # no LoRA
         seed=seed,
-        n=1,
-        mask_image=mask_image,
     )
-
-    result = compose(
-        cover=images[0], headline=headline,
-        tone="warm-sincere", style_tags=[],
-    )
-    composed = result.image
+    composed = card.image
 
     import hashlib
     import io

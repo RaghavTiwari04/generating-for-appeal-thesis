@@ -1,7 +1,7 @@
 """End-to-end card generation orchestrator.
 
 Wires:
-    request -> brief -> N parallel image gen -> layout -> message
+    request -> brief -> N parallel image gen (headline lettered in) -> message
             -> predictor reranking -> top-k candidates -> persist
 
 Public entry point: `generate(request, n=8) -> list[Candidate]` ranked by
@@ -23,8 +23,7 @@ from generation.brief.generate import PROMPT_VERSION as BRIEF_VERSION
 from generation.brief.generate import generate_brief
 from generation.brief.schema import Brief
 from generation.image.diffusion import get_runner as get_diffusion_runner
-from generation.image.headline_mask import LayoutMaskSpec, build_headline_mask
-from generation.layout.compose import compose
+from generation.image.headline_text import render_card
 from generation.message.generate import generate_message
 from pipeline.rerank import Candidate, rerank, rerank_llm
 
@@ -54,12 +53,6 @@ def generate(request: dict, cfg: OrchestratorConfig | None = None) -> list[Candi
     )
 
     diffusion = get_diffusion_runner()
-    # Reserve the headline region at *generation* resolution so the Fill pass
-    # clears it to whitespace. compose() derives its own bbox from the upscaled
-    # cover, so both stay proportionally aligned to the same fractional region.
-    gen_mask_spec = LayoutMaskSpec(width=diffusion.cfg.width, height=diffusion.cfg.height)
-    headline_mask, _ = build_headline_mask(gen_mask_spec)
-
     visual_prompt = brief.visual_prompt
     lora_dir = Path("generation/image/loras") / request["occasion"].replace("/", "_")
     has_lora = lora_dir.exists()
@@ -71,17 +64,25 @@ def generate(request: dict, cfg: OrchestratorConfig | None = None) -> list[Candi
     # per-card bestseller-index rotation in pipeline/conditions.py.
     prompt = f"TOK {visual_prompt}" if has_lora else visual_prompt
 
-    images = []
+    # Each candidate is rendered with its headline lettered into the artwork
+    # where the model manages it, and composed onto a reserved region where it
+    # does not. See generation/image/headline_text.py.
+    rendered = []
     for i in range(cfg.n_candidates):
-        img = diffusion.generate(
-            prompt=prompt,
-            negative_prompt=brief.negative_prompt,
-            occasion=request["occasion"],
-            seed=(cfg.image_seed_base + i) if cfg.image_seed_base is not None else None,
-            n=1,
-            mask_image=headline_mask,
+        rendered.append(
+            render_card(
+                diffusion,
+                visual_prompt=prompt,
+                headline=brief.headline,
+                tone=request["tone"],
+                style_tags=list(brief.style_tags),
+                occasion=request["occasion"],
+                seed=(cfg.image_seed_base + i) if cfg.image_seed_base is not None else None,
+                negative_prompt=brief.negative_prompt,
+            )
         )
-        images.extend(img)
+    in_image = sum(r.text_in_image for r in rendered)
+    log.info(f"Headline rendered into artwork for {in_image}/{len(rendered)} candidates")
 
     inside = generate_message(
         occasion=request["occasion"],
@@ -91,16 +92,10 @@ def generate(request: dict, cfg: OrchestratorConfig | None = None) -> list[Candi
     )
 
     candidates: list[Candidate] = []
-    for i, cover in enumerate(images):
-        composed = compose(
-            cover=cover,
-            headline=brief.headline,
-            tone=request["tone"],
-            style_tags=list(brief.style_tags),
-        )
+    for i, card in enumerate(rendered):
         candidates.append(
             Candidate(
-                image=composed.image,
+                image=card.image,
                 headline=brief.headline,
                 inside_message=inside.primary,
                 brief=brief.model_dump(),
