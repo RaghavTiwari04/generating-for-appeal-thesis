@@ -50,6 +50,10 @@ class Settings(BaseSettings):
     # LLMs
     anthropic_api_key: str | None = None
     openai_api_key: str | None = None
+    # OpenAI-compatible judges. The SSR embedder always uses OpenAI, so that
+    # one instrument stays fixed while judges are compared against each other.
+    glm_api_key: str | None = None
+    openrouter_api_key: str | None = None
     llm_provider: str = "anthropic"
     llm_model: str = "claude-sonnet-4-6"
 
@@ -64,6 +68,7 @@ class Settings(BaseSettings):
     flux_fill_model_id: str = "black-forest-labs/FLUX.1-Fill-dev"
 
     @field_validator("sdxl_revision", "hf_token", "anthropic_api_key", "openai_api_key",
+                     "glm_api_key", "openrouter_api_key",
                      "wandb_api_key", "prolific_api_token", "etsy_api_key", mode="before")
     @classmethod
     def _empty_str_to_none(cls, v: str | None) -> str | None:

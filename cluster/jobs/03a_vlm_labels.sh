@@ -33,16 +33,20 @@ LIMIT="${LIMIT:-}"
 # selection and condition D all read the default one, so a second provider's
 # scores must not land in it.
 LABEL_SOURCE="${LABEL_SOURCE:-}"
+# Override the provider's default model, e.g. a specific GLM vision build.
+MODEL="${MODEL:-}"
 # Re-score cards that already have labels. Needed when overwriting a run made
 # with a different provider or scoring config.
 FORCE="${FORCE:-}"
 
 echo "=== LLM labelling (SSR + rubric judge) ==="
 echo "Node: $(hostname)  Start: $(date)"
-echo "provider=$PROVIDER limit=${LIMIT:-all} source=${LABEL_SOURCE:-default} force=${FORCE:-no}"
+echo "provider=$PROVIDER model=${MODEL:-default} limit=${LIMIT:-all}"
+echo "source=${LABEL_SOURCE:-default} force=${FORCE:-no}"
 
 ARGS=(--provider "$PROVIDER")
 [ -n "$LIMIT" ] && ARGS+=(--limit "$LIMIT")
+[ -n "$MODEL" ] && ARGS+=(--model "$MODEL")
 [ -n "$LABEL_SOURCE" ] && ARGS+=(--label-source "$LABEL_SOURCE")
 [ -n "$FORCE" ] && ARGS+=(--force)
 

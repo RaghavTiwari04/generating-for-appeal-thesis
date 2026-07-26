@@ -465,6 +465,17 @@ def image_to_b64(image: Image.Image) -> str:
     return base64.standard_b64encode(buf.getvalue()).decode("ascii")
 
 
+# Judges reachable through the OpenAI chat-completions shape, as
+# provider -> (base_url, settings attribute holding the key, default model).
+# One transport covers hosted OpenAI, Z.ai, OpenRouter and a local vLLM
+# server, so comparing judges is a flag rather than a new code path.
+OPENAI_COMPATIBLE: dict[str, tuple[str | None, str, str | None]] = {
+    "openai": (None, "openai_api_key", "gpt-4o"),
+    "glm": ("https://api.z.ai/api/paas/v4", "glm_api_key", "glm-4.6v"),
+    "openrouter": ("https://openrouter.ai/api/v1", "openrouter_api_key", None),
+}
+
+
 def call_vlm(
     image_b64: str,
     system_prompt: str,
@@ -477,13 +488,36 @@ def call_vlm(
     retries: int = 5,
 ) -> str:
     """One VLM call returning raw text, with exponential backoff. "" on failure."""
+    # Resolved before the retry loop: a missing key or unknown provider is a
+    # configuration error, and retrying it five times only to return "" would
+    # present it downstream as a card that failed to score.
+    base_url = api_key = chosen = None
+    if provider in OPENAI_COMPATIBLE:
+        base_url, key_attr, default_model = OPENAI_COMPATIBLE[provider]
+        api_key = getattr(settings, key_attr)
+        if not api_key:
+            raise RuntimeError(
+                f"{key_attr.upper()} is required for --provider {provider}"
+            )
+        chosen = model or default_model
+        if chosen is None:
+            raise RuntimeError(
+                f"--provider {provider} has no default model; pass --model"
+            )
+    elif provider != "anthropic":
+        raise ValueError(
+            f"unknown provider {provider!r}; expected 'anthropic' or one of "
+            f"{sorted(OPENAI_COMPATIBLE)}"
+        )
+
     for attempt in range(retries):
         try:
-            if provider == "openai":
+            if provider in OPENAI_COMPATIBLE:
                 from openai import OpenAI
 
-                resp = OpenAI(api_key=settings.openai_api_key).chat.completions.create(
-                    model=model or "gpt-4o",
+                client = OpenAI(api_key=api_key, base_url=base_url)
+                resp = client.chat.completions.create(
+                    model=chosen,
                     max_tokens=max_tokens,
                     temperature=temperature,
                     messages=[
