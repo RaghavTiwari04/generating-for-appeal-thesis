@@ -51,7 +51,11 @@ FROM (
 ) ranked
 WHERE ranked.member_rank <= %(per_cluster)s
   AND ranked.cluster_rank <= %(clusters)s
-ORDER BY ranked.cluster_size DESC, ranked.cluster_id, ranked.member_rank;
+-- Inner column names, not the outer aliases: ranked exposes the
+-- subquery's own names here.
+ORDER BY ranked.duplicate_cluster_size DESC,
+         ranked.duplicate_cluster_id,
+         ranked.member_rank;
 """
 
 
