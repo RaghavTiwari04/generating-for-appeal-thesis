@@ -89,20 +89,20 @@ def rerank_llm(
     model: str | None = None,
 ) -> list[Candidate]:
     """Rerank via LLM vision API — no trained model needed."""
-    from pipeline.llm_scorer import LLMScorer
+    from scoring import CardScorer
 
     if not candidates:
         return []
 
-    scorer = LLMScorer(provider=provider, model=model)
+    scorer = CardScorer(provider=provider, model=model)
     log.info(f"LLM reranking {len(candidates)} candidates via {scorer.provider}/{scorer.model}")
 
     for i, cand in enumerate(candidates):
-        scores = scorer.score_one(
-            image=cand.image,
+        scores = scorer.score(
+            cand.image,
+            occasion=cand.occasion,
             headline=cand.headline,
             inside_message=cand.inside_message,
-            occasion=cand.occasion,
         )
         scores["saleability_calibrated"] = _compute_saleability(scores)
         cand.scores = scores

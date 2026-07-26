@@ -4,8 +4,8 @@ Pulls a flat training table from Postgres + cached CLIP embeddings, then
 serves (image_emb, text_emb, occasion_idx, price_rel, targets, mask) tuples.
 
 Label sources:
-  - Heads 1-4 (VLM): saleability_labels.label_source = 'vlm_4head_v1'
-    → ~2,377 cards with scores for occasion_fit, aesthetic,
+  - Heads 1-4 (LLM): saleability_labels.label_source = 'llm_ssr_rubric_v1'
+    → rubric-guided judge scores for occasion_fit, aesthetic,
       emotional_resonance, distinctiveness.
   - Head 5 (human): saleability_labels.label_source LIKE 'survey_%_bt_purchase_intent'
     → ~500-card subsample with Bradley-Terry purchase_intent scores
@@ -44,21 +44,16 @@ SELECT
     lf.occasion,
     lf.clip_embedding,
     lf.extracted_text,
-    -- VLM 4-head labels
+    -- LLM labels: rubric judge for the quality dims, SSR for purchase intent
     sl_vlm.raw  AS vlm_raw,
     sl_vlm.score AS vlm_composite,
-    -- VLM 5-head labels (includes purchase_intent from LLM)
-    sl_vlm5.raw AS vlm5_raw,
     -- Human BT purchase_intent (available for ~500-card subsample)
     sl_bt_pi.score AS bt_purchase_intent
 FROM listings l
 JOIN listing_features lf USING (listing_id)
 LEFT JOIN saleability_labels sl_vlm
        ON sl_vlm.listing_id = l.listing_id
-      AND sl_vlm.label_source = 'vlm_4head_v1'
-LEFT JOIN saleability_labels sl_vlm5
-       ON sl_vlm5.listing_id = l.listing_id
-      AND sl_vlm5.label_source = 'vlm_5head_v1'
+      AND sl_vlm.label_source = 'llm_ssr_rubric_v1'
 LEFT JOIN saleability_labels sl_bt_pi
        ON sl_bt_pi.listing_id = l.listing_id
       AND sl_bt_pi.label_source LIKE 'survey_%%_bt_purchase_intent'
@@ -191,8 +186,8 @@ def _build_targets(row: pd.Series) -> tuple[list[float], list[float]]:
     """Map row → (targets, mask) aligned with HEAD_NAMES order.
 
     Label priority per head:
-      heads 1-4: VLM 5-head > VLM 4-head
-      head 5 (purchase_intent): human BT > VLM 5-head
+      heads 1-4: rubric judge scores
+      head 5 (purchase_intent): human Bradley-Terry > SSR
 
     Masked multi-task loss: mask[i]=0 where no label → head gets zero
     gradient for that sample (Ruder 2017).
@@ -205,16 +200,13 @@ def _build_targets(row: pd.Series) -> tuple[list[float], list[float]]:
         targets[i] = max(0.0, min(1.0, val))
         mask[i] = 1.0
 
-    # Merge VLM sources: 5-head takes priority over 4-head
-    vlm_raw = _parse_raw(row.get("vlm_raw"))
-    vlm5_raw = _parse_raw(row.get("vlm5_raw"))
-    merged_vlm = {**vlm_raw, **vlm5_raw}
+    merged_vlm = _parse_raw(row.get("vlm_raw"))
 
     for head_name in VLM_HEADS:
         if head_name in merged_vlm:
             _set(head_name, float(merged_vlm[head_name]))
 
-    # purchase_intent: human BT > VLM 5-head
+    # purchase_intent: human Bradley-Terry > SSR
     if pd.notna(row.get("bt_purchase_intent")):
         _set("purchase_intent", float(row["bt_purchase_intent"]))
     elif "purchase_intent" in merged_vlm:

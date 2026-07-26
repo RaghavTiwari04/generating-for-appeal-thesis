@@ -10,7 +10,9 @@
 #SBATCH --mail-type=END,FAIL
 #SBATCH --mail-user=${USER}
 
-# VLM labelling — scores scraped cards on 5 dimensions via Claude Sonnet 4.
+# LLM labelling — scores scraped cards on 5 dimensions.
+# SSR (Maier et al. 2025) for purchase intent, rubric judge (Zheng et al. 2023)
+# for the quality dims. 7 VLM calls per card.
 # CPU-only (API calls). Needs ANTHROPIC_API_KEY in .env.
 # Runs AFTER occasion classifier (needs occasion labels to filter).
 
@@ -23,12 +25,10 @@ echo "=== VLM labelling ==="
 echo "Provider: anthropic (claude-sonnet-4-6)"
 echo "Start: $(date)"
 
-python -m data.labels.vlm_labels label \
-    --provider anthropic \
-    --five-heads
+python -u -m data.labels.vlm_labels label --provider anthropic
 
 echo ""
 echo "--- Label stats ---"
-python -m data.labels.vlm_labels stats
+python -u -m data.labels.vlm_labels stats
 
 echo "=== Done: $(date) ==="

@@ -1,0 +1,499 @@
+<title>Saleability-Conditioned Greeting Cards — Thesis Pipeline</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+:root{
+  --paper:#EDEDE7; --paper-2:#F4F4EF; --card:#FBFBF7;
+  --ink:#182524; --ink-soft:#4A5654; --ink-faint:#7C8683;
+  --line:#D6D6CE; --line-soft:#E3E3DB;
+  --blue:#27508C; --teal:#1A7A78; --coral:#D94A64;
+  --blue-wash:#27508C14; --teal-wash:#1A7A7814; --coral-wash:#D94A6414;
+  --shadow:0 1px 0 #ffffff, 0 10px 30px -18px #18252433;
+  --serif:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,"Times New Roman",serif;
+  --sans:"Helvetica Neue",Helvetica,Arial,system-ui,sans-serif;
+  --mono:ui-monospace,"SF Mono",Menlo,Consolas,"Liberation Mono",monospace;
+}
+@media (prefers-color-scheme:dark){
+  :root{
+    --paper:#12191A; --paper-2:#161F20; --card:#1B2527;
+    --ink:#EDEDE6; --ink-soft:#AAB4B2; --ink-faint:#7A8583;
+    --line:#2A3739; --line-soft:#232F31;
+    --blue:#7BA0E0; --teal:#4FC7C2; --coral:#F1899E;
+    --blue-wash:#7BA0E01f; --teal-wash:#4FC7C21f; --coral-wash:#F1899E1f;
+    --shadow:0 0 0 transparent, 0 14px 34px -20px #000000cc;
+  }
+}
+:root[data-theme="light"]{
+  --paper:#EDEDE7; --paper-2:#F4F4EF; --card:#FBFBF7;
+  --ink:#182524; --ink-soft:#4A5654; --ink-faint:#7C8683;
+  --line:#D6D6CE; --line-soft:#E3E3DB;
+  --blue:#27508C; --teal:#1A7A78; --coral:#D94A64;
+  --blue-wash:#27508C14; --teal-wash:#1A7A7814; --coral-wash:#D94A6414;
+  --shadow:0 1px 0 #ffffff, 0 10px 30px -18px #18252433;
+}
+:root[data-theme="dark"]{
+  --paper:#12191A; --paper-2:#161F20; --card:#1B2527;
+  --ink:#EDEDE6; --ink-soft:#AAB4B2; --ink-faint:#7A8583;
+  --line:#2A3739; --line-soft:#232F31;
+  --blue:#7BA0E0; --teal:#4FC7C2; --coral:#F1899E;
+  --blue-wash:#7BA0E01f; --teal-wash:#4FC7C21f; --coral-wash:#F1899E1f;
+  --shadow:0 0 0 transparent, 0 14px 34px -20px #000000cc;
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{
+  margin:0; background:var(--paper); color:var(--ink);
+  font-family:var(--sans); line-height:1.5;
+  font-feature-settings:"kern" 1;
+  -webkit-font-smoothing:antialiased;
+}
+.wrap{max-width:1220px; margin:0 auto; padding:0 22px}
+
+/* ---------- crop marks ---------- */
+.crop{position:fixed; width:26px; height:26px; z-index:5; pointer-events:none; opacity:.5}
+.crop::before,.crop::after{content:""; position:absolute; background:var(--ink-faint)}
+.crop::before{width:100%; height:1.5px; top:50%}
+.crop::after{height:100%; width:1.5px; left:50%}
+.crop.tl{top:14px; left:14px}.crop.tr{top:14px; right:14px}
+.crop.bl{bottom:14px; left:14px}.crop.br{bottom:14px; right:14px}
+@media (max-width:720px){.crop{display:none}}
+
+/* ---------- header ---------- */
+header{padding:64px 0 30px}
+.eyebrow{
+  font-family:var(--mono); font-size:12px; letter-spacing:.22em;
+  text-transform:uppercase; color:var(--ink-faint);
+  display:flex; align-items:center; gap:14px; flex-wrap:wrap;
+}
+.reg{position:relative; width:44px; height:44px; flex:none}
+.reg span{position:absolute; width:30px; height:30px; border-radius:50%; mix-blend-mode:multiply; top:7px}
+:root[data-theme="dark"] .reg span{mix-blend-mode:screen}
+@media (prefers-color-scheme:dark){.reg span{mix-blend-mode:screen}}
+.reg .a{background:var(--teal); left:0}
+.reg .b{background:var(--coral); left:14px}
+h1{
+  font-family:var(--serif); font-weight:600; letter-spacing:-.015em;
+  font-size:clamp(30px,5.2vw,52px); line-height:1.04; margin:20px 0 0;
+  text-wrap:balance; max-width:16ch;
+}
+h1 em{font-style:italic; color:var(--teal)}
+.lede{
+  margin:20px 0 0; max-width:60ch; font-size:clamp(16px,2.1vw,19px);
+  color:var(--ink-soft);
+}
+.lede b{color:var(--ink); font-weight:600}
+.meta{
+  margin-top:26px; display:flex; gap:10px 26px; flex-wrap:wrap;
+  font-family:var(--mono); font-size:12.5px; color:var(--ink-faint);
+  border-top:1px solid var(--line); padding-top:16px;
+}
+.meta span{color:var(--ink-soft)}
+
+/* ---------- controls ---------- */
+.controls{
+  position:sticky; top:0; z-index:6; background:var(--paper);
+  border-bottom:1px solid var(--line); padding:12px 0;
+  display:flex; align-items:center; gap:10px; flex-wrap:wrap;
+}
+.controls .hint{font-family:var(--mono); font-size:11.5px; color:var(--ink-faint); letter-spacing:.04em; margin-left:auto}
+.chip{
+  font-family:var(--mono); font-size:12px; letter-spacing:.04em;
+  border:1px solid var(--line); background:var(--card); color:var(--ink-soft);
+  padding:7px 13px 7px 11px; border-radius:999px; cursor:pointer;
+  display:inline-flex; align-items:center; gap:8px; transition:.16s;
+}
+.chip:hover{border-color:var(--ink-faint); color:var(--ink)}
+.chip .dot{width:9px; height:9px; border-radius:50%}
+.chip[data-p="1"] .dot{background:var(--blue)}
+.chip[data-p="2"] .dot{background:var(--teal)}
+.chip[data-p="3"] .dot{background:var(--coral)}
+.chip[aria-pressed="true"]{color:var(--ink); border-width:1.5px}
+.chip[data-p="1"][aria-pressed="true"]{border-color:var(--blue); background:var(--blue-wash)}
+.chip[data-p="2"][aria-pressed="true"]{border-color:var(--teal); background:var(--teal-wash)}
+.chip[data-p="3"][aria-pressed="true"]{border-color:var(--coral); background:var(--coral-wash)}
+.chip:focus-visible{outline:2.5px solid var(--teal); outline-offset:2px}
+
+/* ---------- layout ---------- */
+.stage{display:grid; grid-template-columns:1fr 384px; gap:40px; align-items:start; padding:34px 0 90px}
+@media (max-width:940px){.stage{grid-template-columns:1fr; gap:0}}
+
+/* ---------- phases + spine ---------- */
+.phase{margin:0 0 10px; transition:opacity .25s}
+.phase.dim{opacity:.28}
+.phase-head{display:flex; gap:16px; align-items:baseline; padding:22px 0 6px}
+.phase-num{
+  font-family:var(--mono); font-size:12px; letter-spacing:.15em;
+  padding:4px 9px; border-radius:6px; color:#fff; flex:none; transform:translateY(-2px);
+}
+.p1 .phase-num{background:var(--blue)} .p2 .phase-num{background:var(--teal)} .p3 .phase-num{background:var(--coral)}
+:root[data-theme="dark"] .phase-num{color:#0d1314}
+@media (prefers-color-scheme:dark){.phase-num{color:#0d1314}}
+.phase-head h2{font-family:var(--serif); font-weight:600; font-size:24px; margin:0; letter-spacing:-.01em}
+.phase-head p{margin:3px 0 0; font-size:14px; color:var(--ink-soft); max-width:52ch}
+
+.nodes{position:relative; margin:6px 0 0 8px; padding:6px 0 6px 30px}
+.nodes::before{content:""; position:absolute; left:5px; top:14px; bottom:22px; width:2px; border-radius:2px}
+.p1 .nodes::before{background:linear-gradient(var(--blue),var(--blue) 60%,transparent)}
+.p2 .nodes::before{background:linear-gradient(var(--teal),var(--teal) 60%,transparent)}
+.p3 .nodes::before{background:linear-gradient(var(--coral),var(--coral) 60%,transparent)}
+
+.node{
+  position:relative; width:100%; text-align:left; cursor:pointer;
+  background:var(--card); border:1px solid var(--line); border-radius:13px;
+  padding:15px 17px; margin:0 0 15px; box-shadow:var(--shadow);
+  transition:transform .16s, border-color .16s, box-shadow .16s;
+  font-family:inherit; color:inherit; display:block;
+}
+.node::before{ /* spine dot */
+  content:""; position:absolute; left:-30px; top:22px; width:13px; height:13px;
+  border-radius:50%; background:var(--paper); border:2.5px solid var(--ink-faint);
+  transition:.16s; transform:translateX(-1px);
+}
+.node::after{ /* connector stub */
+  content:""; position:absolute; left:-18px; top:28px; width:17px; height:2px; background:var(--line);
+}
+.p1 .node:hover::before,.p1 .node.active::before{border-color:var(--blue); background:var(--blue)}
+.p2 .node:hover::before,.p2 .node.active::before{border-color:var(--teal); background:var(--teal)}
+.p3 .node:hover::before,.p3 .node.active::before{border-color:var(--coral); background:var(--coral)}
+.node:hover{transform:translateX(3px); border-color:var(--ink-faint)}
+.node.active{border-width:1.5px}
+.p1 .node.active{border-color:var(--blue)} .p2 .node.active{border-color:var(--teal)} .p3 .node.active{border-color:var(--coral)}
+.node:focus-visible{outline:2.5px solid var(--teal); outline-offset:3px}
+
+.node-top{display:flex; align-items:center; gap:9px; margin-bottom:5px; flex-wrap:wrap}
+.kind{
+  font-family:var(--mono); font-size:10.5px; letter-spacing:.11em; text-transform:uppercase;
+  padding:2px 7px; border-radius:5px; border:1px solid var(--line-soft); color:var(--ink-faint);
+}
+.p1 .kind{color:var(--blue); background:var(--blue-wash); border-color:transparent}
+.p2 .kind{color:var(--teal); background:var(--teal-wash); border-color:transparent}
+.p3 .kind{color:var(--coral); background:var(--coral-wash); border-color:transparent}
+.node h3{font-family:var(--serif); font-weight:600; font-size:18.5px; margin:0; letter-spacing:-.01em}
+.node .what{margin:2px 0 0; font-size:13.5px; color:var(--ink-soft); line-height:1.45}
+.node .plus{
+  float:right; font-family:var(--mono); font-size:11px; color:var(--ink-faint);
+  border:1px solid var(--line); border-radius:6px; padding:2px 7px; margin-top:1px;
+}
+.node.active .plus{color:#fff}
+.p1 .node.active .plus{background:var(--blue); border-color:var(--blue)}
+.p2 .node.active .plus{background:var(--teal); border-color:var(--teal)}
+.p3 .node.active .plus{background:var(--coral); border-color:var(--coral)}
+:root[data-theme="dark"] .node.active .plus{color:#0d1314}
+@media (prefers-color-scheme:dark){.node.active .plus{color:#0d1314}}
+
+/* branch sub-chips inside a node */
+.branch{display:flex; gap:8px; flex-wrap:wrap; margin-top:11px}
+.subchip{
+  font-family:var(--mono); font-size:11px; color:var(--ink-soft);
+  border:1px dashed var(--line); border-radius:7px; padding:5px 9px; background:var(--paper-2);
+}
+.subchip b{color:var(--ink); font-weight:600}
+
+.loop{
+  display:flex; gap:9px; align-items:flex-start; margin:2px 0 30px 38px;
+  font-family:var(--mono); font-size:11.5px; color:var(--coral); max-width:50ch; line-height:1.5;
+}
+.loop svg{flex:none; margin-top:1px}
+
+/* ---------- detail panel ---------- */
+.detail{
+  position:sticky; top:64px; background:var(--card); border:1px solid var(--line);
+  border-radius:16px; box-shadow:var(--shadow); overflow:hidden;
+}
+.detail-hd{padding:20px 22px 16px; border-bottom:1px solid var(--line-soft); position:relative}
+.detail-hd .tag{font-family:var(--mono); font-size:11px; letter-spacing:.1em; text-transform:uppercase; color:var(--ink-faint)}
+.detail-hd h3{font-family:var(--serif); font-weight:600; font-size:23px; margin:8px 0 0; letter-spacing:-.01em; text-wrap:balance}
+.detail-hd .rail{position:absolute; left:0; top:0; bottom:0; width:5px}
+.detail-body{padding:18px 22px 24px}
+.block{margin:0 0 20px}
+.block:last-child{margin-bottom:0}
+.block .lab{
+  font-family:var(--mono); font-size:11px; letter-spacing:.11em; text-transform:uppercase;
+  color:var(--ink-faint); display:flex; align-items:center; gap:7px; margin-bottom:7px;
+}
+.block .lab::before{content:""; width:16px; height:2px; background:currentColor; opacity:.5}
+.block.why .lab{color:var(--coral)}
+.block p{margin:0; font-size:14.5px; color:var(--ink-soft); line-height:1.58}
+.block.why p{color:var(--ink)}
+.params{display:flex; flex-wrap:wrap; gap:7px; margin-top:2px}
+.param{
+  font-family:var(--mono); font-size:11.5px; color:var(--ink-soft);
+  background:var(--paper-2); border:1px solid var(--line-soft); border-radius:7px; padding:5px 9px;
+}
+.param b{color:var(--ink); font-weight:600}
+.empty{font-size:13px; color:var(--ink-faint); font-style:italic}
+
+@media (max-width:940px){
+  .detail{
+    position:fixed; left:0; right:0; bottom:0; top:auto; z-index:20;
+    border-radius:16px 16px 0 0; transform:translateY(115%);
+    transition:transform .28s cubic-bezier(.2,.8,.2,1); max-height:78vh; overflow:auto;
+    box-shadow:0 -12px 40px -18px #00000066;
+  }
+  .detail.open{transform:translateY(0)}
+  .detail-hd{position:sticky; top:0; background:var(--card)}
+  .closex{
+    position:absolute; right:14px; top:14px; width:34px; height:34px; border-radius:50%;
+    border:1px solid var(--line); background:var(--paper-2); color:var(--ink); cursor:pointer;
+    font-size:18px; line-height:1; display:grid; place-items:center;
+  }
+}
+@media (min-width:941px){.closex{display:none}}
+
+footer{border-top:1px solid var(--line); padding:26px 0 60px; color:var(--ink-faint); font-family:var(--mono); font-size:12px; letter-spacing:.03em}
+footer b{color:var(--ink-soft)}
+
+@media (prefers-reduced-motion:reduce){*{transition:none!important; animation:none!important}}
+</style>
+
+<span class="crop tl"></span><span class="crop tr"></span><span class="crop bl"></span><span class="crop br"></span>
+
+<div class="wrap">
+  <header>
+    <div class="eyebrow">
+      <span class="reg" aria-hidden="true"><span class="a"></span><span class="b"></span></span>
+      MSc Thesis · Pipeline Map · rt325
+    </div>
+    <h1>Greeting cards, generated to <em>actually sell</em>.</h1>
+    <p class="lede">A generative pipeline that first <b>learns what makes a card commercially appealing</b> from real marketplace listings, then <b>generates new cards steered by that learned model</b>, and finally <b>tests whether the steering worked</b> with an LLM-as-judge panel (the pre-registered human study it replaced still lives in the code). Tap any node to see the design choice behind it.</p>
+    <div class="meta">
+      Scope: <span>4 birthday sub-occasions</span> · Backbone: <span>Flux.1-dev + per-occasion LoRA</span> · Appeal model: <span>5-head predictor</span> · Corpus: <span>~2,377 cards</span>
+    </div>
+  </header>
+</div>
+
+<div class="controls">
+  <div class="wrap" style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; padding-top:0; padding-bottom:0">
+    <button class="chip" data-p="1" aria-pressed="true"><span class="dot"></span>1 · Learn appeal</button>
+    <button class="chip" data-p="2" aria-pressed="true"><span class="dot"></span>2 · Generate</button>
+    <button class="chip" data-p="3" aria-pressed="true"><span class="dot"></span>3 · Evaluate</button>
+    <span class="hint">click a node ↓</span>
+  </div>
+</div>
+
+<div class="wrap">
+  <div class="stage">
+    <div class="flow" id="flow"><!-- phases injected --></div>
+
+    <aside class="detail" id="detail" aria-live="polite">
+      <div class="detail-hd">
+        <span class="rail" id="d-rail"></span>
+        <button class="closex" id="closex" aria-label="Close">×</button>
+        <div class="tag" id="d-tag">Overview</div>
+        <h3 id="d-title">The whole argument, in one line</h3>
+      </div>
+      <div class="detail-body" id="d-body">
+        <div class="block">
+          <div class="lab">Thesis</div>
+          <p>If a model can predict which greeting cards people would <b>actually buy</b>, then wiring that model into a generator as a <b>best-of-N reranker</b> should produce cards rated as more purchase-worthy than naïve AI — approaching human bestsellers. Every node here is a decision in service of testing that claim cleanly.</p>
+        </div>
+        <div class="block">
+          <div class="lab">How to read this</div>
+          <p>Three phases, top to bottom. Phase 1 builds the appeal model; Phase 2 spends it at generation time; Phase 3 measures whether it mattered. The coral loop marks where generation feeds <em>back</em> into the learned model.</p>
+        </div>
+      </div>
+    </aside>
+  </div>
+</div>
+
+<div class="wrap">
+  <footer>Reproducibility: seeded RNG · pinned model revisions · W&amp;B run logs · versioned prompts. &nbsp; <b>Definition of done:</b> predictor ρ≥0.4 vs purchase intent · 4-condition eval · ≥3 ablations · &lt;60s demo.</footer>
+</div>
+
+<script>
+const NODES = [
+  // ---------------- PHASE 1 ----------------
+  {p:1, kind:"Data", title:"Scrape the market", what:"~2,377 real card listings from Etsy, Redbubble, Zazzle, Greetings Island + curated Moonpig/Thortful/Papier/Scribbler.",
+    why:"The whole thesis rests on a signal only the real market carries — engagement on cards people actually bought. A synthetic or hand-picked set would smuggle my own taste in as ground truth. Every re-scrape appends a row to listing_snapshots, so review/favourite counts are tracked over time rather than as a single static number.",
+    detail:"SHA256-keyed MinIO store, pHash at ingest. Snapshots captured inline on each upsert (base.py), not a separate scheduled job. Per-source TOS review + IRB gating before any scrape. ~2,377 is the design-corpus figure (docstring), not a live DB count.",
+    params:["sources: 4 scrapers + manual","corpus: ~2,377","store: MinIO + pHash","history: listing_snapshots"]},
+
+  {p:1, kind:"Process", title:"Extract features", what:"SigLIP image embedding (cached to pgvector), Tesseract OCR headline, LAB palette, complexity, dedup (pHash+CLIP-kNN+TF-IDF).",
+    why:"Freeze the SigLIP backbone (siglip-base-patch16-224) and cache its 768-d image embedding to pgvector instead of fine-tuning — the expensive backbone runs once per image and the predictor then trains on cached features in seconds, fully reproducibly. Dedup (pHash Hamming≤6 ∪ CLIP-kNN cos≥0.95 ∪ TF-IDF≥0.85, union-find) stops the same bestseller inflating the label set.",
+    detail:"Image embedding persisted to pgvector(768). The text embedding is NOT stored — the predictor's SigLIP text tower embeds the OCR'd headline (listing_features.extracted_text) on demand, L2-normalised to match the reranker (train.py now wires this by default; it previously trained on all-zeros, a fixed train/serve bug). Provenance gap remains: training text = OCR of the scraped card, inference text = the generated headline + inside_message. Union-find collapses near-duplicate reposts to one.",
+    params:["backbone: SigLIP (frozen)","image emb: pgvector(768)","text emb: OCR → SigLIP (on-demand)","dedup: pHash+CLIP+TF-IDF"]},
+
+  {p:1, kind:"Model", title:"Classify birthday subtype", what:"A DistilBERT multi-label model tags each scraped card with its birthday sub-occasion (general / milestone / kids / relationship) + confidence.",
+    why:"Scraped listings arrive untyped, and almost every occasion-specific step downstream keys on this label — which cards train each LoRA, the index the predictor's occasion embedding looks up, and the pool condition D samples per occasion. Hand-labelling thousands of cards is infeasible, so it's trained by weak supervision: keyword rules seed noisy labels, DistilBERT fine-tunes on the confident positives, then bootstraps by retraining on its own high-confidence predictions. The classifier head is sized to ACTIVE_OCCASIONS, so in the current scope it is literally a 4-way birthday-subtype model.",
+    detail:"Input: title + description (+ tags). Output: top-1 → listing_features.occasion, plus occasion_confidence and a full occasion_multilabel vector (feature_version occ-clf-v1). BCE loss, AdamW, ~5 epochs.",
+    params:["model: DistilBERT","labels: 4 (active)","seed: keyword rules","then: bootstrap","out: listing_features.occasion"]},
+
+  {p:1, kind:"Decision", title:"Narrow to 4 occasions", what:"Full 29-occasion taxonomy exists, but runtime scope is locked to the 4 birthday sub-types.",
+    why:"Depth over breadth. A thesis that covers 4 occasions end-to-end — with a trained LoRA, enough labels, and adequate survey power each — is defensible; one thin layer over 29 is not. One constant, ACTIVE_OCCASIONS, is the single switch to widen scope later.",
+    detail:"birthday/{general, milestone, kids, relationship}. Tones handled orthogonally, not as extra occasions.",
+    params:["active: 4","taxonomy: 29 (ref)","switch: ACTIVE_OCCASIONS"]},
+
+  {p:1, kind:"Data · LLM study 1", title:"Label appeal — rubric VLM", what:"LLM STUDY 1 (training). A VLM scores all 5 dims (incl. purchase_intent) on every scraped card via a direct 0–1 rubric.",
+    why:"This is the first of two independent LLM studies. It produces the labels the predictor learns from. The design originally split labels by rater — VLM for the 4 perceptual dims, humans for purchase-intent via Prolific 2AFC + Bradley-Terry — but the human study was replaced by an all-LLM path (--five-heads) where a rubric-guided VLM scores purchase_intent too. Crucially the rubric here is a DIFFERENT instrument from the SSR panel that grades the system later (Phase 3): keeping train-time and eval-time instruments separate is what limits circularity. Trade-off — removes IRB/cost and unblocks the pipeline, at the price of a synthetic appeal signal instead of real purchase behaviour.",
+    detail:"Active: vlm_5head_v1 rubric (SYSTEM_PROMPT_5HEAD, direct 0–1) across ~2,377 cards. Same rubric instrument is reused by the optional LLM reranker in Phase 2. Dormant fallback: human 2AFC → Bradley-Terry on a ~500-card subsample. Dual-provider VLM available for inter-model agreement.",
+    params:["study: 1 of 2 (train)","instrument: 0–1 rubric","source: vlm_5head_v1","fallback: human 2AFC"],
+    branch:[{t:"Rubric VLM", d:"active · all cards"},{t:"Human 2AFC", d:"design fallback · dormant"}]},
+
+  {p:1, kind:"Model", title:"Train the appeal predictor", what:"Frozen features + occasion embedding + price → MLP trunk → 5 heads. Masked multi-task loss.",
+    why:"One trunk (768 img + 768 text + 32-d occasion embedding + price scalar → hidden 512), five heads, so shared structure is learned once and each head specialises. Masked loss lets a head backprop only on samples with labels — architected for the mixed-label world (VLM on all cards, humans on a subset), it still applies cleanly to the all-LLM path where every head has a VLM label. The purchase_intent head keeps a 2× loss weight. Seller-split stops a shop's style leaking train→test; isotonic calibration makes scores honest. Note: with the LLM pivot, reranking can also skip this predictor and score candidates with the LLM judge directly (scorer=\"llm\").",
+    detail:"Heads: occasion_fit · aesthetic · emotional_resonance · distinctiveness · purchase_intent. AdamW + cosine + early stop (patience 5), W&B-logged. ρ≥0.4 is a documented target, not a code gate. Predictor optional when the LLM scorer reranks directly.",
+    params:["heads: 5","occ emb: 32","trunk: 512","split: seller 70/15/15","PI loss: 2×","calib: isotonic","target: ρ≥0.4","or: LLM scorer"]},
+
+  // ---------------- PHASE 2 ----------------
+  {p:2, kind:"Input", title:"Request", what:"A card order: occasion + tone (+ optional relationship). The pipeline's entry point.",
+    why:"Minimal, product-shaped input. Everything downstream is derived, so a user specifies intent, not implementation. Relationship is optional because not every card is person-specific.",
+    detail:"e.g. {occasion: birthday/milestone, tone: warm-sincere, relationship: mum}.",
+    params:["occasion","tone","relationship?"]},
+
+  {p:2, kind:"Process · LLM", title:"Brief generator", what:"LLM turns the request into a structured brief: headline, concept, visual + negative prompt, style tags, target price band.",
+    why:"An LLM plans the card before any pixels exist, and it plans against real market signals — the top tropes for this occasion, coverage gaps worth exploiting, and a longevity caution so it avoids fads that won't survive to print. The output is a validated schema, not free text, so the rest of the pipeline can rely on its shape.",
+    detail:"Brief fields: headline · concept · visual_prompt · negative_prompt · style_tags · inside_message · target_price_band (budget/standard/premium/luxury). Prompt versioned (brief_v1). Signals injected from the scraped corpus. Provider-swappable (Anthropic/OpenAI).",
+    params:["out: Brief schema","prompt: brief_v1","signals: tropes+gaps+longevity","+ price_band"]},
+
+  {p:2, kind:"Model · 2-pass", title:"Image generation", what:"Flux.1-dev cover art with a per-occasion LoRA, then a Fill pass inpaints a clean headline zone.",
+    why:"Two moves solve two problems. The LoRA (trained on each occasion's top-saleability cards, with marketplace text erased first) teaches the model that occasion's visual language. Then a second Fill pass inpaints the headline region into clean whitespace, so typography later lands on calm space instead of fighting busy art. LoRA scale is held at 0.65 and a random style prefix is drawn per candidate — otherwise all 8 best-of-N images collapse into near-identical frames and reranking has nothing to choose between.",
+    detail:"Pass 1: FluxPipeline + fused LoRA at 896×1264 (portrait, ~A6). Pass 2: FluxFillPipeline inpaints the headline mask — the orchestrator now passes that mask, so the pipeline (B/C) actually reserves whitespace, not just the naïve baseline. Blank-image retry, then near-uniform upscale to 1240×1748 print res. VRAM freed between passes.",
+    params:["base: Flux.1-dev","gen: 896×1264 portrait","LoRA: rank 8 · 500 steps (lr 4e-5)","scale: 0.65","gen: 28 · g 3.5","fill: 50 · g 30","print: 1240×1748"]},
+
+  {p:2, kind:"Process · rules", title:"Layout / typography", what:"Rule-based composer: place in the reserved bbox, pick fonts by tone×style, size to fit, contrast-colour, render.",
+    why:"Deliberately boring. Font choice, sizing (binary-search the largest size that fits the bbox), and colour are rule-based rather than generated, because predictable layout is a controlled variable in the evaluation — I want the study to measure the pipeline's appeal steering, not random typographic luck. Colour is a near-white or near-black pick decided by the mean LAB luminance of the patch under the text — maximum contrast, never a tint.",
+    detail:"compose() derives its headline bbox from the actual (upscaled) cover dimensions, so the text box lines up with the whitespace the Fill pass cleared at generation res — both key off the same fractional region. Fonts map by (tone × style_tag) over an expanded table with a per-tone fallback, so every tone resolves to a fitting face instead of dropping to a global default. Pillow render with subpixel AA.",
+    params:["placement: cover-derived bbox","fonts: tone×style + per-tone fallback","fit: binary-search","colour: near-B/W by LAB L","render: Pillow"]},
+
+  {p:2, kind:"Process · LLM", title:"Inside message", what:"LLM writes the interior greeting — a primary line plus alternatives — from tone, concept and headline.",
+    why:"The inside message is part of what a rater judges, so it can't be an afterthought. Generating alternatives gives the card a real interior voice and keeps the text head of the predictor honest (it scores headline + message jointly).",
+    detail:"Conditioned on the brief's concept + headline so cover and interior stay coherent.",
+    params:["out: primary + alts","cond: concept+headline"]},
+
+  {p:2, kind:"Model · decision", title:"Best-of-N rerank", what:"Score all N=8 candidates on saleability; keep the top-k. Scorer is the trained predictor or an LLM-vision judge.",
+    why:"This is the thesis in one step — the only place the appeal model touches generation. Generate 8, score each on saleability = 0.7·purchase-intent + 0.3·distinctiveness, keep the best. Purchase-intent dominates the weight because that's the target; distinctiveness stops the reranker converging on one safe template. Two interchangeable scorers: the trained predictor, or — in the all-LLM setup — an LLM-vision judge (llm_scorer.py) that uses the SAME 0–1 rubric instrument as Study 1's labels. Either way, steering is driven by the rubric signal, NOT the SSR signal that grades the system in Phase 3.",
+    detail:"Composite = 0.7·PI + 0.3·distinctiveness. scorer=\"predictor\" | \"llm\" (rubric, gpt-4.1-mini default). Persists ranked cards + scores to Postgres/MinIO.",
+    params:["N: 8","composite: 0.7·PI + 0.3·dist","scorer: predictor | LLM","keep: top-k"],
+    loop:"↩ This is where Phase 1's appeal model is spent — the predictor trained on the market now picks the winner at generation time."},
+
+  // ---------------- PHASE 3 ----------------
+  {p:3, kind:"Decision · branch", title:"Four conditions", what:"A naïve AI · B pipeline no-rerank · C pipeline+rerank · D human bestsellers.",
+    why:"Each condition isolates one variable. A→C shows what the whole pipeline adds over naïve prompting; B→C isolates the reranker alone (same pipeline, N=1 vs N=8); D is the human ceiling the system is chasing. A/B/C share the identical mask + layout so the only differences are prompt quality, LoRA and reranking — never card format.",
+    detail:"A: Flux + naïve prompt, no LoRA/brief. B: full pipeline N=1. C: full pipeline best-of-8. D: real marketplace cards — ranked by review+favourite count with is_bestseller=TRUE in conditions.py, but the active LLM-eval loader ranks D by VLM saleability score (vlm_5head_v1), without the is_bestseller filter.",
+    params:["A: naïve","B: no-rerank N=1","C: rerank N=8","D: human ceiling"],
+    branch:[{t:"A", d:"naïve AI"},{t:"B", d:"no rerank"},{t:"C", d:"+ rerank"},{t:"D", d:"human"}]},
+
+  {p:3, kind:"Data · LLM study 2", title:"Synthetic consumer panel", what:"LLM STUDY 2 (evaluation). A separate panel grades every card: SSR for purchase-intent, rubric judge for the 4 perceptual dims.",
+    why:"The second, independent LLM study — and deliberately a DIFFERENT instrument from Study 1. Purchase-intent uses SSR (Maier et al. 2025): three synthetic consumer profiles produce free-text reactions, embedded with MiniLM and mapped to a Likert distribution — reported at ~90% of human test-retest reliability, KS similarity >0.85. Because Study 1 (training) used a plain 0–1 rubric and Study 2 (grading) uses SSR, the system is never graded by the exact instrument that trained it. The other four dims use a rubric-guided LLM judge (Zheng et al. 2023, >80% human agreement). The pre-registered Prolific human study (system_eval.py) remains as the original design. Trade-off — removes survey cost and the disjoint-cohort requirement, at the price of a validated proxy standing in for real buyers.",
+    detail:"Active: eval/llm_system_eval.py — SSR (ssr_scorer.py) for purchase_intent + rubric judge for the other 4. Dormant: eval/system_eval.py drives the real Prolific cohort with attention checks + OSF pre-reg.",
+    params:["study: 2 of 2 (eval)","instrument: SSR ≠ rubric","PI: SSR (~90% TRT)","4 dims: rubric judge","fallback: Prolific"]},
+
+  {p:3, kind:"Model · stats", title:"Condition test", what:"Compare the 4 conditions on purchase-intent — Holm-corrected pairwise Mann-Whitney, plus bootstrap CIs, effect sizes and an equivalence test.",
+    why:"Same analysis skeleton whichever rater produced the scores. The active path (llm_system_eval.py) runs per-condition means + SEM, Holm-corrected pairwise Mann-Whitney U, bootstrap 95% CIs, rank-biserial effect sizes, and — crucially for the C≈D claim — a TOST equivalence test, since you can't argue 'no worse than human' from a failure to reject. The human-survey path (system_eval.py) instead fits the mixed-effects model with random effects for participant and card, needed only when ratings are the correlated, many-per-rater kind.",
+    detail:"Hypotheses H1: C>A · H2: C>B · H3: C≈D are pre-registered on OSF and named in the human/BT eval modules (system_eval.py, system_eval_bt.py); the active LLM eval reports the pairwise comparisons and TOST that map to them rather than hardcoding the labels. Per-occasion + per-dimension breakdowns throughout.",
+    params:["pairwise: Mann-Whitney","correction: Holm","equivalence: TOST","H1: C>A","H2: C>B","H3: C≈D"]},
+
+  {p:3, kind:"Ablation", title:"Ablations", what:"Knock out one component at a time to isolate its marginal contribution.",
+    why:"A condition-level win (C>A) doesn't say which part earned it. Each ablation disables exactly one piece and re-scores, so the thesis can attribute the gain to LoRA, layout, or the distinctiveness term specifically — and the best-of-N curve shows where reranking stops paying off.",
+    detail:"best_of_n_curve: mean predicted saleability vs N∈{1,2,4,8,16} (saturation). no_lora: monkey-patch _apply_loras to a no-op. no_layout: replace compose() with a naïve top-left Arial overlay. no_distinctiveness: rerank on purchase_intent alone, dropping the 0.3·distinctiveness term. Alongside: failure_analysis codes the worst ~20 cards; export_gallery builds an HTML gallery with per-dimension score bars.",
+    params:["N-curve: 1·2·4·8·16","no_lora","no_layout","no_distinctiveness"]},
+];
+
+const PLABEL = {1:"Learn appeal", 2:"Generate", 3:"Evaluate"};
+const PACCENT = {1:"var(--blue)", 2:"var(--teal)", 3:"var(--coral)"};
+const flow = document.getElementById('flow');
+
+// group by phase
+const byPhase = {1:[],2:[],3:[]};
+NODES.forEach((n,i)=>{n._i=i; byPhase[n.p].push(n)});
+
+const PHEAD = {
+  1:{t:"Learn what sells", d:"Turn a pile of marketplace listings into a model that predicts commercial appeal."},
+  2:{t:"Generate a card", d:"Plan → paint → typeset → write, then let the appeal model pick the winner."},
+  3:{t:"Prove it worked", d:"Put four kinds of card in front of humans and test the pre-registered claims."},
+};
+
+for(const p of [1,2,3]){
+  const sec = document.createElement('section');
+  sec.className = `phase p${p}`;
+  sec.dataset.phase = p;
+  sec.innerHTML = `
+    <div class="phase-head">
+      <span class="phase-num">PHASE ${p}</span>
+      <div><h2>${PHEAD[p].t}</h2><p>${PHEAD[p].d}</p></div>
+    </div>
+    <div class="nodes"></div>`;
+  const holder = sec.querySelector('.nodes');
+  byPhase[p].forEach(n=>{
+    const b = document.createElement('button');
+    b.className = 'node';
+    b.dataset.i = n._i;
+    b.setAttribute('aria-label', n.title);
+    const branch = n.branch ? `<div class="branch">${n.branch.map(x=>`<span class="subchip"><b>${x.t}</b> · ${x.d}</span>`).join('')}</div>` : '';
+    b.innerHTML = `
+      <span class="plus">＋ why</span>
+      <div class="node-top"><span class="kind">${n.kind}</span></div>
+      <h3>${n.title}</h3>
+      <p class="what">${n.what}</p>${branch}`;
+    holder.appendChild(b);
+    if(n.loop){
+      const l = document.createElement('div');
+      l.className='loop';
+      l.innerHTML = `<svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M11 3v3a4 4 0 0 1-4 4H2M2 10l3-3M2 10l3 3" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg><span>${n.loop.replace('↩ ','')}</span>`;
+      sec.appendChild(l); // appended after nodes block
+    }
+  });
+  flow.appendChild(sec);
+}
+
+// ---- detail panel ----
+const detail = document.getElementById('detail');
+const dRail = document.getElementById('d-rail');
+const dTag = document.getElementById('d-tag');
+const dTitle = document.getElementById('d-title');
+const dBody = document.getElementById('d-body');
+let activeBtn = null;
+
+function paramBlock(params){
+  if(!params||!params.length) return '';
+  const chips = params.map(p=>{
+    const m = p.split(/:(.+)/);
+    return m.length>1 ? `<span class="param">${m[0]}: <b>${m[1].trim()}</b></span>` : `<span class="param"><b>${p}</b></span>`;
+  }).join('');
+  return `<div class="block"><div class="lab">Parameters</div><div class="params">${chips}</div></div>`;
+}
+
+function select(i){
+  const n = NODES[i];
+  const acc = PACCENT[n.p];
+  dRail.style.background = acc;
+  dTag.textContent = `Phase ${n.p} · ${PLABEL[n.p]} · ${n.kind}`;
+  dTag.style.color = acc;
+  dTitle.textContent = n.title;
+  dBody.innerHTML = `
+    <div class="block"><div class="lab">What it does</div><p>${n.what} ${n.detail?`<br><span style="color:var(--ink-faint)">${n.detail}</span>`:''}</p></div>
+    <div class="block why"><div class="lab">The choice</div><p>${n.why}</p></div>
+    ${n.loop?`<div class="block"><div class="lab" style="color:${acc}">Feedback loop</div><p style="color:${acc}">${n.loop.replace('↩ ','')}</p></div>`:''}
+    ${paramBlock(n.params)}`;
+  if(activeBtn) activeBtn.classList.remove('active');
+  activeBtn = document.querySelector(`.node[data-i="${i}"]`);
+  if(activeBtn) activeBtn.classList.add('active');
+  if(window.matchMedia('(max-width:940px)').matches) detail.classList.add('open');
+}
+
+flow.addEventListener('click', e=>{
+  const b = e.target.closest('.node');
+  if(b) select(+b.dataset.i);
+});
+flow.addEventListener('keydown', e=>{
+  if((e.key==='Enter'||e.key===' ') && e.target.closest('.node')){ e.preventDefault(); select(+e.target.closest('.node').dataset.i); }
+});
+document.getElementById('closex').addEventListener('click', ()=>{
+  detail.classList.remove('open');
+  if(activeBtn){activeBtn.classList.remove('active'); activeBtn=null;}
+});
+document.addEventListener('keydown', e=>{ if(e.key==='Escape') detail.classList.remove('open'); });
+
+// ---- phase filter ----
+document.querySelectorAll('.chip').forEach(chip=>{
+  chip.addEventListener('click', ()=>{
+    const on = chip.getAttribute('aria-pressed')==='true';
+    chip.setAttribute('aria-pressed', String(!on));
+    const anyOn = [...document.querySelectorAll('.chip')].some(c=>c.getAttribute('aria-pressed')==='true');
+    document.querySelectorAll('.phase').forEach(sec=>{
+      const c = document.querySelector(`.chip[data-p="${sec.dataset.phase}"]`);
+      const pressed = c.getAttribute('aria-pressed')==='true';
+      sec.classList.toggle('dim', anyOn && !pressed);
+    });
+  });
+});
+</script>

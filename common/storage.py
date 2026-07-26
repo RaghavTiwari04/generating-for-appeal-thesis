@@ -108,17 +108,28 @@ def put_raw_html(source: str, source_listing_id: str, html: bytes) -> str:
     the pipeline reads it, and it is bulky. So this deliberately has no local
     fallback — it raises, and `Scraper.fetch_and_store` logs and continues.
     """
+    global _minio_unavailable
+    if _minio_unavailable:
+        # Skip silently. minio-py retries several times per call, and paying
+        # that on every listing cost roughly 4x the scrape's wall-clock time.
+        return ""
+
     digest = sha256_hex(html)[:16]
     key = f"{source}/{source_listing_id}/{digest}.html"
-    client = _client()
-    client.put_object(
-        bucket_name=settings.minio_bucket_raw,
-        object_name=key,
-        data=io.BytesIO(html),
-        length=len(html),
-        content_type="text/html",
-    )
-    return f"s3://{settings.minio_bucket_raw}/{key}"
+    try:
+        client = _client()
+        client.put_object(
+            bucket_name=settings.minio_bucket_raw,
+            object_name=key,
+            data=io.BytesIO(html),
+            length=len(html),
+            content_type="text/html",
+        )
+        return f"s3://{settings.minio_bucket_raw}/{key}"
+    except Exception as e:
+        _minio_unavailable = True
+        log.warning(f"MinIO raw-HTML put failed ({e}); skipping raw HTML for this run")
+        return ""
 
 
 def get_object(storage_path: str) -> bytes:

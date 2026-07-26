@@ -159,15 +159,15 @@ class TestReranker:
              "distinctiveness": 0.2, "purchase_intent": 0.3, "purchase_intent_calibrated": 0.3},
         ]
         mock_scorer = MagicMock()
-        mock_scorer.score_one.side_effect = mock_scores
+        mock_scorer.score.side_effect = mock_scores
         mock_scorer.provider = "anthropic"
         mock_scorer.model = "test-model"
 
-        with patch("pipeline.llm_scorer.LLMScorer", return_value=mock_scorer):
+        with patch("scoring.CardScorer", return_value=mock_scorer):
             ranked = rerank_llm(candidates, top_k=2)
 
         assert len(ranked) == 2
-        assert mock_scorer.score_one.call_count == 3
+        assert mock_scorer.score.call_count == 3
         saleabilities = [c.scores["saleability_calibrated"] for c in ranked]
         assert saleabilities == sorted(saleabilities, reverse=True)
 

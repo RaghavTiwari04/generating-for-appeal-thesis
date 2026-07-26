@@ -223,7 +223,7 @@ FROM listings l
 JOIN listing_features lf USING (listing_id)
 JOIN listing_images li ON li.listing_id = l.listing_id AND li.is_primary
 LEFT JOIN saleability_labels sl
-  ON sl.listing_id = l.listing_id AND sl.label_source = 'vlm_5head_v1'
+  ON sl.listing_id = l.listing_id AND sl.label_source = 'llm_ssr_rubric_v1'
 WHERE lf.occasion = %(occasion)s
 ORDER BY COALESCE(sl.score, 0) DESC
 LIMIT %(limit)s;

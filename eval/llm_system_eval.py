@@ -38,7 +38,8 @@ from PIL import Image
 from common.db import connection, engine
 from common.logging import get_logger
 from common.storage import get_object
-from eval.ssr_scorer import DIMS, SSRScorer
+from scoring import CardScorer, DIMS
+from scoring.card_scorer import CONSUMER_PROFILES
 
 log = get_logger(__name__)
 
@@ -97,7 +98,7 @@ def _load_human_bestsellers(occasions: list[str], per_occasion: int = 5) -> pd.D
         JOIN listing_features lf USING (listing_id)
         JOIN listing_images li ON li.listing_id = l.listing_id AND li.is_primary
         LEFT JOIN saleability_labels sl
-          ON sl.listing_id = l.listing_id AND sl.label_source = 'vlm_5head_v1'
+          ON sl.listing_id = l.listing_id AND sl.label_source = 'llm_ssr_rubric_v1'
         WHERE lf.occasion = ANY(%(occasions)s)
     ) ranked
     WHERE rn <= %(per_occasion)s
@@ -136,7 +137,7 @@ def _score_cards(
     This produces realistic response distributions (KS>0.85) unlike
     direct numerical ratings (KS=0.26).
     """
-    scorer = SSRScorer(provider=provider, model=model)
+    scorer = CardScorer(provider=provider, model=model)
     log.info(
         f"SSR scoring {len(cards_df)} cards × {len(scorer.profiles)} consumer profiles"
     )
@@ -148,14 +149,18 @@ def _score_cards(
         if img is None:
             continue
 
-        scores = scorer.score_one(
-            image=img,
+        scores = scorer.score(
+            img,
+            occasion=row.get("occasion", "birthday/general") or "birthday/general",
             headline=row.get("headline_text", "") or "",
             inside_message=row.get("inside_message", "") or "",
-            occasion=row.get("occasion", "birthday/general") or "birthday/general",
         )
 
-        responses = scores.pop("_responses", [])
+        responses = [
+            {"dimension": d, "explanation": e}
+            for d, e in scores.pop("explanations", {}).items()
+        ] + [{"dimension": "purchase_intent", "response": r}
+             for r in scores.pop("ssr_responses", [])]
         response_log.extend([
             {"card_key": row["card_key"], **r} for r in responses
         ])
@@ -371,7 +376,7 @@ def run(
         "method": "Hybrid LLM evaluation",
         "purchase_intent_method": "SSR (Maier et al. 2025, arXiv:2510.08338)",
         "other_dims_method": "Rubric-guided LLM judge (Zheng et al. 2023, NeurIPS)",
-        "n_consumer_profiles": len(SSRScorer().profiles),
+        "n_consumer_profiles": len(CONSUMER_PROFILES),
         "n_cards": report.n_cards,
         "n_ratings": report.n_ratings,
         "conditions": list(CONDITIONS),
