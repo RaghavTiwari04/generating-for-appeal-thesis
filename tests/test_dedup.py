@@ -1,4 +1,4 @@
-"""Unit tests for dedup helpers (pHash, hamming, TF-IDF, union-find)."""
+"""Unit tests for dedup helpers (pHash, hamming, union-find)."""
 
 from __future__ import annotations
 
@@ -10,7 +10,6 @@ from data.features.dedup import (
     UnionFind,
     compute_phash,
     hamming,
-    tfidf_duplicates,
 )
 
 
@@ -53,17 +52,3 @@ def test_union_find_basic() -> None:
     assert uf.find("d") != uf.find("a")
 
 
-def test_tfidf_duplicates_exact() -> None:
-    rows = [("id1", "happy birthday card for mum"), ("id2", "happy birthday card for mum")]
-    pairs = list(tfidf_duplicates(rows, threshold=0.8))
-    assert len(pairs) == 1
-    assert set(pairs[0][:2]) == {"id1", "id2"}
-
-
-def test_tfidf_duplicates_dissimilar() -> None:
-    rows = [
-        ("id1", "happy birthday card flowers"),
-        ("id2", "sympathy bereavement condolences funeral"),
-    ]
-    pairs = list(tfidf_duplicates(rows, threshold=0.8))
-    assert len(pairs) == 0
