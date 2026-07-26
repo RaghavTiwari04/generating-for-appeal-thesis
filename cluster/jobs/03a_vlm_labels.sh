@@ -32,18 +32,30 @@ trap 'pg_ctl -D "$PG_DIR" stop -m fast -w -t 20 2>/dev/null || true' EXIT
 
 PROVIDER="${PROVIDER:-anthropic}"
 LIMIT="${LIMIT:-}"
+# Keep a comparison run out of the canonical source: the predictor, LoRA
+# selection and condition D all read the default one, so a second provider's
+# scores must not land in it.
+LABEL_SOURCE="${LABEL_SOURCE:-}"
+# Re-score cards that already have labels. Needed when overwriting a run made
+# with a different provider or scoring config.
+FORCE="${FORCE:-}"
 
 echo "=== LLM labelling (SSR + rubric judge) ==="
-echo "Node: $(hostname)  Start: $(date)  provider=$PROVIDER limit=${LIMIT:-all}"
+echo "Node: $(hostname)  Start: $(date)"
+echo "provider=$PROVIDER limit=${LIMIT:-all} source=${LABEL_SOURCE:-default} force=${FORCE:-no}"
 
-if [ -n "$LIMIT" ]; then
-    python -u -m data.labels.vlm_labels label --provider "$PROVIDER" --limit "$LIMIT"
-else
-    python -u -m data.labels.vlm_labels label --provider "$PROVIDER"
-fi
+ARGS=(--provider "$PROVIDER")
+[ -n "$LIMIT" ] && ARGS+=(--limit "$LIMIT")
+[ -n "$LABEL_SOURCE" ] && ARGS+=(--label-source "$LABEL_SOURCE")
+[ -n "$FORCE" ] && ARGS+=(--force)
+
+python -u -m data.labels.vlm_labels label "${ARGS[@]}"
+
+STATS_ARGS=()
+[ -n "$LABEL_SOURCE" ] && STATS_ARGS+=(--label-source "$LABEL_SOURCE")
 
 echo ""
 echo "--- Label stats ---"
-python -u -m data.labels.vlm_labels stats
+python -u -m data.labels.vlm_labels stats "${STATS_ARGS[@]}"
 
 echo "=== Done: $(date) ==="
