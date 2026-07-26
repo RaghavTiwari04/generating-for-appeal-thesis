@@ -72,7 +72,7 @@ def _stable_seed(participant_id: str, study_id: str) -> int:
 
 
 def load_calibration_pool(
-    label_source: str = "llm_ssr_rubric_v1",
+    label_source: str = "llm_ssr_rubric_v2",
 ) -> list[CalibrationCard]:
     """Load all VLM-labelled cards sorted by score."""
     df = pd.read_sql(_POOL_SQL, engine(), params={"label_source": label_source})
@@ -94,7 +94,7 @@ def sample_pairs_calibration(
     study_id: str = "calibration_v1",
     n_pairs: int = 25,
     n_trapdoors: int = 2,
-    label_source: str = "llm_ssr_rubric_v1",
+    label_source: str = "llm_ssr_rubric_v2",
 ) -> list[CalibrationPair]:
     """Build per-participant pair list for the calibration study.
 
@@ -210,7 +210,7 @@ def sample_pairs_calibration(
 def study_design_summary(
     n_participants: int = 40,
     n_pairs_per_participant: int = 25,
-    label_source: str = "llm_ssr_rubric_v1",
+    label_source: str = "llm_ssr_rubric_v2",
 ) -> dict:
     """Compute study design statistics for preregistration."""
     pool = load_calibration_pool(label_source)

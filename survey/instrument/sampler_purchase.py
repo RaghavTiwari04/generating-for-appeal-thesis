@@ -78,7 +78,7 @@ ORDER BY sl.score
 
 def select_study_pool(
     n_cards: int = 500,
-    label_source: str = "llm_ssr_rubric_v1",
+    label_source: str = "llm_ssr_rubric_v2",
     seed: int = 42,
 ) -> list[PurchaseCard]:
     """Select a stratified subsample of cards for the purchase_intent study.
@@ -244,7 +244,7 @@ def sample_pairs_purchase(
     n_pairs: int = 30,
     n_trapdoors: int = 3,
     max_appearances: int = 12,
-    label_source: str = "llm_ssr_rubric_v1",
+    label_source: str = "llm_ssr_rubric_v2",
 ) -> list[PurchasePair]:
     """Build per-participant pair list for the purchase_intent study.
 
@@ -415,7 +415,7 @@ def study_design_summary(
     n_cards: int = 500,
     n_participants: int = 70,
     n_pairs_per_participant: int = 30,
-    label_source: str = "llm_ssr_rubric_v1",
+    label_source: str = "llm_ssr_rubric_v2",
 ) -> dict:
     """Compute study design stats for preregistration / protocol."""
     total_pairs = n_participants * n_pairs_per_participant

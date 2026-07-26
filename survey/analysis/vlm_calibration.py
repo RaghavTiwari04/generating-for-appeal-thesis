@@ -1,7 +1,7 @@
 """Validate VLM pseudo-labels against human pairwise judgments.
 
 Computes Spearman rho per dimension between:
-  - VLM score (from saleability_labels, llm_ssr_rubric_v1)
+  - VLM score (from saleability_labels, llm_ssr_rubric_v2)
   - Human BT score (from survey_pairs, calibration_v1)
 
 Acceptance criterion: rho >= 0.5 per dimension (preregistered).
@@ -13,7 +13,7 @@ Also reports:
 
 Run:
     python -m survey.analysis.vlm_calibration
-    python -m survey.analysis.vlm_calibration --study-id calibration_v1 --vlm-source llm_ssr_rubric_v1
+    python -m survey.analysis.vlm_calibration --study-id calibration_v1 --vlm-source llm_ssr_rubric_v2
 """
 
 from __future__ import annotations
@@ -123,7 +123,7 @@ def _attention_check_rate(pairs: pd.DataFrame) -> float:
 
 def run_calibration(
     study_id: str = "calibration_v1",
-    vlm_source: str = "llm_ssr_rubric_v1",
+    vlm_source: str = "llm_ssr_rubric_v2",
     exclude_failed_attention: bool = True,
 ) -> CalibrationReport:
     """Full calibration analysis: human BT scores vs VLM scores.
@@ -292,7 +292,7 @@ app = typer.Typer(help="VLM calibration analysis")
 @app.command()
 def validate(
     study_id: str = typer.Option("calibration_v1", help="Study ID"),
-    vlm_source: str = typer.Option("llm_ssr_rubric_v1", help="VLM label source"),
+    vlm_source: str = typer.Option("llm_ssr_rubric_v2", help="VLM label source"),
 ) -> None:
     """Run full calibration validation and print results."""
     report = run_calibration(study_id=study_id, vlm_source=vlm_source)

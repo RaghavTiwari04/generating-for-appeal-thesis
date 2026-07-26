@@ -34,11 +34,11 @@ from psycopg.types.json import Jsonb
 from common.config import settings
 from common.db import connection, engine
 from common.logging import get_logger
-from scoring import CardScorer, DIMS, quality_composite
+from scoring import CardScorer, DIMS, RUBRIC_DIMS, quality_composite
 
 log = get_logger(__name__)
 
-LABEL_SOURCE = "llm_ssr_rubric_v1"
+LABEL_SOURCE = "llm_ssr_rubric_v2"
 
 # Cards scored concurrently. Each card is 7 VLM calls, so this is the real
 # multiplier against the provider's rate limit.
@@ -224,12 +224,13 @@ def label(
         log.info("Nothing to do.")
         return
 
+    scorer = CardScorer(provider=provider, model=model)
+    per_card = len(scorer.profiles) * scorer.samples_per_persona + len(RUBRIC_DIMS)
     log.info(
-        f"{len(cards)} cards x 7 calls = {len(cards) * 7} VLM calls via {provider}"
+        f"{len(cards)} cards x {per_card} calls = {len(cards) * per_card} "
+        f"VLM calls via {provider}"
     )
-    written = asyncio.run(
-        _run(cards, CardScorer(provider=provider, model=model), label_source)
-    )
+    written = asyncio.run(_run(cards, scorer, label_source))
     print(f"Scored {written} cards")
 
 

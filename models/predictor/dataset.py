@@ -4,7 +4,7 @@ Pulls a flat training table from Postgres + cached CLIP embeddings, then
 serves (image_emb, text_emb, occasion_idx, price_rel, targets, mask) tuples.
 
 Label sources:
-  - Heads 1-4 (LLM): saleability_labels.label_source = 'llm_ssr_rubric_v1'
+  - Heads 1-4 (LLM): saleability_labels.label_source = 'llm_ssr_rubric_v2'
     → rubric-guided judge scores for occasion_fit, aesthetic,
       emotional_resonance, distinctiveness.
   - Head 5 (human): saleability_labels.label_source LIKE 'survey_%_bt_purchase_intent'
@@ -53,7 +53,7 @@ FROM listings l
 JOIN listing_features lf USING (listing_id)
 LEFT JOIN saleability_labels sl_vlm
        ON sl_vlm.listing_id = l.listing_id
-      AND sl_vlm.label_source = 'llm_ssr_rubric_v1'
+      AND sl_vlm.label_source = 'llm_ssr_rubric_v2'
 LEFT JOIN saleability_labels sl_bt_pi
        ON sl_bt_pi.listing_id = l.listing_id
       AND sl_bt_pi.label_source LIKE 'survey_%%_bt_purchase_intent'

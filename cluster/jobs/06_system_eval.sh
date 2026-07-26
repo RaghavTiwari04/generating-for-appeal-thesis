@@ -11,8 +11,8 @@
 #SBATCH --mail-user=${USER}
 
 # LLM system evaluation — scores generated cards via SSR + rubric judge.
-# CPU-only (API calls + sentence-transformers embeddings).
-# Needs: OPENAI_API_KEY in .env, sentence-transformers installed.
+# CPU-only (API calls only: VLM judging plus SSR embeddings).
+# Needs ANTHROPIC_API_KEY and OPENAI_API_KEY in .env.
 # Runs AFTER card generation (step 05).
 
 set -euo pipefail

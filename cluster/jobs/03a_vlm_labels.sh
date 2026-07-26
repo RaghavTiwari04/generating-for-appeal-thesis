@@ -11,15 +11,16 @@
 
 # LLM labelling — scores scraped cards on 5 dimensions.
 # SSR (Maier et al. 2025) for purchase intent, rubric judge (Zheng et al. 2023)
-# for the quality dims. 7 API calls per card, so this is the step that costs
+# for the quality dims. 10 API calls per card, so this is the step that costs
 # money: check the call count it logs before letting a full run proceed.
 #
-# LIMIT=20 scores only the first 20 cards — a ~140-call smoke test that proves
+# LIMIT=20 scores only the first 20 cards — a ~200-call smoke test that proves
 # SSR, the judge and persistence all work before committing to the full run.
 # Resumable: cards already scored are skipped, so a limited run is not wasted.
 #
-# API calls only, no GPU. Needs ANTHROPIC_API_KEY in .env, and occasion labels
-# (job 14) since the pool filters on them.
+# API calls only, no GPU. Needs ANTHROPIC_API_KEY (judge + personas) and
+# OPENAI_API_KEY (SSR embeddings) in .env, plus occasion labels from job 14
+# since the pool filters on them.
 
 set -euo pipefail
 source /vol/bitbucket/$USER/venvs/gc/bin/activate

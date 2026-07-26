@@ -37,7 +37,7 @@ SELECT lf.listing_id, lf.clip_embedding, COALESCE(lf.extracted_text, l.title) AS
 FROM listing_features lf
 JOIN listings l USING (listing_id)
 LEFT JOIN saleability_labels sl
-  ON sl.listing_id = lf.listing_id AND sl.label_source = 'llm_ssr_rubric_v1'
+  ON sl.listing_id = lf.listing_id AND sl.label_source = 'llm_ssr_rubric_v2'
 WHERE lf.occasion = %(occasion)s
   AND lf.clip_embedding IS NOT NULL
 ORDER BY COALESCE(sl.score, 0) DESC
@@ -84,7 +84,7 @@ SELECT l.title, COALESCE(sl.score, 0) AS score
 FROM listings l
 JOIN listing_features lf USING (listing_id)
 LEFT JOIN saleability_labels sl
-  ON sl.listing_id = l.listing_id AND sl.label_source = 'llm_ssr_rubric_v1'
+  ON sl.listing_id = l.listing_id AND sl.label_source = 'llm_ssr_rubric_v2'
 WHERE lf.occasion = %(occasion)s
   AND l.title IS NOT NULL
 ORDER BY COALESCE(sl.score, 0) DESC

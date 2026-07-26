@@ -15,8 +15,8 @@ Two methods, each following its source:
       to avoid, so the personas are told not to give ratings.
 
       SSR is a method for reproducing a population's *distribution* of survey
-      responses. Collapsing three personas to one number is an adaptation, so
-      the paper's KS>0.85 validation does not carry over to this use. Averaging
+      responses. Collapsing the persona samples to one number is an adaptation,
+      so the paper's KS>0.85 validation does not carry over to this use. Averaging
       the per-persona expectations equals the expectation of the averaged PMF,
       which is what the reference aggregates, so the point estimate itself is
       consistent with it.
@@ -26,7 +26,14 @@ Two methods, each following its source:
       github.com/lm-sys/FastChat/tree/main/fastchat/llm_judge). Explanation
       first, then a 1-10 score in "[[rating]]" form, at temperature 0.
 
-Cost: one card is 3 SSR calls (one per consumer profile) plus 4 rubric calls.
+Cost: one card is 6 SSR calls (3 consumer profiles x 2 samples each, per the
+paper's n=2) plus 4 rubric calls, so 10 VLM calls. SSR additionally needs an
+OpenAI key for its embeddings; the anchor embeddings are cached, so that is one
+short embedding call per persona reply.
+
+Model note: labelling runs on claude-sonnet-4-6 rather than claude-sonnet-5
+because SSR elicitation requires a non-default sampling temperature, which
+Sonnet 5 rejects.
 """
 
 from __future__ import annotations
@@ -61,13 +68,15 @@ QUALITY_DIMS = RUBRIC_DIMS
 # ---------------------------------------------------------------------------
 # SSR — purchase intent
 # ---------------------------------------------------------------------------
-# Three anchor sets, averaged per response.
+# Six anchor sets, averaged per response, following the paper: "we use m=6
+# sets […] all similar but not identical, and designed to capture the different
+# ways a consumer may express their purchase intent", with pmfs "averaged over
+# six different statement sets for every response".
 #
-# This is an extension, not the reference behaviour: pymc-labs' API takes one
-# reference_set_id per call (get_response_pmfs(reference_set_id=...)), and its
-# example carries two sets to choose between. Averaging is intended to reduce
-# sensitivity to any single phrasing; it is our choice and should be described
-# that way rather than attributed to the paper.
+# pymc-labs' API takes one reference_set_id per call, so the averaging lives
+# here rather than in the library — but the behaviour is the reference's, not
+# an extension of ours. Anchors are embedded once and cached, so raising m from
+# three to six costs nothing per card.
 SSR_REFERENCE_SETS: tuple[tuple[str, ...], ...] = (
     (
         "I would never buy this card",
@@ -90,6 +99,27 @@ SSR_REFERENCE_SETS: tuple[tuple[str, ...], ...] = (
         "Many people would consider purchasing this",
         "Most people would want to purchase this",
     ),
+    (
+        "I would leave this on the shelf",
+        "I would be reluctant to pick this one",
+        "I could go either way on this one",
+        "I would be inclined to pick this one",
+        "I would take this one straight to the till",
+    ),
+    (
+        "This is not worth the money",
+        "This is poor value for the money",
+        "This is fair value for the money",
+        "This is good value for the money",
+        "This is excellent value for the money",
+    ),
+    (
+        "I would not send this card to anyone",
+        "I can hardly think of anyone I would send this to",
+        "I might send this to one or two people",
+        "I can think of several people I would send this to",
+        "I would send this to almost anyone",
+    ),
 )
 
 # Synthetic consumers. The reference does not prescribe personas, so the
@@ -100,26 +130,57 @@ CONSUMER_PROFILES: tuple[dict, ...] = (
     {"age": 62, "gender": "female", "income": "comfortable", "region": "rural UK"},
 )
 
-# Free text needs sampling variety; the rubric judge must be deterministic.
-SSR_ELICITATION_TEMPERATURE = 0.8
+# Elicitation settings from the paper: T_LLM = 0.5, n = 2 samples per prompt,
+# "which we found was sufficient to obtain stable results".
+#
+# The paper also sets top_p = 0.9. We cannot: the Anthropic API rejects a request
+# carrying both temperature and top_p, and temperature is the parameter the
+# paper's own sensitivity analysis varies. Deviation is noted here rather than
+# hidden.
+SSR_ELICITATION_TEMPERATURE = 0.5
+SSR_SAMPLES_PER_PERSONA = 2
+
+# The rubric judge must be deterministic (MT-Bench scores at temperature 0).
 JUDGE_TEMPERATURE = 0.0
 
-# The reference repo does not state its embedding model, so this is our choice
-# rather than a documented default. Any change to it changes every score, so
-# it belongs in the writeup's reproducibility notes.
-_EMBED_MODEL = "all-MiniLM-L6-v2"
-_embedder = None
+# The embedder is the instrument SSR measures with — it is what turns a free-text
+# reply into a position between the anchors — so it follows the paper rather than
+# being a free choice: "OpenAI's model 'text-embedding-3-small'".
+_EMBED_MODEL = "text-embedding-3-small"
+_openai_client = None
 _ref_cache: dict[tuple[str, ...], np.ndarray] = {}
 
 
-def _embed(texts) -> np.ndarray:
-    global _embedder
-    if _embedder is None:
-        from sentence_transformers import SentenceTransformer
+def _embed(texts, retries: int = 4) -> np.ndarray:
+    """Embed texts as unit vectors. Raises rather than degrading silently.
 
-        _embedder = SentenceTransformer(_EMBED_MODEL)
-        log.info(f"Loaded embedder: {_EMBED_MODEL}")
-    return _embedder.encode(list(texts), normalize_embeddings=True)
+    A failed embedding cannot be defaulted: every SSR score is a cosine against
+    these vectors, so a placeholder would be a fabricated score rather than a
+    missing one.
+    """
+    global _openai_client
+    if _openai_client is None:
+        if not settings.openai_api_key:
+            raise RuntimeError(
+                "OPENAI_API_KEY is required for SSR embeddings "
+                f"({_EMBED_MODEL}); set it in .env"
+            )
+        from openai import OpenAI
+
+        _openai_client = OpenAI(api_key=settings.openai_api_key)
+
+    items = list(texts)
+    for attempt in range(retries):
+        try:
+            resp = _openai_client.embeddings.create(model=_EMBED_MODEL, input=items)
+            vecs = np.asarray([d.embedding for d in resp.data], dtype=float)
+            return vecs / np.linalg.norm(vecs, axis=1, keepdims=True)
+        except Exception as e:
+            log.warning(f"Embedding failed (attempt {attempt + 1}/{retries}): {e}")
+            if attempt == retries - 1:
+                raise
+            time.sleep(min(2**attempt, 30))
+    raise RuntimeError("unreachable")
 
 
 def _cosine(a: np.ndarray, b: np.ndarray) -> np.ndarray:
@@ -369,6 +430,8 @@ class CardScorer:
     provider: str = "anthropic"
     model: str | None = None
     profiles: tuple[dict, ...] = CONSUMER_PROFILES
+    samples_per_persona: int = SSR_SAMPLES_PER_PERSONA
+    # The paper restricts its study to epsilon = 0 and T = 1; these match.
     ssr_temperature: float = 1.0
     ssr_epsilon: float = 0.0
     _explanations: dict = field(default_factory=dict, init=False, repr=False)
@@ -399,19 +462,20 @@ class CardScorer:
 
         pmfs, scores, replies = [], [], []
         for profile in self.profiles:
-            reply = call_vlm(
-                b64,
-                _persona_prompt(profile),
-                question,
-                provider=self.provider,
-                model=self.model,
-                temperature=SSR_ELICITATION_TEMPERATURE,
-                max_tokens=200,
-            ) or "I am unsure about this card."
-            r = ssr_score(reply, self.ssr_temperature, self.ssr_epsilon)
-            pmfs.append(r["pmf"])
-            scores.append(r["score"])
-            replies.append(reply)
+            for _ in range(self.samples_per_persona):
+                reply = call_vlm(
+                    b64,
+                    _persona_prompt(profile),
+                    question,
+                    provider=self.provider,
+                    model=self.model,
+                    temperature=SSR_ELICITATION_TEMPERATURE,
+                    max_tokens=200,
+                ) or "I am unsure about this card."
+                r = ssr_score(reply, self.ssr_temperature, self.ssr_epsilon)
+                pmfs.append(r["pmf"])
+                scores.append(r["score"])
+                replies.append(reply)
 
         out["purchase_intent"] = float(np.mean(scores))
         out["purchase_intent_std"] = float(np.std(scores))
