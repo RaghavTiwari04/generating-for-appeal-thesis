@@ -22,14 +22,8 @@ import pandas as pd
 import typer
 
 from common.db import engine
-from common.occasions import MILESTONE_AGES
+from common.occasions import KID_AGE_MAX, MILESTONE_AGES, parse_ages
 
-KID_AGE_MAX = 12
-
-# Whole numbers only: "29th" must not read as "9th".
-_ORDINAL_RE = re.compile(r"\b(\d{1,3})(?:st|nd|rd|th)\b")
-_AGE_RE = re.compile(r"\bage\s+(\d{1,3})\b")
-_YEARS_OLD_RE = re.compile(r"\b(\d{1,3})\s*(?:years?|yrs?)\s*old\b")
 # In-laws are adults, so they must not count as a kid signal.
 _IN_LAW_RE = re.compile(r"\b(son|daughter|mother|father|brother|sister)[\s-]+in[\s-]+law\b")
 
@@ -53,20 +47,13 @@ LEFT JOIN listing_features lf ON lf.listing_id = l.listing_id;
 """
 
 
-def _ages(text: str) -> set[int]:
-    out: set[int] = set()
-    for pattern in (_ORDINAL_RE, _AGE_RE, _YEARS_OLD_RE):
-        out.update(int(m) for m in pattern.findall(text))
-    return out
-
-
 def _has(text: str, phrase: str) -> bool:
     return re.search(rf"(?<!\w){re.escape(phrase)}(?!\w)", text) is not None
 
 
 def _signals(title: str) -> dict[str, bool]:
     t = _IN_LAW_RE.sub("inlaw", title.lower())
-    ages = _ages(t)
+    ages = parse_ages(t)
     return {
         "kid_word": any(_has(t, w) for w in _KID_WORDS),
         "kid_age": any(a <= KID_AGE_MAX for a in ages),

@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from scripts.audit_labels import _ages, _has, _signals, _violations
+from common.occasions import parse_ages as _ages
+from scripts.audit_labels import _has, _signals, _violations
 
 
 class TestAgeParsing:
@@ -24,6 +25,12 @@ class TestAgeParsing:
 
     def test_no_age(self) -> None:
         assert _ages("super cute tortoise birthday") == set()
+
+    def test_bare_age_forms(self) -> None:
+        # "Sporty at 60" was read as having no age, which made the audit flag
+        # correctly-labelled milestone cards.
+        assert _ages("sporty at 60 - birthday card") == {60}
+        assert _ages("turning 30 birthday card") == {30}
 
 
 class TestWordBoundaries:
