@@ -26,14 +26,13 @@ import asyncio
 import io
 from dataclasses import dataclass
 
-import httpx
 import typer
 from PIL import Image
 from psycopg.types.json import Jsonb
 
-from common.config import settings
 from common.db import connection, engine
 from common.logging import get_logger
+from common.storage import get_object
 from scoring import (
     DIMS,
     RUBRIC_DIMS,
@@ -61,20 +60,25 @@ COMMIT_EVERY = 25
 # Listings with a NULL occasion are skipped because nothing downstream can use
 # them: the predictor requires occasion IS NOT NULL, and the LoRA and
 # condition-D selections filter by occasion.
+#
+# Scoring reads the stored blob, not the listing's remote image URL. Dedup,
+# the CLIP embeddings, LoRA training and the galleries all read the blob, so
+# fetching the URL here scored whatever the site served at that moment — which
+# need not be the image the rest of the pipeline associates with the listing,
+# and need not be the same across two runs.
 _POOL_SQL = """
-SELECT listing_id, title, occasion, image_url
+SELECT listing_id, title, occasion, storage_path
 FROM (
     SELECT DISTINCT ON (COALESCE(lf.duplicate_cluster_id::text, l.listing_id::text))
            l.listing_id::text AS listing_id,
            l.title,
            lf.occasion,
-           l.raw_metadata->'image_urls'->>0 AS image_url,
+           li.storage_path,
            l.last_seen_at
     FROM listings l
+    JOIN listing_images li ON li.listing_id = l.listing_id AND li.is_primary
     LEFT JOIN listing_features lf ON lf.listing_id = l.listing_id
-    WHERE l.raw_metadata->'image_urls' IS NOT NULL
-      AND jsonb_array_length(l.raw_metadata->'image_urls') > 0
-      AND (l.raw_metadata->'image_urls'->>0) IS NOT NULL
+    WHERE li.storage_path IS NOT NULL
       AND lf.occasion IS NOT NULL
     ORDER BY COALESCE(lf.duplicate_cluster_id::text, l.listing_id::text), l.listing_id
 ) one_per_design
@@ -100,7 +104,7 @@ class Card:
     listing_id: str
     title: str | None
     occasion: str | None
-    image_url: str
+    storage_path: str
 
 
 def _load_pool() -> list[Card]:
@@ -114,10 +118,10 @@ def _load_pool() -> list[Card]:
             listing_id=r["listing_id"],
             title=r.get("title"),
             occasion=r.get("occasion"),
-            image_url=r["image_url"],
+            storage_path=r["storage_path"],
         )
         for _, r in df.iterrows()
-        if r.get("image_url")
+        if r.get("storage_path")
     ]
 
 
@@ -144,25 +148,20 @@ def _persist(rows: list[dict], label_source: str) -> int:
     return len(rows)
 
 
-async def _fetch_image(client: httpx.AsyncClient, url: str) -> Image.Image | None:
+def _load_image(card: Card) -> Image.Image | None:
     try:
-        resp = await client.get(url, timeout=30.0, follow_redirects=True)
-        resp.raise_for_status()
-        if len(resp.content) < 1000:      # an error page, not an image
-            return None
-        return Image.open(io.BytesIO(resp.content)).convert("RGB")
+        return Image.open(io.BytesIO(get_object(card.storage_path))).convert("RGB")
     except Exception as e:
-        log.debug(f"Image fetch failed {url[:70]}: {e}")
+        log.warning(f"Could not load {card.storage_path}: {e}")
         return None
 
 
 async def _score_card(
     card: Card,
-    client: httpx.AsyncClient,
     sem: asyncio.Semaphore,
     scorer: CardScorer,
 ) -> dict | None:
-    image = await _fetch_image(client, card.image_url)
+    image = await asyncio.to_thread(_load_image, card)
     if image is None:
         return None
     async with sem:
@@ -186,21 +185,16 @@ async def _score_card(
 async def _run(cards: list[Card], scorer: CardScorer, label_source: str) -> int:
     sem = asyncio.Semaphore(MAX_CONCURRENCY)
     written = failed = 0
-    async with httpx.AsyncClient(
-        headers={"User-Agent": settings.scraper_user_agent}, follow_redirects=True
-    ) as client:
-        for start in range(0, len(cards), COMMIT_EVERY):
-            chunk = cards[start : start + COMMIT_EVERY]
-            results = await asyncio.gather(
-                *(_score_card(c, client, sem, scorer) for c in chunk)
-            )
-            good = [r for r in results if r is not None]
-            failed += len(results) - len(good)
-            written += _persist(good, label_source)
-            log.info(
-                f"  {min(start + COMMIT_EVERY, len(cards))}/{len(cards)} — "
-                f"{written} scored, {failed} failed"
-            )
+    for start in range(0, len(cards), COMMIT_EVERY):
+        chunk = cards[start : start + COMMIT_EVERY]
+        results = await asyncio.gather(*(_score_card(c, sem, scorer) for c in chunk))
+        good = [r for r in results if r is not None]
+        failed += len(results) - len(good)
+        written += _persist(good, label_source)
+        log.info(
+            f"  {min(start + COMMIT_EVERY, len(cards))}/{len(cards)} — "
+            f"{written} scored, {failed} failed"
+        )
     return written
 
 
