@@ -497,6 +497,13 @@ OPENAI_COMPATIBLE: dict[str, tuple[str | None, str, str | None]] = {
     "openai": (None, "openai_api_key", "gpt-4o"),
     "glm": ("https://api.z.ai/api/paas/v4", "glm_api_key", "glm-4.6v"),
     "openrouter": ("https://openrouter.ai/api/v1", "openrouter_api_key", None),
+    # Google's own OpenAI-compatible endpoint. Direct rather than via a gateway,
+    # so there is no upstream to pin and no gateway margin.
+    "gemini": (
+        "https://generativelanguage.googleapis.com/v1beta/openai/",
+        "gemini_api_key",
+        "gemini-3.5-flash-lite",
+    ),
 }
 
 
