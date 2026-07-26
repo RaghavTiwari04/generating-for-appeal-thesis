@@ -24,12 +24,13 @@ from common.storage import get_object
 log = get_logger(__name__)
 
 _SQL = """
-SELECT card.occasion, card.source, card.title, card.storage_path
+SELECT card.occasion, card.source, card.title, card.storage_path, card.confidence
 FROM (
     SELECT lf.occasion,
            l.source,
            l.title,
            li.storage_path,
+           lf.occasion_confidence AS confidence,
            ROW_NUMBER() OVER (PARTITION BY lf.occasion ORDER BY l.listing_id) AS rn
     FROM listings l
     JOIN listing_features lf USING (listing_id)
@@ -72,9 +73,16 @@ def export(out_dir: Path, per_occasion: int, all_occasions: bool) -> None:
         exported += 1
 
         title = (row["title"] or "")[:70].replace("<", "&lt;")
+        conf = row.get("confidence")
+        # Colour by confidence so low-certainty labels stand out while scanning.
+        if conf is None:
+            conf_html = ""
+        else:
+            colour = "#4caf50" if conf >= 0.7 else "#ff9800" if conf >= 0.55 else "#f44336"
+            conf_html = f'<span class="conf" style="color:{colour}">{conf:.2f}</span> '
         sections.setdefault(occasion, []).append(
             f'<figure><img src="{slug}/{fname}" loading="lazy">'
-            f'<figcaption>{title}<br><span class="src">{row["source"]}</span>'
+            f'<figcaption>{conf_html}{title}<br><span class="src">{row["source"]}</span>'
             f'</figcaption></figure>'
         )
 
@@ -87,8 +95,13 @@ def export(out_dir: Path, per_occasion: int, all_occasions: bool) -> None:
         "img{width:100%;border-radius:4px;display:block}",
         "figcaption{font-size:11px;color:#bbb;margin-top:6px;line-height:1.35}",
         ".src{color:#666}",
+        ".conf{font-weight:600}",
         "</style></head><body>",
         f"<h1>Scraped listings by occasion ({exported} images)</h1>",
+        "<p style='color:#999;font-size:12px'>Number is the classifier confidence: "
+        "<span style='color:#4caf50'>&ge;0.70</span>, "
+        "<span style='color:#ff9800'>0.55-0.70</span>, "
+        "<span style='color:#f44336'>&lt;0.55 (fell back to general)</span></p>",
     ]
     for occasion in sorted(sections):
         html.append(f"<h2>{occasion} — {len(sections[occasion])} shown</h2>")
