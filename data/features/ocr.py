@@ -82,7 +82,7 @@ SET extracted_text = EXCLUDED.extracted_text,
 """
 
 
-def run_ocr_missing(limit: int = 1000, feature_version: str = "ocr-v1") -> int:
+def run_ocr_missing(limit: int = 100_000, feature_version: str = "ocr-v1") -> int:
     processed = 0
     with connection() as conn, conn.cursor() as cur:
         cur.execute(_SELECT_MISSING, {"limit": limit})

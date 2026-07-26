@@ -86,7 +86,7 @@ SET palette_lab = EXCLUDED.palette_lab,
 """
 
 
-def run_palette_missing(limit: int = 1000, feature_version: str = "palette-v1") -> int:
+def run_palette_missing(limit: int = 100_000, feature_version: str = "palette-v1") -> int:
     import json
 
     processed = 0

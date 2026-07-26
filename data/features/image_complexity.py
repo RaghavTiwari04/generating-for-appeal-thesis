@@ -99,7 +99,7 @@ SET image_complexity = EXCLUDED.image_complexity,
 """
 
 
-def run_complexity_missing(limit: int = 2000, feature_version: str = "complexity-v1") -> int:
+def run_complexity_missing(limit: int = 100_000, feature_version: str = "complexity-v1") -> int:
     processed = 0
     with connection() as conn, conn.cursor() as cur:
         cur.execute(_SELECT_MISSING, {"limit": limit})

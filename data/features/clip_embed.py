@@ -103,35 +103,76 @@ SET clip_embedding = EXCLUDED.clip_embedding,
 """
 
 
-def run_embed_missing(limit: int = 1000, feature_version: str = "siglip-base-v1") -> int:
-    """Embed images for listings without a CLIP feature row. Returns count processed."""
+# Rows written per transaction, so an interrupted run keeps what it finished.
+COMMIT_EVERY = 200
+
+
+def run_embed_missing(
+    limit: int = 100_000,
+    feature_version: str = "siglip-base-v1",
+    batch_size: int = 32,
+) -> int:
+    """Embed cover images for listings with no CLIP feature. Returns count written.
+
+    The default limit covers the whole catalogue: the job script invokes this
+    with no arguments, and a small default silently embedded a fraction of the
+    listings while still reporting success.
+    """
+    import io as _io
+
     from common.db import connection
     from common.storage import get_object
 
     embedder = CLIPEmbedder()
-    processed = 0
     with connection() as conn, conn.cursor() as cur:
         cur.execute(_SELECT_MISSING, {"limit": limit})
         rows = cur.fetchall()
 
-        for row in rows:
+    log.info(f"Embedding {len(rows)} listings ({batch_size} per GPU batch)")
+    if not rows:
+        return 0
+
+    processed = failed = 0
+    for start in range(0, len(rows), COMMIT_EVERY):
+        chunk = rows[start : start + COMMIT_EVERY]
+
+        # Load first, then embed as batches — the previous version called
+        # embed_images([img]) per listing, one GPU round trip per image.
+        ids, imgs = [], []
+        for row in chunk:
             try:
                 data = get_object(row["storage_path"])
-                import io as _io
-                img = Image.open(_io.BytesIO(data))
-                img = img.convert("RGB")
-                emb = embedder.embed_images([img])[0]
+                imgs.append(Image.open(_io.BytesIO(data)).convert("RGB"))
+                ids.append(row["listing_id"])
+            except Exception as e:
+                failed += 1
+                log.warning(f"Load failed for listing {row['listing_id']}: {e}")
+
+        if not imgs:
+            continue
+
+        embedder.cfg.batch_size = batch_size
+        embeddings = embedder.embed_images(imgs)
+        if embeddings.shape[1] != EMBED_DIM:
+            raise RuntimeError(
+                f"{embedder.cfg.model_id} produced {embeddings.shape[1]}-d embeddings, "
+                f"but listing_features.clip_embedding is VECTOR({EMBED_DIM})"
+            )
+
+        with connection() as conn, conn.cursor() as cur:
+            for listing_id, emb in zip(ids, embeddings):
                 cur.execute(
                     _UPSERT_FEATURE,
                     {
-                        "listing_id": row["listing_id"],
+                        "listing_id": listing_id,
                         "embedding": emb.tolist(),
                         "version": feature_version,
                     },
                 )
-                processed += 1
-            except Exception as e:
-                log.warning(f"Embed failed for listing {row['listing_id']}: {e}")
+        processed += len(ids)
+        log.info(f"  {min(start + COMMIT_EVERY, len(rows))}/{len(rows)} — {processed} embedded, {failed} failed")
+
+    log.info(f"Embeddings written: {processed} ({failed} failed)")
     return processed
 
 
