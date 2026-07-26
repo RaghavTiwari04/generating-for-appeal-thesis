@@ -36,7 +36,9 @@ trap 'pg_ctl -D "$PG_DIR" stop -m fast -w -t 20 2>/dev/null || true' EXIT
 DRY_RUN="${DRY_RUN:-1}"
 THRESHOLD="${THRESHOLD:-0.55}"
 MODEL="${MODEL:-facebook/bart-large-mnli}"
-TEMPLATE="${TEMPLATE:-This is {}.}"
+# Set with a conditional, not ${VAR:-default}: the "}" inside "{}" closes the
+# parameter expansion early and appends the remainder as literal text.
+if [ -z "${TEMPLATE:-}" ]; then TEMPLATE='This is {}.'; fi
 
 echo "=== NLI subtype classification ==="
 echo "Node: $(hostname)  Start: $(date)  dry_run=$DRY_RUN threshold=$THRESHOLD model=$MODEL"
