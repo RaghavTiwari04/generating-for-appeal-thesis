@@ -195,17 +195,28 @@ class RunStats:
 # DB queries
 # ---------------------------------------------------------------------------
 
+# One listing per duplicate cluster. Print-on-demand catalogues carry the same
+# design in several colourways as separate listings, and scoring each of them
+# costs a vision call for a card the model has already judged. Unclustered
+# listings group by their own id, so they are all kept.
 _POOL_SQL = """
-SELECT l.listing_id::text AS listing_id,
-       l.title,
-       l.description,
-       l.source,
-       l.raw_metadata->'image_urls'->>0 AS image_url
-FROM listings l
-WHERE l.raw_metadata->'image_urls' IS NOT NULL
-  AND jsonb_array_length(l.raw_metadata->'image_urls') > 0
-  AND (l.raw_metadata->'image_urls'->>0) IS NOT NULL
-ORDER BY l.source, l.last_seen_at DESC
+SELECT listing_id, title, description, source, image_url
+FROM (
+    SELECT DISTINCT ON (COALESCE(lf.duplicate_cluster_id, l.listing_id::text))
+           l.listing_id::text AS listing_id,
+           l.title,
+           l.description,
+           l.source,
+           l.raw_metadata->'image_urls'->>0 AS image_url,
+           l.last_seen_at
+    FROM listings l
+    LEFT JOIN listing_features lf ON lf.listing_id = l.listing_id
+    WHERE l.raw_metadata->'image_urls' IS NOT NULL
+      AND jsonb_array_length(l.raw_metadata->'image_urls') > 0
+      AND (l.raw_metadata->'image_urls'->>0) IS NOT NULL
+    ORDER BY COALESCE(lf.duplicate_cluster_id, l.listing_id::text), l.listing_id
+) one_per_design
+ORDER BY source, last_seen_at DESC
 """
 
 _ALREADY_LABELLED_SQL = """
