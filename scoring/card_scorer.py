@@ -588,8 +588,17 @@ def call_vlm(
                         cache_read=getattr(details, "cached_tokens", 0) or 0,
                         served_by=(resp.model_extra or {}).get("provider"),
                     )
-                choice = resp.choices[0] if resp.choices else None
-                return (choice.message.content or "") if choice else ""
+                if not resp.choices:
+                    return ""
+                message = resp.choices[0].message
+                # Some reasoning models leave `content` empty and put the answer
+                # in a vendor field. Empty content with a large completion_tokens
+                # is that case, not a short reply.
+                text = message.content or ""
+                if not text.strip():
+                    extra = message.model_extra or {}
+                    text = extra.get("reasoning_content") or extra.get("reasoning") or ""
+                return text
 
             import anthropic
 
@@ -685,15 +694,24 @@ class CardScorer:
                     route=self.route,
                     temperature=SSR_ELICITATION_TEMPERATURE,
                     max_tokens=200,
-                ) or "I am unsure about this card."
+                )
+                # A failed call previously became a stand-in sentence, which SSR
+                # then scored — turning silence into a confident mid-scale
+                # number. Drop it instead, as the rubric path already does.
+                if not reply.strip():
+                    continue
                 r = ssr_score(reply, self.ssr_temperature, self.ssr_epsilon)
                 pmfs.append(r["pmf"])
                 scores.append(r["score"])
                 replies.append(reply)
 
-        out["purchase_intent"] = float(np.mean(scores))
-        out["purchase_intent_std"] = float(np.std(scores))
-        out["purchase_intent_pmf"] = np.mean(pmfs, axis=0).tolist()
+        if scores:
+            out["purchase_intent"] = float(np.mean(scores))
+            out["purchase_intent_std"] = float(np.std(scores))
+            out["purchase_intent_pmf"] = np.mean(pmfs, axis=0).tolist()
+            out["purchase_intent_n"] = len(scores)
+        else:
+            log.warning("No usable SSR replies; omitting purchase_intent")
 
         meta = (
             f"Occasion: {occasion}\nHeadline: {headline}\n"
