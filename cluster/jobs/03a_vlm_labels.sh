@@ -1,7 +1,6 @@
 #!/bin/bash
 #SBATCH --job-name=gc-vlm-label
 #SBATCH --partition=a16
-#SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=8G
 #SBATCH --time=04:00:00
@@ -12,20 +11,35 @@
 
 # LLM labelling — scores scraped cards on 5 dimensions.
 # SSR (Maier et al. 2025) for purchase intent, rubric judge (Zheng et al. 2023)
-# for the quality dims. 7 VLM calls per card.
-# CPU-only (API calls). Needs ANTHROPIC_API_KEY in .env.
-# Runs AFTER occasion classifier (needs occasion labels to filter).
+# for the quality dims. 7 API calls per card, so this is the step that costs
+# money: check the call count it logs before letting a full run proceed.
+#
+# LIMIT=20 scores only the first 20 cards — a ~140-call smoke test that proves
+# SSR, the judge and persistence all work before committing to the full run.
+# Resumable: cards already scored are skipped, so a limited run is not wasted.
+#
+# API calls only, no GPU. Needs ANTHROPIC_API_KEY in .env, and occasion labels
+# (job 14) since the pool filters on them.
 
 set -euo pipefail
 source /vol/bitbucket/$USER/venvs/gc/bin/activate
 cd "$SLURM_SUBMIT_DIR"
 source cluster/jobs/_start_services.sh
 
-echo "=== VLM labelling ==="
-echo "Provider: anthropic (claude-sonnet-4-6)"
-echo "Start: $(date)"
+PG_DIR="/vol/bitbucket/$USER/pgdata"
+trap 'pg_ctl -D "$PG_DIR" stop -m fast -w -t 20 2>/dev/null || true' EXIT
 
-python -u -m data.labels.vlm_labels label --provider anthropic
+PROVIDER="${PROVIDER:-anthropic}"
+LIMIT="${LIMIT:-}"
+
+echo "=== LLM labelling (SSR + rubric judge) ==="
+echo "Node: $(hostname)  Start: $(date)  provider=$PROVIDER limit=${LIMIT:-all}"
+
+if [ -n "$LIMIT" ]; then
+    python -u -m data.labels.vlm_labels label --provider "$PROVIDER" --limit "$LIMIT"
+else
+    python -u -m data.labels.vlm_labels label --provider "$PROVIDER"
+fi
 
 echo ""
 echo "--- Label stats ---"
