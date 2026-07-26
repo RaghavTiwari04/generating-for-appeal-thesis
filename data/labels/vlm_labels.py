@@ -195,10 +195,18 @@ class RunStats:
 # DB queries
 # ---------------------------------------------------------------------------
 
-# One listing per duplicate cluster. Print-on-demand catalogues carry the same
-# design in several colourways as separate listings, and scoring each of them
-# costs a vision call for a card the model has already judged. Unclustered
-# listings group by their own id, so they are all kept.
+# One listing per duplicate cluster, and only cards with an occasion.
+#
+# Print-on-demand catalogues carry the same design in several colourways as
+# separate listings, and scoring each costs a vision call for a card the model
+# has already judged. Unclustered listings group by their own id, so they are
+# all kept.
+#
+# Listings with a NULL occasion are skipped because nothing downstream can use
+# them: the predictor requires occasion IS NOT NULL, and the LoRA and
+# condition-D selections all filter by occasion. This does couple the run to
+# the occasion labels — if those are revised, re-run and _already_labelled will
+# skip everything already scored.
 _POOL_SQL = """
 SELECT listing_id, title, description, source, image_url
 FROM (
@@ -214,6 +222,7 @@ FROM (
     WHERE l.raw_metadata->'image_urls' IS NOT NULL
       AND jsonb_array_length(l.raw_metadata->'image_urls') > 0
       AND (l.raw_metadata->'image_urls'->>0) IS NOT NULL
+      AND lf.occasion IS NOT NULL
     ORDER BY COALESCE(lf.duplicate_cluster_id, l.listing_id::text), l.listing_id
 ) one_per_design
 ORDER BY source, last_seen_at DESC
