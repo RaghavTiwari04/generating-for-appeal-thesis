@@ -47,6 +47,11 @@ LABEL_SOURCE_5HEAD = "vlm_5head_v1"
 VLM_DIMS = ("occasion_fit", "aesthetic", "emotional_resonance", "distinctiveness")
 VLM_DIMS_5HEAD = ("occasion_fit", "aesthetic", "emotional_resonance", "distinctiveness", "purchase_intent")
 
+# Greedy decoding. Neither provider defaults to 0, so the same card scored
+# twice returned different numbers: labels were not reproducible, and the
+# sampling noise landed straight in the predictor's training targets.
+SCORING_TEMPERATURE = 0.0
+
 # Max concurrent VLM calls — respect rate limits
 MAX_CONCURRENCY = 5
 # Max concurrent image downloads
@@ -318,6 +323,7 @@ async def _call_anthropic(
         msg = client.messages.create(
             model=model,
             max_tokens=300,
+            temperature=SCORING_TEMPERATURE,
             system=system_prompt,
             messages=[
                 {
@@ -378,6 +384,7 @@ async def _call_openai(
         resp = client.chat.completions.create(
             model=model,
             max_tokens=300,
+            temperature=SCORING_TEMPERATURE,
             messages=[
                 {"role": "system", "content": system_prompt},
                 {
