@@ -17,8 +17,6 @@ from dataclasses import dataclass
 
 import imagehash
 from PIL import Image
-from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.metrics.pairwise import cosine_similarity
 
 from common.db import connection
 from common.logging import get_logger
@@ -27,7 +25,6 @@ log = get_logger(__name__)
 
 PHASH_HAMMING_THRESHOLD = 6   # ~10% of 64-bit hash
 CLIP_COSINE_THRESHOLD = 0.95
-TFIDF_THRESHOLD = 0.85
 
 
 @dataclass
@@ -79,31 +76,6 @@ def find_clip_neighbours(listing_id: str, *, k: int = 20) -> list[tuple[str, flo
 
 
 # ---------------------------------------------------------------------------
-# Stage 3: TF-IDF text dup
-# ---------------------------------------------------------------------------
-def tfidf_duplicates(rows: list[tuple[str, str]], threshold: float = TFIDF_THRESHOLD):
-    """rows: [(listing_id, text)]. Yields (id_a, id_b, sim) above threshold."""
-    if len(rows) < 2:
-        return
-    ids = [r[0] for r in rows]
-    texts = [r[1] or "" for r in rows]
-    n = len(texts)
-    # Scale min_df / max_df for small corpora to avoid empty vocabulary
-    min_df = max(1, min(2, n - 1))
-    max_df = 1.0 if n < 10 else 0.9
-    vec = TfidfVectorizer(min_df=min_df, max_df=max_df, ngram_range=(1, 2)).fit(texts)
-    mat = vec.transform(texts)
-    sim = cosine_similarity(mat, dense_output=False)
-    rows_, cols_ = sim.nonzero()
-    for r, c in zip(rows_, cols_, strict=False):
-        if r >= c:
-            continue
-        s = sim[r, c]
-        if s >= threshold:
-            yield ids[r], ids[c], float(s)
-
-
-# ---------------------------------------------------------------------------
 # Union-Find for clustering
 # ---------------------------------------------------------------------------
 class UnionFind:
@@ -130,7 +102,7 @@ def run_dedup(limit: int | None = None) -> DedupStats:
     """Materialise duplicate clusters into listing_features.duplicate_cluster_id."""
     uf = UnionFind()
 
-    log.info("Dedup stage 1/3: pHash")
+    log.info("Dedup stage 1/2: pHash")
     with connection() as conn, conn.cursor() as cur:
         # Stage 1: pHash. Already stored at ingest (listing_images.phash).
         cur.execute(
@@ -150,28 +122,26 @@ def run_dedup(limit: int | None = None) -> DedupStats:
         log.info(f"  pHash: {len(rows)} primary images compared")
 
         # Stage 2: CLIP semantic
-        log.info("Dedup stage 2/3: CLIP nearest neighbours")
+        log.info("Dedup stage 2/2: CLIP nearest neighbours")
         cur.execute("SELECT listing_id FROM listing_features WHERE clip_embedding IS NOT NULL")
         for r in cur.fetchall():
             for neighbour, cos in find_clip_neighbours(str(r["listing_id"]), k=10):
                 if cos >= CLIP_COSINE_THRESHOLD:
                     uf.union(str(r["listing_id"]), neighbour)
 
-        # Stage 3: TF-IDF on title+description (small batches)
-        log.info("Dedup stage 3/3: TF-IDF over titles and descriptions")
-        # Title only. Marketplace descriptions are vendor boilerplate — every
-        # Greetings Island card repeats "...card template you can print or send
-        # online as eCard", every Redbubble one "Digitally printed cards on
-        # heavyweight stock..." — so TF-IDF over them scores near-identical for
-        # unrelated cards and merged whole sources into one cluster.
-        cur.execute("SELECT listing_id, COALESCE(title,'') AS t FROM listings")
-        text_rows = [(str(r["listing_id"]), r["t"]) for r in cur.fetchall()]
-        for a, b, _ in tfidf_duplicates(text_rows):
-            uf.union(a, b)
+        # No text stage. Titles cannot identify duplicates here: matching on
+        # title+description merged whole sources because descriptions are vendor
+        # boilerplate, and matching on titles alone merged unrelated cards
+        # because short titles are mostly "Happy Birthday ... Greeting Card" —
+        # a LOTR meme photo and a vector burger illustration ended up in one
+        # cluster on that basis.
+        #
+        # pHash and CLIP compare the artwork, which is what a duplicate
+        # actually is. Series that differ only by a number ("Vintage 1992" vs
+        # "Vintage 1977") share their artwork and are still caught by CLIP.
 
         # Materialise clusters — must use ALL listings ever added to the union-find,
-        # not just the pHash rows (which excludes image-less listings processed only
-        # in CLIP or TF-IDF stages).
+        # not just the pHash rows, which exclude listings seen only by CLIP.
         clusters: dict[str, list[str]] = defaultdict(list)
         for lid in uf.parent:
             clusters[uf.find(lid)].append(lid)
