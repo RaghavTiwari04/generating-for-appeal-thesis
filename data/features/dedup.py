@@ -194,6 +194,17 @@ def run_dedup(limit: int | None = None) -> DedupStats:
                 updates.append((cluster_id, size, m))
 
         log.info(f"  {len(clusters)} clusters covering {len(updates)} listings")
+
+        # Clear previous assignments first. The upsert below only touches
+        # listings in this run's clusters, so a listing clustered by an earlier
+        # run kept its old id and size — leaving the table a mix of runs. A
+        # stale 671-member cluster survived this way after the merge bug was
+        # fixed.
+        cur.execute(
+            "UPDATE listing_features "
+            "SET duplicate_cluster_id = NULL, duplicate_cluster_size = NULL "
+            "WHERE duplicate_cluster_id IS NOT NULL;"
+        )
         cur.executemany(
             """
             INSERT INTO listing_features (listing_id, duplicate_cluster_id, duplicate_cluster_size, feature_version)
