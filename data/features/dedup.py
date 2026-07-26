@@ -73,7 +73,9 @@ LIMIT %(k)s;
 def find_clip_neighbours(listing_id: str, *, k: int = 20) -> list[tuple[str, float]]:
     with connection() as conn, conn.cursor() as cur:
         cur.execute(_CLIP_NEIGHBOURS, {"listing_id": listing_id, "k": k})
-        return [(r["neighbour_id"], float(r["cosine"])) for r in cur.fetchall()]
+        # str(): psycopg returns UUID objects, and the union-find is keyed by
+        # string. Mixing the two puts one listing in under two keys.
+        return [(str(r["neighbour_id"]), float(r["cosine"])) for r in cur.fetchall()]
 
 
 # ---------------------------------------------------------------------------
@@ -157,10 +159,12 @@ def run_dedup(limit: int | None = None) -> DedupStats:
 
         # Stage 3: TF-IDF on title+description (small batches)
         log.info("Dedup stage 3/3: TF-IDF over titles and descriptions")
-        cur.execute(
-            "SELECT listing_id, COALESCE(title,'') || ' ' || COALESCE(description,'') AS t "
-            "FROM listings"
-        )
+        # Title only. Marketplace descriptions are vendor boilerplate — every
+        # Greetings Island card repeats "...card template you can print or send
+        # online as eCard", every Redbubble one "Digitally printed cards on
+        # heavyweight stock..." — so TF-IDF over them scores near-identical for
+        # unrelated cards and merged whole sources into one cluster.
+        cur.execute("SELECT listing_id, COALESCE(title,'') AS t FROM listings")
         text_rows = [(str(r["listing_id"]), r["t"]) for r in cur.fetchall()]
         for a, b, _ in tfidf_duplicates(text_rows):
             uf.union(a, b)
@@ -202,11 +206,18 @@ def run_dedup(limit: int | None = None) -> DedupStats:
             [(lid, cid, sz) for (cid, sz, lid) in updates],
         )
 
-    duplicates = sum(1 for u in updates if u[1] > 1)
+    # Redundant copies, not cluster members: a cluster of 5 contributes 4.
+    duplicates = len(updates) - len(clusters)
     log.info(
         f"Dedup complete: {len(updates)} listings in {len(clusters)} clusters, "
-        f"{duplicates} flagged as duplicates"
+        f"{duplicates} redundant copies, {len(clusters)} distinct designs"
     )
+    largest = max((len(m) for m in clusters.values()), default=0)
+    if largest > 50:
+        log.warning(
+            f"Largest cluster has {largest} members — union-find takes a transitive "
+            "closure, so a permissive threshold chains unrelated cards together"
+        )
     return DedupStats(
         listings_total=len(updates),
         clusters=len(clusters),
