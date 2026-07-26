@@ -64,4 +64,22 @@ $PSQL -c "SELECT
     FROM listing_features) AS distinct_after_dedup,
    (SELECT COUNT(*) FROM listing_features) AS total_rows;"
 
+echo ""
+echo "--- Distinct designs per occasion (LoRA trains on 150) ---"
+$PSQL -c "SELECT lf.occasion,
+                 COUNT(*) AS listings,
+                 COUNT(DISTINCT COALESCE(lf.duplicate_cluster_id::text, lf.listing_id::text)) AS distinct_designs
+          FROM listing_features lf
+          WHERE lf.occasion IS NOT NULL
+          GROUP BY 1 ORDER BY 3 DESC;"
+
+echo ""
+echo "--- Largest clusters, with a sample title ---"
+$PSQL -c "SELECT lf.duplicate_cluster_size AS size,
+                 COUNT(*) AS rows,
+                 MIN(LEFT(l.title, 58)) AS example
+          FROM listing_features lf JOIN listings l USING (listing_id)
+          WHERE lf.duplicate_cluster_size > 20
+          GROUP BY 1 ORDER BY 1 DESC LIMIT 8;"
+
 echo "=== Done: $(date) ==="
