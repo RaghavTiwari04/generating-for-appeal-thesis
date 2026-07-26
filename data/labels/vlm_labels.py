@@ -34,7 +34,7 @@ from psycopg.types.json import Jsonb
 from common.config import settings
 from common.db import connection, engine
 from common.logging import get_logger
-from scoring import CardScorer, DIMS, RUBRIC_DIMS, quality_composite
+from scoring import DIMS, RUBRIC_DIMS, USAGE, CardScorer, quality_composite
 
 log = get_logger(__name__)
 
@@ -96,11 +96,13 @@ class Card:
     image_url: str
 
 
-def _load_pool(limit: int | None) -> list[Card]:
+def _load_pool() -> list[Card]:
+    """Every scorable card. Callers apply --limit, so the full size stays
+    available for projecting a smoke run out to the whole corpus."""
     import pandas as pd
 
     df = pd.read_sql(_POOL_SQL, engine())
-    cards = [
+    return [
         Card(
             listing_id=r["listing_id"],
             title=r.get("title"),
@@ -110,7 +112,6 @@ def _load_pool(limit: int | None) -> list[Card]:
         for _, r in df.iterrows()
         if r.get("image_url")
     ]
-    return cards[:limit] if limit else cards
 
 
 def _already_labelled(label_source: str) -> set[str]:
@@ -208,7 +209,9 @@ def label(
     force: bool = typer.Option(False, help="Re-score cards that already have labels"),
 ) -> None:
     """Score listings on all five dimensions and persist the results."""
-    cards = _load_pool(limit)
+    pool = _load_pool()
+    pool_total = len(pool)
+    cards = pool[:limit] if limit else pool
     if force:
         log.info(f"Pool: {len(cards)} cards (--force, re-scoring all)")
     else:
@@ -232,6 +235,10 @@ def label(
     )
     written = asyncio.run(_run(cards, scorer, label_source))
     print(f"Scored {written} cards")
+    # Measured rather than estimated: what a full run over this pool will
+    # actually cost, and whether the images leave any headroom to reclaim.
+    print()
+    print(USAGE.report(cards=written, project_to=pool_total))
 
 
 @app.command()

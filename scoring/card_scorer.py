@@ -41,6 +41,7 @@ from __future__ import annotations
 import base64
 import io
 import re
+import threading
 import time
 from dataclasses import dataclass, field
 
@@ -60,6 +61,122 @@ DIMS = (
     "distinctiveness",
 )
 RUBRIC_DIMS = DIMS[1:]
+
+
+# ---------------------------------------------------------------------------
+# Token accounting
+# ---------------------------------------------------------------------------
+# Every provider returns exact token usage per call and we were discarding it,
+# leaving cost and image-token questions to arithmetic over assumed image
+# dimensions. Both are decisions this measures directly:
+#
+#   are images already under the provider's 1568px cap? — if so there is no
+#       free headroom and resizing trades quality for money rather than
+#       reclaiming waste.
+#   does a cached prefix clear the model's minimum? — cache_write/read of zero
+#       across a run means cache_control was silently ignored.
+#
+# Scoring runs in worker threads, so the counters take a lock.
+@dataclass
+class Usage:
+    calls: int = 0
+    failed_calls: int = 0
+    input_tokens: int = 0
+    output_tokens: int = 0
+    cache_write_tokens: int = 0
+    cache_read_tokens: int = 0
+    embed_calls: int = 0
+    embed_tokens: int = 0
+    images: int = 0
+    long_edge_sum: int = 0
+    long_edge_min: int = 0
+    long_edge_max: int = 0
+    images_over_cap: int = 0
+
+    _lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
+
+    def record_call(
+        self, *, inp: int, out: int, cache_write: int = 0, cache_read: int = 0
+    ) -> None:
+        with self._lock:
+            self.calls += 1
+            self.input_tokens += inp
+            self.output_tokens += out
+            self.cache_write_tokens += cache_write
+            self.cache_read_tokens += cache_read
+
+    def record_failure(self) -> None:
+        with self._lock:
+            self.failed_calls += 1
+
+    def record_embedding(self, tokens: int) -> None:
+        with self._lock:
+            self.embed_calls += 1
+            self.embed_tokens += tokens
+
+    def record_image(self, width: int, height: int) -> None:
+        edge = max(width, height)
+        with self._lock:
+            self.images += 1
+            self.long_edge_sum += edge
+            self.long_edge_max = max(self.long_edge_max, edge)
+            self.long_edge_min = edge if self.long_edge_min == 0 else min(self.long_edge_min, edge)
+            if edge > IMAGE_LONG_EDGE_CAP:
+                self.images_over_cap += 1
+
+    def report(self, cards: int = 0, project_to: int = 0) -> str:
+        with self._lock:
+            lines = [
+                "Token usage",
+                f"  calls              {self.calls}  ({self.failed_calls} failed)",
+                f"  input tokens       {self.input_tokens:,}",
+                f"  output tokens      {self.output_tokens:,}",
+                f"  cache write        {self.cache_write_tokens:,}",
+                f"  cache read         {self.cache_read_tokens:,}",
+                f"  embedding tokens   {self.embed_tokens:,}  ({self.embed_calls} calls)",
+            ]
+            if self.cache_write_tokens == 0 and self.cache_read_tokens == 0:
+                lines.append("  (no caching active on this run)")
+
+            if self.images:
+                mean_edge = self.long_edge_sum / self.images
+                lines += [
+                    "",
+                    "Source images",
+                    f"  count              {self.images}",
+                    f"  long edge          min {self.long_edge_min}  "
+                    f"mean {mean_edge:.0f}  max {self.long_edge_max}",
+                    f"  above {IMAGE_LONG_EDGE_CAP}px cap    {self.images_over_cap}"
+                    f" ({self.images_over_cap / self.images:.0%})",
+                ]
+                if self.images_over_cap == 0:
+                    lines.append(
+                        f"  every image is already under the {IMAGE_LONG_EDGE_CAP}px cap, so "
+                        "downscaling\n  would discard detail the model currently sees rather "
+                        "than waste."
+                    )
+
+            if cards:
+                inp, out = self.input_tokens / cards, self.output_tokens / cards
+                lines += [
+                    "",
+                    f"Per card            {inp:,.0f} in / {out:,.0f} out"
+                    f"  ({self.calls / cards:.1f} calls)",
+                ]
+                if project_to:
+                    lines.append(
+                        f"Projected {project_to} cards  "
+                        f"{inp * project_to / 1e6:,.1f}M in / "
+                        f"{out * project_to / 1e6:,.1f}M out"
+                    )
+            return "\n".join(lines)
+
+
+# Providers downscale above this and bill the reduced size, so pixels beyond it
+# are paid for by nobody and seen by nobody.
+IMAGE_LONG_EDGE_CAP = 1568
+
+USAGE = Usage()
 
 # Quality dimensions only. purchase_intent is kept separate so callers can
 # decide whether "best card" means best-looking or most likely to sell.
@@ -173,6 +290,7 @@ def _embed(texts, retries: int = 4) -> np.ndarray:
     for attempt in range(retries):
         try:
             resp = _openai_client.embeddings.create(model=_EMBED_MODEL, input=items)
+            USAGE.record_embedding(getattr(resp.usage, "total_tokens", 0) or 0)
             vecs = np.asarray([d.embedding for d in resp.data], dtype=float)
             return vecs / np.linalg.norm(vecs, axis=1, keepdims=True)
         except Exception as e:
@@ -341,6 +459,7 @@ def extract_rating(text: str) -> float | None:
 # VLM transport
 # ---------------------------------------------------------------------------
 def image_to_b64(image: Image.Image) -> str:
+    USAGE.record_image(*image.size)
     buf = io.BytesIO()
     image.convert("RGB").save(buf, format="PNG")
     return base64.standard_b64encode(buf.getvalue()).decode("ascii")
@@ -384,6 +503,14 @@ def call_vlm(
                         },
                     ],
                 )
+                u = resp.usage
+                if u is not None:
+                    details = getattr(u, "prompt_tokens_details", None)
+                    USAGE.record_call(
+                        inp=u.prompt_tokens or 0,
+                        out=u.completion_tokens or 0,
+                        cache_read=getattr(details, "cached_tokens", 0) or 0,
+                    )
                 choice = resp.choices[0] if resp.choices else None
                 return (choice.message.content or "") if choice else ""
 
@@ -411,9 +538,17 @@ def call_vlm(
                     }
                 ],
             )
+            u = msg.usage
+            USAGE.record_call(
+                inp=getattr(u, "input_tokens", 0) or 0,
+                out=getattr(u, "output_tokens", 0) or 0,
+                cache_write=getattr(u, "cache_creation_input_tokens", 0) or 0,
+                cache_read=getattr(u, "cache_read_input_tokens", 0) or 0,
+            )
             blocks = [b.text for b in msg.content if getattr(b, "type", None) == "text"]
             return blocks[0] if blocks else ""
         except Exception as e:
+            USAGE.record_failure()
             log.warning(f"{provider} call failed (attempt {attempt + 1}/{retries}): {e}")
             if attempt < retries - 1:
                 time.sleep(min(2**attempt, 30))
