@@ -31,6 +31,17 @@ if [ -n "$PG_MAJOR" ] && [ "$PG_MAJOR" -ge 14 ] 2>/dev/null; then
     PG_START_OPTS="-c recovery_init_sync_method=syncfs"
 fi
 
+# Only one Postgres can own $PG_DIR, so a second job on the same node must
+# attach to the running server rather than start its own. Record which case we
+# are in: a job that did not start the server must not stop it on exit, or it
+# kills the database under whichever job did.
+if pg_isready -h localhost -p 5433 -q 2>/dev/null; then
+    PG_STARTED_HERE=0
+    echo "Postgres already running on this node — attaching, will not stop it"
+else
+    PG_STARTED_HERE=1
+fi
+
 # Start Postgres — pg_ctl handles stale PIDs natively.
 # Do NOT manually rm postmaster.pid — causes NFS cache invalidation issues
 # that make Postgres shut down immediately after start.
@@ -78,16 +89,27 @@ if ! pg_wait 600; then
 fi
 echo "Postgres ready after $((SECONDS - PG_WAIT_START))s"
 
+# Sourced, so this trap installs in the job script's own shell.
+if [ "$PG_STARTED_HERE" = "1" ]; then
+    trap 'pg_ctl -D "$PG_DIR" stop -m fast -w -t 20 2>/dev/null || true' EXIT
+fi
+
 # Start MinIO — use 9002 to avoid port conflicts with system services
 MINIO_PORT="${MINIO_PORT:-9002}"
 MINIO_CONSOLE_PORT="${MINIO_CONSOLE_PORT:-9003}"
 export MINIO_ROOT_USER=minioadmin
 export MINIO_ROOT_PASSWORD=minioadmin
-# Kill stale MinIO on this port
-fuser -k "$MINIO_PORT/tcp" 2>/dev/null || true
-sleep 1
-"$MINIO_BIN" server "$MINIO_DIR" --address ":$MINIO_PORT" --console-address ":$MINIO_CONSOLE_PORT" &>/dev/null &
-sleep 2
+# Reuse a live MinIO rather than killing it — the kill below would otherwise
+# take down a concurrent job's blob store, and two servers cannot share
+# $MINIO_DIR anyway.
+if curl -sf --max-time 2 "http://localhost:$MINIO_PORT/minio/health/live" >/dev/null 2>&1; then
+    echo "MinIO already running on :$MINIO_PORT — reusing"
+else
+    fuser -k "$MINIO_PORT/tcp" 2>/dev/null || true
+    sleep 1
+    "$MINIO_BIN" server "$MINIO_DIR" --address ":$MINIO_PORT" --console-address ":$MINIO_CONSOLE_PORT" &>/dev/null &
+    sleep 2
+fi
 export MINIO_ENDPOINT="http://localhost:$MINIO_PORT"
 
 echo "Services: Postgres :5433, MinIO :$MINIO_PORT"
