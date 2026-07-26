@@ -1,16 +1,31 @@
-"""VLM-based 4-head perceptual quality labels for the multi-headed predictor.
+"""VLM pseudo-labels for the multi-headed saleability predictor.
 
-Sends each scraped card image to a vision-language model (Claude / GPT-4o)
-and asks for structured scores on four perceptual quality dimensions:
+Sends each scraped card image to a vision-language model (Claude / GPT-4o) and
+asks for structured 0-1 scores. Two modes, resting on two separate claims from
+the literature:
 
-    occasion_fit | aesthetic | emotional_resonance | distinctiveness
+  4-head (``vlm_4head_v1``) — perceptual quality only:
+      occasion_fit | aesthetic | emotional_resonance | distinctiveness
+  5-head (``vlm_5head_v1``) — the above plus ``purchase_intent``
 
-The fifth predictor head — purchase_intent — is derived from human pairwise
-preferences via Prolific 2AFC + Bradley-Terry scaling (see survey/ package).
-VLMs cannot reliably assess commercial appeal; only humans know what they'd buy.
+The 4-head mode follows work showing vision-language models judge aesthetic
+and perceptual quality in line with human raters. The 5-head mode additionally
+relies on work showing LLMs reproduce human purchase-intent judgements; without
+that second claim, purchase_intent must come from humans instead, via the
+Prolific 2AFC + Bradley-Terry pipeline in survey/.
 
-Labels stored in ``saleability_labels`` with ``label_source='vlm_4head_v1'``.
+The predictor prefers human Bradley-Terry purchase_intent where it exists and
+falls back to the VLM's, so the two sources coexist (models/predictor/dataset).
 
+Note: ``score`` is the mean of the four *quality* dimensions only.
+purchase_intent is recorded in ``raw`` but excluded from the composite, so
+anything ranking by score (LoRA selection, condition D, bestseller subjects)
+is ranking on perceptual quality rather than likelihood of purchase.
+
+An earlier design described survey-trained sub-heads and a marketplace proxy
+score instead; neither was buildable — is_bestseller is false for every
+scraped listing and engagement counts are empty — so these pseudo-labels
+replace them. The doc is out of date, not the code.
 
 Run:
     python -m data.labels.vlm_labels                     # label all unlabelled
