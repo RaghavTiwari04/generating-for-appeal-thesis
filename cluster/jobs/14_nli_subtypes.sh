@@ -10,7 +10,12 @@
 
 # Zero-shot birthday subtype classification from titles via NLI entailment.
 #
-# Classifies every listing title. Needs a GPU for deberta-v3-large-zeroshot.
+# Classifies every listing title. Needs a GPU.
+#
+# MODEL= and TEMPLATE= override the checkpoint and hypothesis template.
+# deberta-v3-large-zeroshot-v2.0 was tried and collapsed the taxonomy
+# (2434/3905 into milestone); retest it with TEMPLATE='This example is {}.'
+# before concluding the model is unsuitable.
 #
 # Generous time limit: importing torch/transformers from the NFS venv on a
 # cold node took over an hour, before the ~1.7GB model download. Inference
@@ -30,10 +35,12 @@ trap 'pg_ctl -D "$PG_DIR" stop -m fast -w -t 20 2>/dev/null || true' EXIT
 
 DRY_RUN="${DRY_RUN:-1}"
 THRESHOLD="${THRESHOLD:-0.55}"
-MODEL="${MODEL:-MoritzLaurer/deberta-v3-large-zeroshot-v2.0}"
+MODEL="${MODEL:-facebook/bart-large-mnli}"
+TEMPLATE="${TEMPLATE:-This is {}.}"
 
 echo "=== NLI subtype classification ==="
 echo "Node: $(hostname)  Start: $(date)  dry_run=$DRY_RUN threshold=$THRESHOLD model=$MODEL"
+echo "Template: $TEMPLATE"
 nvidia-smi --query-gpu=name --format=csv,noheader || true
 
 echo ""
@@ -43,10 +50,10 @@ python -u -m scripts.audit_labels
 echo ""
 if [ "$DRY_RUN" = "1" ]; then
     echo "--- NLI (dry run) ---"
-    python -u -m data.features.occasion_nli --dry-run --threshold "$THRESHOLD" --model-id "$MODEL"
+    python -u -m data.features.occasion_nli --dry-run --threshold "$THRESHOLD" --model-id "$MODEL" --hypothesis-template "$TEMPLATE"
 else
     echo "--- NLI (writing labels) ---"
-    python -u -m data.features.occasion_nli --threshold "$THRESHOLD" --model-id "$MODEL"
+    python -u -m data.features.occasion_nli --threshold "$THRESHOLD" --model-id "$MODEL" --hypothesis-template "$TEMPLATE"
     echo ""
     echo "--- Distribution after NLI ---"
     python -u -m scripts.audit_labels

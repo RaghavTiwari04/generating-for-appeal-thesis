@@ -38,12 +38,15 @@ from common.occasions import ages_rule_out_kids, occasion_from_age
 
 log = get_logger(__name__)
 
-# bart-large-mnli (2019) was the classic zero-shot NLI checkpoint but is dated
-# and over-fired on the relationship hypothesis — "Happy Birthday Old Chap!"
-# and a wall-art poster both scored as romantic. deberta-v3-large-zeroshot-v2.0
-# is trained specifically for zero-shot classification and handles that nuance
-# better.
-DEFAULT_MODEL = "MoritzLaurer/deberta-v3-large-zeroshot-v2.0"
+# bart-large-mnli is dated but calibrated sensibly against these hypotheses.
+# deberta-v3-large-zeroshot-v2.0 was tried and was far worse here: it put 2434
+# of 3905 cards in milestone at high confidence ("Tulips in the birthmail" 0.92,
+# "Happy Birthday Pigeon" 0.84), collapsing the taxonomy.
+#
+# Possibly a template mismatch rather than the model — the MoritzLaurer
+# zeroshot-v2.0 series is trained with "This example is {}." Retest with
+# --hypothesis-template before concluding the model is unsuitable.
+DEFAULT_MODEL = "facebook/bart-large-mnli"
 # Pass --revision <commit-sha> to pin the checkpoint. Worth doing before the
 # labels are used in reported results: an upstream update silently changes
 # them, and nothing else in the pipeline would reveal it.
@@ -61,7 +64,7 @@ _HYPOTHESES: dict[str, str] = {
     # not label at all without dragging non-birthday cards into the dataset.
     NOT_BIRTHDAY: "a greeting card for something other than a birthday",
 }
-_HYPOTHESIS_TEMPLATE = "This is {}."
+DEFAULT_HYPOTHESIS_TEMPLATE = "This is {}."
 
 _SELECT = """
 SELECT l.listing_id, COALESCE(l.title, '') AS title, lf.occasion
@@ -87,6 +90,7 @@ def classify(
     limit: int = 100000,
     model_id: str = DEFAULT_MODEL,
     revision: str | None = DEFAULT_REVISION,
+    hypothesis_template: str = DEFAULT_HYPOTHESIS_TEMPLATE,
     threshold: float = 0.55,
     batch_size: int = 32,
     dry_run: bool = False,
@@ -109,6 +113,7 @@ def classify(
 
     device = 0 if torch.cuda.is_available() else -1
     log.info(f"Loading {model_id}@{revision or 'latest'} on {'gpu' if device == 0 else 'cpu'}")
+    log.info(f"Hypothesis template: {hypothesis_template!r}")
     clf = pipeline(
         "zero-shot-classification",
         model=model_id,
@@ -121,7 +126,7 @@ def classify(
     label_of = {v: k for k, v in _HYPOTHESES.items()}
 
     titles = [r["title"] for r in todo]
-    results = clf(titles, candidates, hypothesis_template=_HYPOTHESIS_TEMPLATE)
+    results = clf(titles, candidates, hypothesis_template=hypothesis_template)
     if isinstance(results, dict):
         results = [results]
 
@@ -187,6 +192,10 @@ def main(
     limit: int = 100000,
     model_id: str = DEFAULT_MODEL,
     revision: str | None = typer.Option(DEFAULT_REVISION, help="Pin the model checkpoint to a commit sha"),
+    hypothesis_template: str = typer.Option(
+        DEFAULT_HYPOTHESIS_TEMPLATE,
+        help='Must match what the model was trained with; MoritzLaurer zeroshot models expect "This example is {}."',
+    ),
     threshold: float = 0.55,
     batch_size: int = 32,
     dry_run: bool = typer.Option(False, help="Report what would change without writing"),
@@ -195,6 +204,7 @@ def main(
         limit=limit,
         model_id=model_id,
         revision=revision,
+        hypothesis_template=hypothesis_template,
         threshold=threshold,
         batch_size=batch_size,
         dry_run=dry_run,
