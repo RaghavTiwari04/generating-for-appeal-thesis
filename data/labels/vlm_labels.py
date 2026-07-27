@@ -171,10 +171,7 @@ async def _score_card(
         # CardScorer is synchronous; running it in a thread keeps the event
         # loop free so other cards' image fetches proceed during the API waits.
         scores = await asyncio.to_thread(
-            scorer.score,
-            image,
-            occasion=card.occasion or "",
-            headline=card.title or "",
+            scorer.score, image, occasion=card.occasion or ""
         )
     # Persist only complete cards. A provider that fails mid-run — exhausted
     # credits, rate limits — returns empty text, and each affected dimension is

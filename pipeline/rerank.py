@@ -97,12 +97,7 @@ def rerank_llm(
     log.info(f"LLM reranking {len(candidates)} candidates via {scorer.provider}/{scorer.model}")
 
     for i, cand in enumerate(candidates):
-        scores = scorer.score(
-            cand.image,
-            occasion=cand.occasion,
-            headline=cand.headline,
-            inside_message=cand.inside_message,
-        )
+        scores = scorer.score(cand.image, occasion=cand.occasion)
         scores["saleability_calibrated"] = _compute_saleability(scores)
         cand.scores = scores
         log.info(

@@ -431,8 +431,8 @@ def persona_prompt(profile: dict) -> str:
 # MT-Bench's format instruction, kept in one place so every dimension asks for
 # the score identically and the extraction regex stays valid.
 _RUBRIC_TEMPLATE = """\
-You are an impartial expert judge evaluating a greeting card. You will see one \
-card image plus metadata.
+You are an impartial expert judge evaluating a greeting card. You will see the \
+front of the card and the occasion it is intended for, and nothing else.
 
 Evaluate {name}: {question}
 
@@ -747,11 +747,9 @@ class CardScorer:
             max_tokens=max_tokens,
         )
 
-    def _purchase_intent(self, b64: str, occasion: str, headline: str) -> dict:
+    def _purchase_intent(self, b64: str, occasion: str) -> dict:
         """SSR over every persona sample that produced usable text."""
         context = f"a greeting card for {occasion}" if occasion else "a greeting card"
-        if headline:
-            context += f' with the headline "{headline}"'
         question = (
             f"You see {context} in a shop. Would you buy it? "
             f"How appealing is it as a purchase?"
@@ -787,26 +785,26 @@ class CardScorer:
             "ssr_responses": replies,
         }
 
-    def score(
-        self,
-        image: Image.Image,
-        *,
-        occasion: str = "",
-        headline: str = "",
-        inside_message: str = "",
-    ) -> dict:
+    def score(self, image: Image.Image, *, occasion: str = "") -> dict:
         """Return {dimension: 0-1 score} plus SSR detail and explanations.
+
+        The card front and its occasion are the only stimulus. Headline and
+        inside message used to accompany them and no longer do: they cannot be
+        supplied symmetrically, because generated cards carry both while the
+        scraped bestsellers of condition D have no scraped inside message and
+        only a marketplace listing title, which names the source site. The judge
+        docks emotional resonance when the inside message is blank, so those
+        fields handed the pipeline conditions an advantage on the very
+        comparison this instrument exists to make. Occasion has no such problem
+        — every condition knows it — and occasion_fit is unanswerable without it.
 
         Dimensions whose call fails are omitted rather than defaulted, so a
         failure cannot masquerade as a low score.
         """
         b64 = image_to_b64(image)
-        out: dict = self._purchase_intent(b64, occasion, headline)
+        out: dict = self._purchase_intent(b64, occasion)
 
-        meta = (
-            f"Occasion: {occasion}\nHeadline: {headline}\n"
-            f"Inside message: {inside_message}\n\n"
-        )
+        meta = f"Occasion: {occasion}\n\n"
         explanations: dict[str, str] = {}
         for dim in RUBRIC_DIMS:
             reply = self._call(
