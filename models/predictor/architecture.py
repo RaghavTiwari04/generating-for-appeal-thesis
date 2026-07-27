@@ -9,11 +9,14 @@ missingness is informative: free listings have no price, priced ones do, so a
 price channel lets the trunk read the scrape source and use it as a shortcut
 for quality.
 
-Heads 1-4 (occasion_fit, aesthetic, emotional_resonance, distinctiveness)
-are supervised by VLM labels on all ~2,377 cards. Head 5 (purchase_intent)
-is supervised by Bradley-Terry scores from a Prolific 2AFC study on a
-~500-card subsample. Training uses masked multi-task loss so each head
-only backpropagates on samples where its label exists (Ruder 2017).
+All five heads are supervised by the VLM labels in `saleability_labels`:
+the rubric judge for the four quality dimensions, SSR for purchase intent.
+There is no human study — SSR stands in for one, on the strength of the
+paper's own validation against human survey distributions.
+
+The loss is masked per head (Ruder 2017), so a dimension the judge failed to
+produce for a card contributes no gradient for that card rather than being
+imputed.
 
 Backbone is **not** loaded here — embeddings are cached in
 `listing_features.clip_embedding` by `data/features/clip_embed.py`. This module
@@ -29,8 +32,6 @@ from torch import nn
 
 from common.occasions import ACTIVE_OCCASIONS as OCCASIONS
 
-# Heads 1-4: VLM-labelled perceptual quality (all ~2,377 cards)
-# Head 5: human purchase_intent (Prolific 2AFC, ~500 card subsample)
 HEAD_NAMES: tuple[str, ...] = (
     "occasion_fit",
     "aesthetic",
@@ -39,9 +40,14 @@ HEAD_NAMES: tuple[str, ...] = (
     "purchase_intent",
 )
 
-# Which heads have VLM labels (all cards) vs human labels (subsample only)
-VLM_HEADS: tuple[str, ...] = ("occasion_fit", "aesthetic", "emotional_resonance", "distinctiveness")
-HUMAN_HEADS: tuple[str, ...] = ("purchase_intent",)
+# The rubric judge supplies these four; SSR supplies purchase_intent, which is
+# read from the same `raw` payload but by a different instrument.
+VLM_HEADS: tuple[str, ...] = (
+    "occasion_fit",
+    "aesthetic",
+    "emotional_resonance",
+    "distinctiveness",
+)
 
 
 @dataclass
@@ -112,10 +118,11 @@ class SaleabilityPredictor(nn.Module):
 
 
 def head_loss_weights(purchase_intent_factor: float = 2.0) -> dict[str, float]:
-    """Purchase-intent head weighted 2× by default (§4.4).
+    """Weight the purchase-intent head above the rest.
 
-    Upweight compensates for the smaller label set (~500 vs ~2,377).
-    Masked loss already handles missing labels; this factor controls
-    relative importance in the total loss.
+    Every head now has the same number of labels, so this is no longer
+    compensating for a smaller set. It reflects which head the pipeline
+    actually uses: purchase intent ranks candidates at rerank time and orders
+    condition D, while the other four are reported but never decide anything.
     """
     return {name: (purchase_intent_factor if name == "purchase_intent" else 1.0) for name in HEAD_NAMES}

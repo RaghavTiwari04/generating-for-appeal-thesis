@@ -41,7 +41,6 @@ def _row(**over):
             "distinctiveness": 0.3,
             "purchase_intent": 0.7,
         },
-        "bt_purchase_intent": np.nan,
     }
     base.update(over)
     return base
@@ -113,10 +112,6 @@ class TestTargets:
         targets, mask = _build_targets(pd.Series(_row()))
         assert mask == [1.0] * 5
         assert targets[HEAD_NAMES.index("purchase_intent")] == pytest.approx(0.7)
-
-    def test_human_bt_overrides_ssr(self):
-        targets, _ = _build_targets(pd.Series(_row(bt_purchase_intent=0.2)))
-        assert targets[HEAD_NAMES.index("purchase_intent")] == pytest.approx(0.2)
 
     def test_missing_dimension_is_masked_not_defaulted(self):
         raw = {"occasion_fit": 0.6}

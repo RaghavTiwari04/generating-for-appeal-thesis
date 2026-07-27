@@ -1,13 +1,13 @@
 """Train the multi-head saleability predictor.
 
-Loss: masked weighted MSE per head. Heads 1-4 (VLM-labelled) train on
-all ~2,377 cards. Head 5 (purchase_intent, human BT) trains only on
-the ~500-card subsample. Purchase-intent head weighted 2× to compensate
-for smaller label set.
+Loss: masked weighted MSE per head. All five heads are supervised by the VLM
+labels — the rubric judge for the quality dimensions, SSR for purchase intent
+— so all five see the same cards. The purchase-intent head is upweighted
+because it is the head the pipeline ranks on, not because it has fewer labels.
 
-This is the standard masked multi-task loss approach (Ruder 2017):
-mask[head][sample] = 1 where label exists, 0 otherwise. Zero-masked
-samples contribute zero gradient to that head.
+Masked multi-task loss (Ruder 2017): mask[head][sample] = 1 where a label
+exists, 0 otherwise, so a dimension the judge failed to return contributes no
+gradient rather than an imputed target.
 
 Optimiser: AdamW, lr 1e-4, weight decay 1e-2, cosine schedule.
 Backbone frozen; only the trunk + heads train (features are pre-cached).

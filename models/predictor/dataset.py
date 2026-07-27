@@ -3,19 +3,16 @@
 Pulls a flat training table from Postgres + cached CLIP embeddings, then
 serves (image_emb, text_emb, occasion_idx, targets, mask) tuples.
 
-Label sources:
-  - Heads 1-4 (LLM): saleability_labels.label_source = 'llm_ssr_rubric_v2'
-    → rubric-guided judge scores for occasion_fit, aesthetic,
-      emotional_resonance, distinctiveness.
-  - Head 5 (human): saleability_labels.label_source LIKE 'survey_%_bt_purchase_intent'
-    → ~500-card subsample with Bradley-Terry purchase_intent scores
-      from Prolific 2AFC study.
+All five targets come from `saleability_labels` under one label source: the
+rubric judge for the four quality dimensions, SSR for purchase intent. There
+is no human study — the VLM labels are the ground-truth proxy.
 
-Masked multi-task loss: mask[i]=1 only where label exists for that head.
-Head 5 mask is 0 on ~80% of cards → loss only backprops purchase_intent
-on the labelled subsample (Ruder 2017).
+Masked multi-task loss: mask[i]=1 only where a label exists for that head, so
+a dimension the judge failed to return is skipped rather than imputed (Ruder
+2017).
 
-Splits are by `seller_id` to avoid style leakage (§4.4).
+Splits are by `seller_id` to avoid style leakage, for the share of listings
+that carry one.
 """
 
 from __future__ import annotations
@@ -31,7 +28,7 @@ from torch.utils.data import Dataset
 from common.db import engine
 from common.logging import get_logger
 from common.occasions import ACTIVE_OCCASIONS as OCCASIONS
-from models.predictor.architecture import HEAD_NAMES, VLM_HEADS
+from models.predictor.architecture import HEAD_NAMES
 
 log = get_logger(__name__)
 
@@ -48,24 +45,18 @@ SELECT
     -- LLM labels: rubric judge for the quality dims, SSR for purchase intent
     -- `raw` carries every dimension; `score` is only the sortable summary and
     -- duplicates one of them, so the heads read `raw`.
-    sl_vlm.raw AS vlm_raw,
-    -- Human BT purchase_intent (available for ~500-card subsample)
-    sl_bt_pi.score AS bt_purchase_intent
+    sl_vlm.raw AS vlm_raw
 FROM listings l
 JOIN listing_features lf USING (listing_id)
-LEFT JOIN saleability_labels sl_vlm
+JOIN saleability_labels sl_vlm
        ON sl_vlm.listing_id = l.listing_id
+      -- Labelling keeps one listing per duplicate cluster, so an inner join
+      -- also drops the unlabelled colourways. Carried along they would train
+      -- nothing, yet still be forward-passed each epoch, counted in the val
+      -- and test splits, and weighted by the occasion sampler.
       AND sl_vlm.label_source = 'llm_ssr_rubric_v2'
-LEFT JOIN saleability_labels sl_bt_pi
-       ON sl_bt_pi.listing_id = l.listing_id
-      AND sl_bt_pi.label_source LIKE 'survey_%%_bt_purchase_intent'
 WHERE lf.clip_embedding IS NOT NULL
-  AND lf.occasion IS NOT NULL
-  -- At least one label, or the row trains nothing. Labelling keeps one listing
-  -- per duplicate cluster, so without this the unlabelled colourways ride along
-  -- with every mask at zero: forward-passed each epoch, counted in the val and
-  -- test splits, and weighted by the occasion sampler.
-  AND (sl_vlm.listing_id IS NOT NULL OR sl_bt_pi.listing_id IS NOT NULL);
+  AND lf.occasion IS NOT NULL;
 """
 
 
@@ -200,12 +191,10 @@ def _parse_raw(val) -> dict:
 def _build_targets(row: pd.Series) -> tuple[list[float], list[float]]:
     """Map row → (targets, mask) aligned with HEAD_NAMES order.
 
-    Label priority per head:
-      heads 1-4: rubric judge scores
-      head 5 (purchase_intent): human Bradley-Terry > SSR
-
-    Masked multi-task loss: mask[i]=0 where no label → head gets zero
-    gradient for that sample (Ruder 2017).
+    Every head reads the same `raw` payload: the rubric judge for the four
+    quality dimensions, SSR for purchase intent. mask[i]=0 where the judge
+    returned nothing for that dimension, so the head gets zero gradient for
+    that sample rather than an imputed target (Ruder 2017).
     """
     targets = [0.0] * len(HEAD_NAMES)
     mask = [0.0] * len(HEAD_NAMES)
@@ -215,17 +204,10 @@ def _build_targets(row: pd.Series) -> tuple[list[float], list[float]]:
         targets[i] = max(0.0, min(1.0, val))
         mask[i] = 1.0
 
-    merged_vlm = _parse_raw(row.get("vlm_raw"))
-
-    for head_name in VLM_HEADS:
-        if head_name in merged_vlm:
-            _set(head_name, float(merged_vlm[head_name]))
-
-    # purchase_intent: human Bradley-Terry > SSR
-    if pd.notna(row.get("bt_purchase_intent")):
-        _set("purchase_intent", float(row["bt_purchase_intent"]))
-    elif "purchase_intent" in merged_vlm:
-        _set("purchase_intent", float(merged_vlm["purchase_intent"]))
+    raw = _parse_raw(row.get("vlm_raw"))
+    for head_name in HEAD_NAMES:
+        if head_name in raw:
+            _set(head_name, float(raw[head_name]))
 
     return targets, mask
 
