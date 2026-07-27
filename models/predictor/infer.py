@@ -32,7 +32,17 @@ class PredictorRunner:
     def __init__(self, ckpt_path: str | Path, calib_path: str | Path | None = None):
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         state = torch.load(ckpt_path, map_location=self.device)
-        self.model = SaleabilityPredictor(PredictorConfig()).to(self.device).eval()
+        # Checkpoints record the architecture they were trained with; the sweep
+        # varies trunk/head width, so assuming defaults would fail on shapes for
+        # any swept model.
+        arch = state.get("arch")
+        if arch:
+            arch = dict(arch)
+            arch["head_names"] = tuple(arch.get("head_names") or HEAD_NAMES)
+            cfg = PredictorConfig(**arch)
+        else:
+            cfg = PredictorConfig()
+        self.model = SaleabilityPredictor(cfg).to(self.device).eval()
         self.model.load_state_dict(state["state_dict"])
         self.isotonic = load_isotonic(calib_path) if calib_path else None
 

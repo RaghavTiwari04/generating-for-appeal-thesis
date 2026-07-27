@@ -45,8 +45,9 @@ SELECT
     lf.clip_embedding,
     lf.extracted_text,
     -- LLM labels: rubric judge for the quality dims, SSR for purchase intent
-    sl_vlm.raw  AS vlm_raw,
-    sl_vlm.score AS vlm_composite,
+    -- `raw` carries every dimension; `score` is only the sortable summary and
+    -- duplicates one of them, so the heads read `raw`.
+    sl_vlm.raw AS vlm_raw,
     -- Human BT purchase_intent (available for ~500-card subsample)
     sl_bt_pi.score AS bt_purchase_intent
 FROM listings l
@@ -135,26 +136,32 @@ class PredictorDataset(Dataset):
     ):
         self.df = df.reset_index(drop=True)
         self.text_emb_dim = text_emb_dim
-        self.text_embedder = text_embedder  # optional callable: list[str] -> np.ndarray
-        self._text_cache: dict[int, np.ndarray] = {}
+        # Embedded once up front, in one batch. Embedding per __getitem__ ran a
+        # transformer forward pass per row per epoch, which dominated a training
+        # step whose actual model is a small MLP over cached features.
+        self._text_embs = self._embed_all(text_embedder)
+
+    def _embed_all(self, text_embedder) -> np.ndarray:
+        texts = self.df.get("extracted_text")
+        n = len(self.df)
+        embs = np.zeros((n, self.text_emb_dim), dtype=np.float32)
+        if text_embedder is None or texts is None:
+            return embs
+        present = [(i, t) for i, t in enumerate(texts.tolist()) if t]
+        if not present:
+            return embs
+        vectors = text_embedder([t for _, t in present])
+        for (i, _), v in zip(present, vectors, strict=True):
+            embs[i] = np.asarray(v, dtype=np.float32)
+        return embs
 
     def __len__(self) -> int:
         return len(self.df)
 
-    def _text_emb(self, idx: int, text: str | None) -> np.ndarray:
-        if idx in self._text_cache:
-            return self._text_cache[idx]
-        if self.text_embedder is None or not text:
-            emb = np.zeros(self.text_emb_dim, dtype=np.float32)
-        else:
-            emb = self.text_embedder([text])[0].astype(np.float32)
-        self._text_cache[idx] = emb
-        return emb
-
     def __getitem__(self, idx: int) -> dict[str, torch.Tensor]:
         row = self.df.iloc[idx]
         image_emb = np.asarray(row["clip_embedding"], dtype=np.float32)
-        text_emb = self._text_emb(idx, row.get("extracted_text"))
+        text_emb = self._text_embs[idx]
         occasion_idx = int(row["occasion_idx"])
         price_rel = float(row["price_rel"])
 

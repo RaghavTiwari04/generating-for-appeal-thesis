@@ -195,7 +195,7 @@ def train(
             _embedder = CLIPEmbedder()
             text_embedder = _embedder.embed_texts
             log.info("Text embedder wired: SigLIP text tower (extracted_text → text_emb)")
-        except Exception as e:  # noqa: BLE001 — degrade to zeros rather than fail training
+        except Exception as e:
             log.warning(f"Text embedder unavailable ({e}); falling back to zero text_emb")
 
     train_ds = PredictorDataset(splits["train"], text_embedder=text_embedder)
@@ -256,7 +256,14 @@ def train(
             best_metric = primary
             epochs_since_improvement = 0
             torch.save(
-                {"state_dict": model.state_dict(), "config": asdict(cfg)},
+                {
+                    "state_dict": model.state_dict(),
+                    "config": asdict(cfg),
+                    # Without this the sweep's trunk_hidden/head_hidden/dropout
+                    # are unrecoverable, and PredictorRunner rebuilds a default
+                    # model whose shapes do not match the saved weights.
+                    "arch": asdict(_arch_cfg),
+                },
                 out / "best.ckpt",
             )
         else:
@@ -266,7 +273,15 @@ def train(
                 break
 
     # Final test eval
-    state = torch.load(out / "best.ckpt", map_location=device)
+    ckpt = out / "best.ckpt"
+    if not ckpt.exists():
+        # Only written when val Spearman improves, so an all-NaN primary metric
+        # (no purchase_intent labels in val) leaves nothing to load.
+        raise SystemExit(
+            "No checkpoint written: validation Spearman was never finite. "
+            "Check that the val split carries purchase_intent labels."
+        )
+    state = torch.load(ckpt, map_location=device)
     model.load_state_dict(state["state_dict"])
     test_metrics = evaluate(model, test_loader, device)
     log.info(f"Test metrics: {test_metrics}")

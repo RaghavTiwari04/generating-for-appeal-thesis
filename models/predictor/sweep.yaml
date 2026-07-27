@@ -4,12 +4,13 @@
 #   wandb sweep models/predictor/sweep.yaml
 #   wandb agent <sweep_id>  # on GPU machine
 #
-# Optimises val Spearman on the saleability head.
+# Optimises val Spearman on the purchase-intent head, which is what train.py
+# early-stops on and logs.
 
 program: models/predictor/train.py
 method: bayes
 metric:
-  name: spearman_saleability
+  name: spearman_purchase_intent
   goal: maximize
 
 parameters:
@@ -29,7 +30,7 @@ parameters:
   batch_size:
     values: [32, 64, 128]
 
-  saleability_loss_factor:
+  purchase_intent_loss_factor:
     distribution: uniform
     min: 1.5
     max: 3.5
