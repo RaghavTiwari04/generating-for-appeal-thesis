@@ -36,7 +36,7 @@ log = get_logger(__name__)
 def _dataset_to_features(ds: PredictorDataset, embedder: CLIPEmbedder) -> tuple[
     list[CardFeatures], np.ndarray, dict[str, np.ndarray]
 ]:
-    """Convert dataset rows → CardFeatures + survey targets."""
+    """Convert dataset rows → CardFeatures + reference targets."""
     from common.occasions import ACTIVE_OCCASIONS as OCCASIONS
 
     idx_to_occasion = {i: o for i, o in enumerate(OCCASIONS)}
@@ -67,20 +67,19 @@ def _dataset_to_features(ds: PredictorDataset, embedder: CLIPEmbedder) -> tuple[
     }
 
 
-def _baseline_features(df: pd.DataFrame) -> pd.DataFrame | None:
-    """Hand-crafted features for ridge baseline: log price, occasion OHE."""
-    try:
-        from sklearn.preprocessing import LabelEncoder
-        enc = LabelEncoder()
-        occ_enc = enc.fit_transform(df["occasion"].fillna("birthday/general"))
-        feats = pd.DataFrame({
-            "occ_enc": occ_enc,
-            "log_review": np.log1p(df["review_count"].fillna(0).astype(float)),
-            "log_fav": np.log1p(df["favourite_count"].fillna(0).astype(float)),
-        })
-        return feats
-    except Exception:
-        return None
+def _baseline_features(df: pd.DataFrame) -> pd.DataFrame:
+    """Occasion alone, as the floor the predictor has to beat.
+
+    This previously also used price, review and favourite counts. The training
+    query does not select them, so the lookup raised and a bare except returned
+    None — the baseline silently vanished from the report rather than being
+    reported as weak.
+    """
+    from sklearn.preprocessing import LabelEncoder
+
+    return pd.DataFrame(
+        {"occ_enc": LabelEncoder().fit_transform(df["occasion"].fillna("birthday/general"))}
+    )
 
 
 def run(
@@ -109,9 +108,8 @@ def run(
     log.info("Extracting features...")
     features, pi_targets, head_targets = _dataset_to_features(ds, embedder)
 
-    # Filter to rows with survey PI labels
     pi_mask = ~np.isnan(pi_targets)
-    log.info(f"Cards with survey PI labels: {pi_mask.sum()} / {len(features)}")
+    log.info(f"Cards with a purchase-intent label: {pi_mask.sum()} / {len(features)}")
 
     features_pi = [f for f, m in zip(features, pi_mask, strict=False) if m]
     pi_valid = pi_targets[pi_mask]
@@ -121,7 +119,7 @@ def run(
     report = evaluate(
         predictor=predictor,
         features=features_pi,
-        survey_purchase_intent=pi_valid,
+        reference_purchase_intent=pi_valid,
         per_head_targets={
             name: vals[pi_mask]
             for name, vals in head_targets.items()

@@ -12,8 +12,7 @@ of one design would otherwise each cost a full scoring pass, and listings with
 no occasion are unusable downstream.
 
 Labels land in `saleability_labels` with `score` = purchase_intent — the
-construct the table is named for, and the one the human survey validates
-against — and the full per-dimension detail in `raw`.
+construct the table is named for — and the full per-dimension detail in `raw`.
 
     python -m data.labels.vlm_labels label
     python -m data.labels.vlm_labels label --limit 20      # smoke test
@@ -186,8 +185,7 @@ async def _score_card(
         "listing_id": card.listing_id,
         # The sortable summary is purchase intent, the construct the table is
         # named for: LoRA exemplars, condition D and the market signals all rank
-        # on it, and it is the dimension the human survey validates against. The
-        # other four stay in `raw` as separate analysable dimensions.
+        # on it. The other four stay in `raw` as separate analysable dimensions.
         "score": scores["purchase_intent"],
         "raw": scores,
     }

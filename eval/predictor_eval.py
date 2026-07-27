@@ -1,9 +1,9 @@
 """Predictor evaluation.
 
 Metrics:
-- Spearman ρ vs held-out survey purchase intent  (primary)
+- Spearman ρ vs held-out reference purchase intent  (primary)
 - AUC top-quartile classification
-- Per-head Spearman vs corresponding survey dimension
+- Per-head Spearman vs the corresponding reference dimension
 - Calibration: ECE + reliability plot
 
 Baselines:
@@ -58,7 +58,7 @@ def evaluate(
     predictor: PredictorRunner,
     features: list[CardFeatures],
     *,
-    survey_purchase_intent: np.ndarray,
+    reference_purchase_intent: np.ndarray,
     per_head_targets: dict[str, np.ndarray],
     baseline_features: pd.DataFrame | None = None,
     out_dir: str | Path = "./artifacts/predictor_eval",
@@ -71,8 +71,8 @@ def evaluate(
         [s.get("purchase_intent_calibrated", s["purchase_intent"]) for s in scored], dtype=np.float64
     )
 
-    rho_pi, _ = spearmanr(sale_pred, survey_purchase_intent)
-    auc = _top_quartile_auc(sale_pred, survey_purchase_intent)
+    rho_pi, _ = spearmanr(sale_pred, reference_purchase_intent)
+    auc = _top_quartile_auc(sale_pred, reference_purchase_intent)
 
     per_head: dict[str, float] = {}
     for head_name, tgt in per_head_targets.items():
@@ -84,17 +84,17 @@ def evaluate(
         else:
             per_head[head_name] = float("nan")
 
-    cal_report = expected_calibration_error(sale_pred, survey_purchase_intent)
+    cal_report = expected_calibration_error(sale_pred, reference_purchase_intent)
     report_json(cal_report, out / "calibration.json")
     reliability_plot(cal_report, out / "reliability.png")
 
-    iso = fit_isotonic(sale_pred, survey_purchase_intent)
+    iso = fit_isotonic(sale_pred, reference_purchase_intent)
     import joblib
     joblib.dump(iso, out / "isotonic.joblib")
 
     baselines = _baselines(
         sale_pred,
-        survey_purchase_intent,
+        reference_purchase_intent,
         baseline_features=baseline_features,
     )
 

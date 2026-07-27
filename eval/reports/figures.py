@@ -206,7 +206,7 @@ def fig5_per_head_spearman(per_head: dict[str, float], baselines: dict[str, floa
 
     ax.set_xticks(x)
     ax.set_xticklabels([h.replace("_", "\n") for h in heads], fontsize=8)
-    ax.set_ylabel("Spearman ρ vs survey")
+    ax.set_ylabel("Spearman ρ vs reference labels")
     ax.set_ylim(-0.1, 1.0)
     ax.axhline(0, color="black", linewidth=0.5)
     ax.set_title("Per-head Spearman ρ")
@@ -228,41 +228,23 @@ def generate_all(
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
 
-    # System eval report — prefer BT (pairwise main study), fall back to Likert (pilot)
-    bt_report_path = arts / "system_eval_bt" / "report.json"
-    sys_report_path = arts / "system_eval" / "report.json"
-
-    if bt_report_path.exists():
-        bt_report = json.loads(bt_report_path.read_text())
-        fig1_condition_means(
-            bt_report["condition_means"],
-            bt_report["condition_stderr"],
-            out / "fig1_condition_means.pdf",
-            scale="bt",
-        )
-        print("fig1 (BT) ✓")
-
-        bt_per_occ = arts / "system_eval_bt" / "per_occasion.csv"
-        if bt_per_occ.exists():
-            per_occ = pd.read_csv(bt_per_occ, index_col=0)
-            fig2_per_occasion(per_occ, out / "fig2_per_occasion.pdf", scale="bt")
-            print("fig2 (BT) ✓")
-
+    # System eval report. The human study was replaced by the LLM evaluation,
+    # so there is one source rather than a BT/Likert pair to choose between.
+    sys_report_path = arts / "llm_system_eval" / "report.json"
     if sys_report_path.exists():
         sys_report = json.loads(sys_report_path.read_text())
-        suffix = "_likert" if bt_report_path.exists() else ""
         fig1_condition_means(
             sys_report["condition_means"],
             sys_report["condition_stderr"],
-            out / f"fig1_condition_means{suffix}.pdf",
+            out / "fig1_condition_means.pdf",
         )
-        print("fig1 (Likert) ✓")
+        print("fig1 ✓")
 
-        per_occ_path = arts / "system_eval" / "per_occasion.csv"
+        per_occ_path = arts / "llm_system_eval" / "per_occasion.csv"
         if per_occ_path.exists():
             per_occ = pd.read_csv(per_occ_path, index_col=0)
-            fig2_per_occasion(per_occ, out / f"fig2_per_occasion{suffix}.pdf")
-            print("fig2 (Likert) ✓")
+            fig2_per_occasion(per_occ, out / "fig2_per_occasion.pdf")
+            print("fig2 ✓")
 
     # Best-of-N
     bon_path = arts / "ablations" / "best_of_n_curve.json"

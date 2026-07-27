@@ -24,7 +24,6 @@
 #   - .cache/raw_html  — 30-day scraper cache. Keeping it means the re-scrape
 #     re-parses from disk instead of refetching every page, and it is the only
 #     copy of pages whose listings we are about to delete.
-#   - survey_* saleability_labels — human Bradley-Terry scores from Prolific,
 #     which cannot be regenerated at all.
 #
 # Requires CONFIRM=yes to run:
@@ -57,10 +56,6 @@ $PSQL -c "SELECT 'listings' AS tbl, COUNT(*) FROM listings
           UNION ALL SELECT 'generated_cards', COUNT(*) FROM generated_cards;"
 
 echo ""
-echo "--- Preserving human survey labels ---"
-$PSQL -c "CREATE TABLE IF NOT EXISTS survey_labels_preserved AS
-          SELECT * FROM saleability_labels WHERE label_source LIKE 'survey_%';"
-$PSQL -c "SELECT COUNT(*) AS survey_rows_preserved FROM survey_labels_preserved;"
 
 echo ""
 echo "--- Deleting DB rows ---"

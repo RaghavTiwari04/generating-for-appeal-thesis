@@ -75,15 +75,6 @@ dedup:
 proxy-labels:
 	python -m data.labels.proxy
 
-vlm-labels-5head:
-	python -m data.labels.vlm_labels label --five-heads
-
-survey-labels:
-	python -m data.labels.survey_labels --study-id main_v1
-
-pilot-analysis:
-	python -m survey.analysis.pilot_analysis --study-id pilot_v1
-
 snapshot-cron:
 	python -m data.scrapers.scheduler install
 
@@ -99,26 +90,6 @@ eval-predictor:
 
 train-pricing:
 	python -m models.pricing.train_pricing
-
-survey-labels:
-	python -m data.labels.survey_labels --study-id main_v1
-
-pilot-analysis:
-	python -m survey.analysis.pilot_analysis --study-id pilot_v1
-
-# ── Pairwise (v2) survey targets ──────────────────────────────────────────────
-bt-fit:
-	python -c "from survey.analysis.bradley_terry import load_pairs, fit_bradley_terry, persist_bt_labels; \
-	df=load_pairs('main_v2', question_dim='purchase_intent'); \
-	res=fit_bradley_terry(df, prior_strength=0.1); \
-	n=persist_bt_labels(res, study_id='main_v2', question_dim='purchase_intent'); print(f'wrote {n} BT purchase_intent labels')"
-	python -c "from survey.analysis.bradley_terry import load_pairs, fit_bradley_terry, persist_bt_labels; \
-	df=load_pairs('main_v2', question_dim='aesthetic'); \
-	res=fit_bradley_terry(df, prior_strength=0.1); \
-	n=persist_bt_labels(res, study_id='main_v2', question_dim='aesthetic'); print(f'wrote {n} BT aesthetic labels')"
-
-bt-power:
-	python -m eval.sims.bt_power --n-cards 150 --n-participants 150 --pairs-per-participant 60 --n-sims 200
 
 pseudo-labels:
 	python -m data.labels.pseudo_labels --label-source llm_pseudo_v1
@@ -174,13 +145,6 @@ pipeline:
 pipeline-from-%:
 	python -m data.pipeline_runner --from $*
 
-# ── Survey instrument ─────────────────────────────────────────────────────────
-survey-static:
-	python -m survey.instrument.create_static
-
-survey-app: survey-static
-	uvicorn survey.instrument.app:app --reload --port 8080
-
 # ── Figures ───────────────────────────────────────────────────────────────────
 figures:
 	python -m eval.reports.figures
@@ -194,11 +158,6 @@ sweep:
 	wandb sweep models/predictor/sweep.yaml
 
 # ── Evaluation ────────────────────────────────────────────────────────────────
-system-eval:
-	python -m eval.system_eval --study-id system_eval_v1
-
-failure-analysis:
-	python -m eval.failure_analysis --study-id system_eval_v1
 
 best-of-n-curve:
 	python -m eval.ablations.best_of_n_curve

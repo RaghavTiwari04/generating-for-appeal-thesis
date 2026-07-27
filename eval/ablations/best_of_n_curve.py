@@ -1,7 +1,7 @@
 """Best-of-N saturation curve ablation.
 
 For each N in {1, 2, 4, 8, 16}, sample best-of-N from the existing condition-C
-candidate pool and report mean predicted saleability (and mean survey
+candidate pool and report mean predicted saleability (and mean judged
 purchase-intent where available). Produces a saturation curve.
 """
 

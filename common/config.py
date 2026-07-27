@@ -13,7 +13,6 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
-
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=str(REPO_ROOT / ".env"),
@@ -70,7 +69,7 @@ class Settings(BaseSettings):
 
     @field_validator("sdxl_revision", "hf_token", "anthropic_api_key", "openai_api_key",
                      "glm_api_key", "openrouter_api_key", "gemini_api_key",
-                     "wandb_api_key", "prolific_api_token", "etsy_api_key", mode="before")
+                     "wandb_api_key", "etsy_api_key", mode="before")
     @classmethod
     def _empty_str_to_none(cls, v: str | None) -> str | None:
         """Treat empty strings from .env as None."""
@@ -82,26 +81,6 @@ class Settings(BaseSettings):
     wandb_api_key: str | None = None
     wandb_project: str = "greeting-cards"
     wandb_entity: str | None = None
-
-    # Prolific
-    prolific_api_token: str | None = None
-
-    # Google Forms / Sheets (survey instrument)
-    google_service_account_json: Path | None = None  # path to service account JSON key file
-    google_forms_id: str | None = None               # form ID from the URL
-    google_sheets_id: str | None = None              # linked response spreadsheet ID
-    # Pre-filled entry IDs — run survey/instrument/forms_creator.py to discover these
-    google_form_entry_participant_id: str | None = None
-    google_form_entry_card_key: str | None = None
-    google_form_entry_occasion: str | None = None
-    google_form_entry_study_id: str | None = None
-    google_form_entry_purchase_intent: str | None = None
-    google_form_entry_occasion_fit: str | None = None
-    google_form_entry_aesthetic: str | None = None
-    google_form_entry_emotional_resonance: str | None = None
-    google_form_entry_distinctiveness: str | None = None
-    google_form_entry_max_price_gbp: str | None = None
-    google_form_entry_free_text: str | None = None
 
     # Etsy Open API v3
     etsy_api_key: str | None = None
@@ -117,10 +96,8 @@ class Settings(BaseSettings):
             f"@{self.postgres_host}:{self.postgres_port}/{self.postgres_db}"
         )
 
-
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
     return Settings()
-
 
 settings = get_settings()
