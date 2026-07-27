@@ -3,7 +3,7 @@
 #SBATCH --partition=a16
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=8G
-#SBATCH --time=04:00:00
+#SBATCH --time=10:00:00
 #SBATCH --output=logs/slurm-%j-vlm-label.out
 #SBATCH --error=logs/slurm-%j-vlm-label.err
 #SBATCH --mail-type=END,FAIL
@@ -38,6 +38,9 @@ MODEL="${MODEL:-}"
 # Pin the gateway upstream. Hosts serve different quantisations of the same
 # open weights, so an unpinned run is not reproducible.
 ROUTE="${ROUTE:-}"
+# Cards in flight at once. The run is API-latency bound, so this sets the
+# wall clock; raise it until the provider starts rate-limiting.
+export CONCURRENCY="${CONCURRENCY:-4}"
 # Re-score cards that already have labels. Needed when overwriting a run made
 # with a different provider or scoring config.
 FORCE="${FORCE:-}"
@@ -45,7 +48,7 @@ FORCE="${FORCE:-}"
 echo "=== LLM labelling (SSR + rubric judge) ==="
 echo "Node: $(hostname)  Start: $(date)"
 echo "provider=$PROVIDER model=${MODEL:-default} limit=${LIMIT:-all}"
-echo "source=${LABEL_SOURCE:-default} force=${FORCE:-no} route=${ROUTE:-auto}"
+echo "source=${LABEL_SOURCE:-default} force=${FORCE:-no} route=${ROUTE:-auto} concurrency=$CONCURRENCY"
 
 ARGS=(--provider "$PROVIDER")
 [ -n "$LIMIT" ] && ARGS+=(--limit "$LIMIT")

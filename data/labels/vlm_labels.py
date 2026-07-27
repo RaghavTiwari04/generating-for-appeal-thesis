@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import asyncio
 import io
+import os
 from dataclasses import dataclass
 
 import typer
@@ -46,9 +47,10 @@ log = get_logger(__name__)
 
 LABEL_SOURCE = "llm_ssr_rubric_v2"
 
-# Cards scored concurrently. Each card is 7 VLM calls, so this is the real
-# multiplier against the provider's rate limit.
-MAX_CONCURRENCY = 4
+# Cards scored concurrently. Each card is 10 VLM calls, so this is the real
+# multiplier against the provider's rate limit — and the main lever on how long
+# a full run takes, since the work is entirely API latency.
+MAX_CONCURRENCY = int(os.environ.get("CONCURRENCY", "4"))
 COMMIT_EVERY = 25
 
 # One listing per duplicate cluster, and only cards with an occasion.
