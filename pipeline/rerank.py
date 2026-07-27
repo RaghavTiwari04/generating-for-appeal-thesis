@@ -56,7 +56,11 @@ def rerank(
         return []
 
     images = [c.image for c in candidates]
-    texts = [f"{c.headline}\n{c.inside_message}" for c in candidates]
+    # Headline only. The predictor's text tower is trained on `extracted_text`,
+    # which is OCR of the card's front, so the inside message is content it has
+    # never seen in that channel — appending it here fed the model a different
+    # kind of string at the moment it is used to rank.
+    texts = [c.headline for c in candidates]
     image_embs = embedder.embed_images(images)
     text_embs = embedder.embed_texts(texts)
 
