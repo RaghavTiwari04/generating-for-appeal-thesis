@@ -68,18 +68,19 @@ def _dataset_to_features(ds: PredictorDataset) -> tuple[
 
 
 def _baseline_features(df: pd.DataFrame) -> pd.DataFrame:
-    """Occasion alone, as the floor the predictor has to beat.
+    """Occasion one-hot, as the floor the predictor has to beat.
+
+    One-hot rather than an integer code: a linear model reads 0..3 as an
+    ordering, so label encoding would understate what occasion alone can do.
 
     This previously also used price, review and favourite counts. The training
     query does not select them, so the lookup raised and a bare except returned
     None — the baseline silently vanished from the report rather than being
     reported as weak.
     """
-    from sklearn.preprocessing import LabelEncoder
-
-    return pd.DataFrame(
-        {"occ_enc": LabelEncoder().fit_transform(df["occasion"].fillna("birthday/general"))}
-    )
+    return pd.get_dummies(
+        df["occasion"].fillna("birthday/general"), prefix="occ", dtype=float
+    ).reset_index(drop=True)
 
 
 def run(
