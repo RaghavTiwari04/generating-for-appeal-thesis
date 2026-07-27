@@ -152,11 +152,20 @@ def _score_cards(
         if img is None:
             continue
 
+        # Only the occasion and the cover image are given to the judge.
+        #
+        # Headline and inside message cannot be supplied symmetrically. Generated
+        # cards carry both; the scraped bestsellers of condition D have no
+        # scraped inside message and only a marketplace listing title, which is
+        # an SEO string rather than a headline and names the source site. The
+        # judge docks emotional resonance explicitly when the inside message is
+        # blank, so passing these fields would penalise D for a gap in data
+        # collection and hand the pipeline conditions an advantage on the very
+        # comparison this measures. Both are visible in the cover art anyway,
+        # which every condition presents equally.
         scores = scorer.score(
             img,
             occasion=row.get("occasion", "birthday/general") or "birthday/general",
-            headline=row.get("headline_text", "") or "",
-            inside_message=row.get("inside_message", "") or "",
         )
 
         responses = [
