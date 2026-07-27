@@ -15,7 +15,6 @@ Usage:
 from __future__ import annotations
 
 import json
-import math
 from pathlib import Path
 
 import numpy as np
@@ -23,7 +22,6 @@ import pandas as pd
 from psycopg.types.json import Jsonb
 
 from common.db import connection, engine
-from common.fx_rates import to_gbp
 from common.logging import get_logger
 from common.occasions import ACTIVE_OCCASIONS as OCCASIONS
 
@@ -37,7 +35,6 @@ SELECT lf.listing_id,
        lf.clip_embedding,
        lf.extracted_text,
        lf.occasion,
-       l.price_minor_units,
        l.currency
 FROM listing_features lf
 JOIN listings l USING (listing_id)
@@ -62,16 +59,6 @@ ADD COLUMN IF NOT EXISTS predictor_scores JSONB;
 """
 
 OCCASION_TO_IDX = {o: i for i, o in enumerate(OCCASIONS)}
-
-
-def _price_rel(price_minor: int | None, currency: str | None) -> float:
-    if price_minor is None:
-        return 0.0
-    try:
-        gbp = to_gbp(price_minor, currency) or 0.0
-        return math.log1p(gbp)
-    except Exception:
-        return 0.0
 
 
 def run(
@@ -102,13 +89,6 @@ def run(
 
     log.info(f"Scoring {len(df)} listings with predictor...")
 
-    df["log_price"] = df.apply(
-        lambda r: math.log1p(to_gbp(r["price_minor_units"], r["currency"]) or 0.0),
-        axis=1,
-    )
-    medians = df.groupby("occasion")["log_price"].transform("median")
-    df["price_rel"] = (df["log_price"] - medians).fillna(0.0)
-
     def _parse_emb(val):
         return json.loads(val) if isinstance(val, str) else val
     df["clip_embedding"] = df["clip_embedding"].apply(_parse_emb)
@@ -129,7 +109,6 @@ def run(
             image_emb=image_embs[i],
             text_emb=text_embs[i],
             occasion=str(df.iloc[i]["occasion"]),
-            price_rel=float(df.iloc[i]["price_rel"]),
         )
         for i in range(len(df))
     ]

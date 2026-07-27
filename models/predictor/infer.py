@@ -25,7 +25,6 @@ class CardFeatures:
     image_emb: np.ndarray              # (image_dim,)
     text_emb: np.ndarray               # (text_dim,)
     occasion: str
-    price_rel: float = 0.0             # log-price relative to occasion median
 
 
 class PredictorRunner:
@@ -55,11 +54,7 @@ class PredictorRunner:
         occ_idx = torch.tensor(
             [OCCASION_TO_IDX.get(f.occasion, 0) for f in features], dtype=torch.long
         ).to(self.device)
-        price_rel = torch.tensor(
-            [[f.price_rel] for f in features], dtype=torch.float32
-        ).to(self.device)
-
-        out = self.model(image_emb, text_emb, occ_idx, price_rel)
+        out = self.model(image_emb, text_emb, occ_idx)
         scores: list[dict[str, float]] = []
         pi = out["purchase_intent"].cpu().numpy()
         if self.isotonic is not None:

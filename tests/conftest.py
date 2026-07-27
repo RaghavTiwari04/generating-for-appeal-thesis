@@ -74,7 +74,6 @@ def dummy_card_batch() -> list[dict]:
             "image_emb": rng.standard_normal(768).astype(np.float32),
             "text_emb": rng.standard_normal(768).astype(np.float32),
             "occasion": "birthday/general",
-            "price_rel": float(rng.standard_normal()),
         }
         for _ in range(4)
     ]

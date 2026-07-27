@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
-
 from data.scrapers.base import ParsedListing
 from data.scrapers.redbubble import RedbubbleScraper
 

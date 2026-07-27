@@ -1,7 +1,7 @@
 """Cached-feature Dataset for predictor training.
 
 Pulls a flat training table from Postgres + cached CLIP embeddings, then
-serves (image_emb, text_emb, occasion_idx, price_rel, targets, mask) tuples.
+serves (image_emb, text_emb, occasion_idx, targets, mask) tuples.
 
 Label sources:
   - Heads 1-4 (LLM): saleability_labels.label_source = 'llm_ssr_rubric_v2'
@@ -39,8 +39,6 @@ _TRAIN_SQL = """
 SELECT
     l.listing_id,
     l.seller_id,
-    l.price_minor_units,
-    l.currency,
     lf.occasion,
     lf.clip_embedding,
     lf.extracted_text,
@@ -81,11 +79,6 @@ def load_training_frame() -> pd.DataFrame:
             return _json.loads(val)
         return val
     df["clip_embedding"] = df["clip_embedding"].apply(_parse_embedding)
-
-    # Price-relative-to-occasion-median (log scale)
-    df["log_price"] = np.log1p(df["price_minor_units"].fillna(0).astype(float) / 100.0)
-    medians = df.groupby("occasion")["log_price"].transform("median")
-    df["price_rel"] = (df["log_price"] - medians).fillna(0.0)
 
     df["occasion_idx"] = df["occasion"].map(OCCASION_TO_IDX).fillna(0).astype(int)
     return df
@@ -163,7 +156,6 @@ class PredictorDataset(Dataset):
         image_emb = np.asarray(row["clip_embedding"], dtype=np.float32)
         text_emb = self._text_embs[idx]
         occasion_idx = int(row["occasion_idx"])
-        price_rel = float(row["price_rel"])
 
         targets, mask = _build_targets(row)
 
@@ -171,7 +163,6 @@ class PredictorDataset(Dataset):
             "image_emb": torch.from_numpy(image_emb),
             "text_emb": torch.from_numpy(text_emb),
             "occasion_idx": torch.tensor(occasion_idx, dtype=torch.long),
-            "price_rel": torch.tensor([price_rel], dtype=torch.float32),
             "targets": torch.tensor(targets, dtype=torch.float32),
             "mask": torch.tensor(mask, dtype=torch.float32),
         }

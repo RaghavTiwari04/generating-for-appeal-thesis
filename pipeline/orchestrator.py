@@ -203,7 +203,9 @@ def _persist(
 
 if __name__ == "__main__":
     import sys
+
     import typer
+
     from common.storage import ensure_buckets
 
     def cli(

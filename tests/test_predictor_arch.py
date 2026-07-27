@@ -18,7 +18,6 @@ def _dummy_batch(bs: int = 4, cfg: PredictorConfig | None = None) -> dict[str, t
         "image_emb": torch.randn(bs, cfg.image_dim),
         "text_emb": torch.randn(bs, cfg.text_dim),
         "occasion_idx": torch.randint(0, cfg.occasion_vocab, (bs,)),
-        "price_rel": torch.randn(bs, 1),
     }
 
 

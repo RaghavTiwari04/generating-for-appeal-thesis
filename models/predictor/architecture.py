@@ -1,7 +1,13 @@
 """Multi-head saleability predictor.
 
 Frozen vision-language backbone (consumed via cached CLIP features) +
-occasion embedding + price scalar → MLP trunk → five heads.
+occasion embedding → MLP trunk → five heads.
+
+Price is deliberately not an input. It cannot be known for a generated card —
+the thing the predictor exists to rank — and on the training corpus its
+missingness is informative: free listings have no price, priced ones do, so a
+price channel lets the trunk read the scrape source and use it as a shortcut
+for quality.
 
 Heads 1-4 (occasion_fit, aesthetic, emotional_resonance, distinctiveness)
 are supervised by VLM labels on all ~2,377 cards. Head 5 (purchase_intent)
@@ -44,7 +50,6 @@ class PredictorConfig:
     text_dim: int = 768
     occasion_vocab: int = len(OCCASIONS)
     occasion_emb_dim: int = 32
-    price_dim: int = 1
     trunk_hidden: int = 512
     head_hidden: int = 128
     dropout: float = 0.1
@@ -58,7 +63,6 @@ class SaleabilityPredictor(nn.Module):
       image_emb:     (B, image_dim)   — CLIP image embedding (normalised)
       text_emb:      (B, text_dim)    — joint headline+inside-message text emb
       occasion_idx:  (B,)             — long, index into OCCASIONS
-      price_rel:     (B, 1)           — log-price relative to occasion median
 
     Output: dict[head_name -> (B,)] of sigmoid-bounded scalars.
     """
@@ -73,7 +77,6 @@ class SaleabilityPredictor(nn.Module):
             self.cfg.image_dim
             + self.cfg.text_dim
             + self.cfg.occasion_emb_dim
-            + self.cfg.price_dim
         )
 
         self.trunk = nn.Sequential(
@@ -101,10 +104,9 @@ class SaleabilityPredictor(nn.Module):
         image_emb: torch.Tensor,
         text_emb: torch.Tensor,
         occasion_idx: torch.Tensor,
-        price_rel: torch.Tensor,
     ) -> dict[str, torch.Tensor]:
         occ = self.occasion_emb(occasion_idx)
-        x = torch.cat([image_emb, text_emb, occ, price_rel], dim=-1)
+        x = torch.cat([image_emb, text_emb, occ], dim=-1)
         z = self.trunk(x)
         return {name: torch.sigmoid(head(z)).squeeze(-1) for name, head in self.heads.items()}
 

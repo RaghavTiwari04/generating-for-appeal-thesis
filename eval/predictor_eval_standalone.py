@@ -53,7 +53,6 @@ def _dataset_to_features(ds: PredictorDataset, embedder: CLIPEmbedder) -> tuple[
             image_emb=item["image_emb"].numpy(),
             text_emb=item["text_emb"].numpy(),
             occasion=idx_to_occasion.get(occ_idx, "birthday/general"),
-            price_rel=float(item["price_rel"].item()),
         ))
         tgts = item["targets"].numpy()
         mask = item["mask"].numpy()
@@ -78,7 +77,6 @@ def _baseline_features(df: pd.DataFrame) -> pd.DataFrame | None:
             "occ_enc": occ_enc,
             "log_review": np.log1p(df["review_count"].fillna(0).astype(float)),
             "log_fav": np.log1p(df["favourite_count"].fillna(0).astype(float)),
-            "price_rel": df["price_rel"].fillna(0.0).astype(float),
         })
         return feats
     except Exception:

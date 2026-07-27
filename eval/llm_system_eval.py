@@ -37,10 +37,10 @@ import numpy as np
 import pandas as pd
 from PIL import Image
 
-from common.db import connection, engine
+from common.db import engine
 from common.logging import get_logger
 from common.storage import get_object
-from scoring import CardScorer, DIMS
+from scoring import DIMS, CardScorer
 from scoring.card_scorer import CONSUMER_PROFILES
 
 log = get_logger(__name__)
@@ -400,30 +400,30 @@ def run(
     log.info("LLM System Evaluation Results")
     log.info(f"{'='*60}")
     log.info(f"Cards: {report.n_cards}  Ratings: {report.n_ratings}")
-    log.info(f"\nPurchase Intent by condition:")
+    log.info("\nPurchase Intent by condition:")
     for cond in CONDITIONS:
         m = report.condition_means.get(cond, float("nan"))
         s = report.condition_stderr.get(cond, float("nan"))
         ci = report.bootstrap_ci.get(cond)
         ci_str = f"  95%CI [{ci[0]:.3f}, {ci[1]:.3f}]" if ci else ""
         log.info(f"  {cond:30s}  {m:.3f} ± {s:.3f}{ci_str}")
-    log.info(f"\nPairwise (Holm-corrected p + rank-biserial r):")
+    log.info("\nPairwise (Holm-corrected p + rank-biserial r):")
     for pair, p in report.pairwise_p_holm.items():
         r = report.pairwise_effect_size.get(pair, float("nan"))
         sig = "***" if p < 0.001 else "**" if p < 0.01 else "*" if p < 0.05 else "ns"
         log.info(f"  {pair:50s}  p={p:.4f} r={r:+.3f} {sig}")
-    log.info(f"\nTOST equivalence tests (δ=0.02):")
+    log.info("\nTOST equivalence tests (δ=0.02):")
     for pair, res in report.tost_equivalence.items():
         eq = "EQUIVALENT" if res["equivalent"] else "inconclusive"
         log.info(f"  {pair:50s}  Δ={res['mean_diff']:+.4f} p_tost={res['p_tost']:.4f} {eq}")
-    log.info(f"\nPer-occasion pairwise (exploratory, uncorrected):")
+    log.info("\nPer-occasion pairwise (exploratory, uncorrected):")
     for occ, pairs in report.per_occasion_pairwise.items():
         sig_pairs = [f"{p.split('_vs_')[0][:5]}v{p.split('_vs_')[1][:5]}={v:.3f}" for p, v in pairs.items() if v < 0.05]
         if sig_pairs:
             log.info(f"  {occ:30s}  sig: {', '.join(sig_pairs)}")
         else:
             log.info(f"  {occ:30s}  no significant pairs")
-    log.info(f"\nPer-dimension means:")
+    log.info("\nPer-dimension means:")
     for dim, cond_vals in report.per_head_means.items():
         vals = "  ".join(f"{c[:5]}={v:.2f}" for c, v in cond_vals.items())
         log.info(f"  {dim:25s}  {vals}")

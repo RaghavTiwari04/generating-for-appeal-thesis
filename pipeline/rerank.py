@@ -65,7 +65,6 @@ def rerank(
             image_emb=image_embs[i],
             text_emb=text_embs[i],
             occasion=candidates[i].occasion,
-            price_rel=0.0,
         )
         for i in range(len(candidates))
     ]

@@ -34,7 +34,6 @@ def _row(**over):
         "clip_embedding": list(np.zeros(768)),
         "extracted_text": "happy birthday",
         "occasion_idx": 0,
-        "price_rel": 0.0,
         "vlm_raw": {
             "occasion_fit": 0.6,
             "aesthetic": 0.5,

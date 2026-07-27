@@ -104,7 +104,6 @@ def evaluate(
             batch["image_emb"].to(device),
             batch["text_emb"].to(device),
             batch["occasion_idx"].to(device),
-            batch["price_rel"].to(device),
         )
         targets = batch["targets"].numpy()
         mask = batch["mask"].numpy()
@@ -231,7 +230,6 @@ def train(
                 batch["image_emb"].to(device),
                 batch["text_emb"].to(device),
                 batch["occasion_idx"].to(device),
-                batch["price_rel"].to(device),
             )
             loss = masked_mse(pred, batch["targets"].to(device), batch["mask"].to(device), weights)
             opt.zero_grad()
