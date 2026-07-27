@@ -11,13 +11,15 @@ The pool is one listing per duplicate cluster, birthday cards only: colourways
 of one design would otherwise each cost a full scoring pass, and listings with
 no occasion are unusable downstream.
 
-Labels land in `saleability_labels` with `score` = mean of the four quality
-dimensions and the full per-dimension detail in `raw`.
+Labels land in `saleability_labels` with `score` = purchase_intent — the
+construct the table is named for, and the one the human survey validates
+against — and the full per-dimension detail in `raw`.
 
     python -m data.labels.vlm_labels label
     python -m data.labels.vlm_labels label --limit 20      # smoke test
-    python -m data.labels.vlm_labels label --provider openai
+    python -m data.labels.vlm_labels label --provider gemini
     python -m data.labels.vlm_labels stats
+    python -m data.labels.vlm_labels rescore --dimension aesthetic
 """
 
 from __future__ import annotations
@@ -40,7 +42,6 @@ from scoring import (
     USAGE,
     CardScorer,
     openrouter_route,
-    quality_composite,
 )
 
 log = get_logger(__name__)
@@ -186,7 +187,11 @@ async def _score_card(
         return None
     return {
         "listing_id": card.listing_id,
-        "score": quality_composite(scores),
+        # The sortable summary is purchase intent, the construct the table is
+        # named for: LoRA exemplars, condition D and the market signals all rank
+        # on it, and it is the dimension the human survey validates against. The
+        # other four stay in `raw` as separate analysable dimensions.
+        "score": scores["purchase_intent"],
         "raw": scores,
     }
 
@@ -258,6 +263,29 @@ def label(
     # actually cost, and whether the images leave any headroom to reclaim.
     print()
     print(USAGE.report(cards=written, project_to=pool_total))
+
+
+@app.command()
+def rescore(
+    label_source: str = typer.Option(LABEL_SOURCE, help="Label source to rewrite"),
+    dimension: str = typer.Option("purchase_intent", help=f"One of {', '.join(DIMS)}"),
+) -> None:
+    """Recompute `score` from the stored per-dimension detail.
+
+    `raw` holds every dimension, so changing which one ranks the corpus costs a
+    single UPDATE rather than re-scoring 2,468 cards through the API.
+    """
+    if dimension not in DIMS:
+        raise typer.BadParameter(f"{dimension} is not one of {DIMS}")
+    with connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            "UPDATE saleability_labels "
+            "SET score = (raw->>%(dim)s)::float "
+            "WHERE label_source = %(src)s AND raw ? %(dim)s",
+            {"dim": dimension, "src": label_source},
+        )
+        n = cur.rowcount
+    print(f"Rewrote score = {dimension} for {n} rows of {label_source}")
 
 
 @app.command()

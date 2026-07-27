@@ -202,10 +202,6 @@ IMAGE_LONG_EDGE_CAP = 1568
 
 USAGE = Usage()
 
-# Quality dimensions only. purchase_intent is kept separate so callers can
-# decide whether "best card" means best-looking or most likely to sell.
-QUALITY_DIMS = RUBRIC_DIMS
-
 # ---------------------------------------------------------------------------
 # SSR — purchase intent
 # ---------------------------------------------------------------------------
@@ -746,9 +742,3 @@ class CardScorer:
         out["ssr_responses"] = replies
         out["explanations"] = dict(self._explanations)
         return out
-
-
-def quality_composite(scores: dict) -> float:
-    """Mean of the four quality dimensions present in `scores`."""
-    vals = [scores[d] for d in QUALITY_DIMS if d in scores]
-    return float(np.mean(vals)) if vals else 0.0
