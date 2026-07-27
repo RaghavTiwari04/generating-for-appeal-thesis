@@ -173,7 +173,14 @@ async def _score_card(
             occasion=card.occasion or "",
             headline=card.title or "",
         )
-    if not any(d in scores for d in DIMS):
+    # Persist only complete cards. A provider that fails mid-run — exhausted
+    # credits, rate limits — returns empty text, and each affected dimension is
+    # omitted. Writing the survivors would leave a card that a resume then skips
+    # as done, so the gap becomes permanent and invisible. Treated as a failure
+    # instead, it is simply re-scored on the next run.
+    missing = [d for d in DIMS if d not in scores]
+    if missing:
+        log.warning(f"{card.listing_id[:8]}: incomplete ({', '.join(missing)}), not stored")
         return None
     return {
         "listing_id": card.listing_id,
