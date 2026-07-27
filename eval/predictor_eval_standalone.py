@@ -33,7 +33,7 @@ from models.predictor.infer import CardFeatures, PredictorRunner
 log = get_logger(__name__)
 
 
-def _dataset_to_features(ds: PredictorDataset, embedder: CLIPEmbedder) -> tuple[
+def _dataset_to_features(ds: PredictorDataset) -> tuple[
     list[CardFeatures], np.ndarray, dict[str, np.ndarray]
 ]:
     """Convert dataset rows → CardFeatures + reference targets."""
@@ -101,12 +101,16 @@ def run(
     test_df = splits["test"]
     log.info(f"Test set: {len(test_df)} listings")
 
-    ds = PredictorDataset(test_df)
-    predictor = PredictorRunner(ckpt, calib_path)
+    # The text embedder must be wired here as it is in training. Without it the
+    # dataset yields zero text vectors, and the model would be evaluated with a
+    # third of its input blanked — understating it for a reason invisible in
+    # the report.
     embedder = CLIPEmbedder()
+    ds = PredictorDataset(test_df, text_embedder=embedder.embed_texts)
+    predictor = PredictorRunner(ckpt, calib_path)
 
     log.info("Extracting features...")
-    features, pi_targets, head_targets = _dataset_to_features(ds, embedder)
+    features, pi_targets, head_targets = _dataset_to_features(ds)
 
     pi_mask = ~np.isnan(pi_targets)
     log.info(f"Cards with a purchase-intent label: {pi_mask.sum()} / {len(features)}")
