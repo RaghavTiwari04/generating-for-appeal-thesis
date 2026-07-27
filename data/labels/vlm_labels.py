@@ -296,6 +296,25 @@ def stats(label_source: str = typer.Option(LABEL_SOURCE)) -> None:
                 f"{a.min():6.3f} {a.max():6.3f} {len(a):4d}"
             )
 
+    # `score` is the mean of the rubric dimensions and excludes purchase_intent,
+    # so ranking by it means "best looking" rather than "most likely to sell".
+    # How much that matters is exactly this correlation: near 1 and the choice
+    # is cosmetic, low and it changes which cards LoRA trains on and which ones
+    # stand as condition D.
+    wide = pd.DataFrame(
+        [r for r in df["raw"] if isinstance(r, dict)]
+    ).reindex(columns=list(DIMS))
+    wide["composite"] = df["score"].to_numpy()
+    usable = wide.dropna()
+    if len(usable) > 2:
+        print(f"\nSpearman between dimensions (n={len(usable)})\n")
+        corr = usable.corr(method="spearman")
+        cols = list(corr.columns)
+        print("  " + " " * 22 + " ".join(f"{c[:9]:>9s}" for c in cols))
+        for row in cols:
+            cells = " ".join(f"{corr.loc[row, c]:9.3f}" for c in cols)
+            print(f"  {row:22s} {cells}")
+
 
 if __name__ == "__main__":
     app()
