@@ -29,8 +29,11 @@ import torch
 from torch.utils.data import Dataset
 
 from common.db import engine
+from common.logging import get_logger
 from common.occasions import ACTIVE_OCCASIONS as OCCASIONS
 from models.predictor.architecture import HEAD_NAMES, VLM_HEADS
+
+log = get_logger(__name__)
 
 OCCASION_TO_IDX: dict[str, int] = {occ: i for i, occ in enumerate(OCCASIONS)}
 
@@ -57,7 +60,12 @@ LEFT JOIN saleability_labels sl_bt_pi
        ON sl_bt_pi.listing_id = l.listing_id
       AND sl_bt_pi.label_source LIKE 'survey_%%_bt_purchase_intent'
 WHERE lf.clip_embedding IS NOT NULL
-  AND lf.occasion IS NOT NULL;
+  AND lf.occasion IS NOT NULL
+  -- At least one label, or the row trains nothing. Labelling keeps one listing
+  -- per duplicate cluster, so without this the unlabelled colourways ride along
+  -- with every mask at zero: forward-passed each epoch, counted in the val and
+  -- test splits, and weighted by the occasion sampler.
+  AND (sl_vlm.listing_id IS NOT NULL OR sl_bt_pi.listing_id IS NOT NULL);
 """
 
 
@@ -94,6 +102,15 @@ def split_by_seller(df: pd.DataFrame, cfg: SplitConfig | None = None) -> dict[st
     df.loc[null_mask, "seller_id"] = [
         f"__null_{i}" for i in range(null_mask.sum())
     ]
+    # Only some sources expose a seller. The rest each become their own
+    # synthetic seller above, which is the honest fallback — but it means the
+    # split only prevents style leakage for the share that has one.
+    known = int((~null_mask).sum())
+    if known < len(df):
+        log.info(
+            f"Seller split: {known}/{len(df)} listings have a seller_id; the rest "
+            f"are split individually and are not protected against style leakage."
+        )
     sellers = df["seller_id"].unique().tolist()
     rng.shuffle(sellers)
     n = len(sellers)
