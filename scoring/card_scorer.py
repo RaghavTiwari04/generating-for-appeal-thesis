@@ -27,13 +27,8 @@ Two methods, each following its source:
       first, then a 1-10 score in "[[rating]]" form, at temperature 0.
 
 Cost: one card is 6 SSR calls (3 consumer profiles x 2 samples each, per the
-paper's n=2) plus 4 rubric calls, so 10 VLM calls. SSR additionally needs an
-OpenAI key for its embeddings; the anchor embeddings are cached, so that is one
-short embedding call per persona reply.
-
-Model note: labelling runs on claude-sonnet-4-6 rather than claude-sonnet-5
-because SSR elicitation requires a non-default sampling temperature, which
-Sonnet 5 rejects.
+paper's n=2) plus 4 rubric calls, so 10 VLM calls, plus one short embedding
+call per persona reply. The anchor statements are embedded once per process.
 """
 
 from __future__ import annotations
@@ -46,6 +41,7 @@ import threading
 import time
 from collections import Counter
 from dataclasses import dataclass, field
+from typing import Any
 
 import numpy as np
 from PIL import Image
@@ -64,19 +60,20 @@ DIMS = (
 )
 RUBRIC_DIMS = DIMS[1:]
 
+# Providers downscale above this and bill the reduced size, so pixels beyond it
+# are paid for by nobody and seen by nobody.
+IMAGE_LONG_EDGE_CAP = 1568
+
 
 # ---------------------------------------------------------------------------
 # Token accounting
 # ---------------------------------------------------------------------------
-# Every provider returns exact token usage per call and we were discarding it,
-# leaving cost and image-token questions to arithmetic over assumed image
-# dimensions. Both are decisions this measures directly:
-#
-#   are images already under the provider's 1568px cap? — if so there is no
-#       free headroom and resizing trades quality for money rather than
-#       reclaiming waste.
-#   does a cached prefix clear the model's minimum? — cache_write/read of zero
-#       across a run means cache_control was silently ignored.
+# Providers return exact usage per call; recording it answers two questions
+# that would otherwise be arithmetic over assumed image dimensions. Whether
+# images already sit under the cap decides if downscaling reclaims waste or
+# discards detail the judge sees. Whether cache_write/read stay zero across a
+# run is the only signal that a cached prefix fell below the model's minimum
+# and cache_control was ignored silently.
 #
 # Scoring runs in worker threads, so the counters take a lock.
 @dataclass
@@ -112,12 +109,12 @@ class Usage:
     ) -> None:
         with self._lock:
             self.calls += 1
-            if served_by:
-                self.served_by[served_by] += 1
             self.input_tokens += inp
             self.output_tokens += out
             self.cache_write_tokens += cache_write
             self.cache_read_tokens += cache_read
+            if served_by:
+                self.served_by[served_by] += 1
 
     def record_failure(self) -> None:
         with self._lock:
@@ -134,7 +131,7 @@ class Usage:
             self.images += 1
             self.long_edge_sum += edge
             self.long_edge_max = max(self.long_edge_max, edge)
-            self.long_edge_min = edge if self.long_edge_min == 0 else min(self.long_edge_min, edge)
+            self.long_edge_min = min(self.long_edge_min or edge, edge)
             if edge > IMAGE_LONG_EDGE_CAP:
                 self.images_over_cap += 1
 
@@ -149,13 +146,12 @@ class Usage:
                 f"  cache read         {self.cache_read_tokens:,}",
                 f"  embedding tokens   {self.embed_tokens:,}  ({self.embed_calls} calls)",
             ]
-            if self.cache_write_tokens == 0 and self.cache_read_tokens == 0:
+            if not (self.cache_write_tokens or self.cache_read_tokens):
                 lines.append("  (no caching active on this run)")
 
             if self.served_by:
                 lines += ["", "Served by"]
-                for name, n in self.served_by.most_common():
-                    lines.append(f"  {name:34s} {n} calls")
+                lines += [f"  {n:34s} {c} calls" for n, c in self.served_by.most_common()]
                 if len(self.served_by) > 1:
                     lines.append(
                         "  more than one upstream served this run; pin with "
@@ -163,21 +159,20 @@ class Usage:
                     )
 
             if self.images:
-                mean_edge = self.long_edge_sum / self.images
+                over = self.images_over_cap
                 lines += [
                     "",
                     "Source images",
                     f"  count              {self.images}",
                     f"  long edge          min {self.long_edge_min}  "
-                    f"mean {mean_edge:.0f}  max {self.long_edge_max}",
-                    f"  above {IMAGE_LONG_EDGE_CAP}px cap    {self.images_over_cap}"
-                    f" ({self.images_over_cap / self.images:.0%})",
+                    f"mean {self.long_edge_sum / self.images:.0f}  max {self.long_edge_max}",
+                    f"  above {IMAGE_LONG_EDGE_CAP}px cap    {over} ({over / self.images:.0%})",
                 ]
-                if self.images_over_cap == 0:
+                if not over:
                     lines.append(
-                        f"  every image is already under the {IMAGE_LONG_EDGE_CAP}px cap, so "
-                        "downscaling\n  would discard detail the model currently sees rather "
-                        "than waste."
+                        f"  every image is already under the {IMAGE_LONG_EDGE_CAP}px cap, "
+                        "so downscaling\n  would discard detail the model currently sees "
+                        "rather than waste."
                     )
 
             if cards:
@@ -196,11 +191,59 @@ class Usage:
             return "\n".join(lines)
 
 
-# Providers downscale above this and bill the reduced size, so pixels beyond it
-# are paid for by nobody and seen by nobody.
-IMAGE_LONG_EDGE_CAP = 1568
-
 USAGE = Usage()
+
+
+# ---------------------------------------------------------------------------
+# API clients
+# ---------------------------------------------------------------------------
+# Judges reachable through the OpenAI chat-completions shape, as
+# provider -> (base_url, settings attribute holding the key, default model).
+# One transport covers hosted OpenAI, Z.ai, OpenRouter, Gemini's own endpoint
+# and a local vLLM server, so comparing judges is a flag rather than a new code
+# path.
+OPENAI_COMPATIBLE: dict[str, tuple[str | None, str, str | None]] = {
+    "openai": (None, "openai_api_key", "gpt-4o"),
+    "glm": ("https://api.z.ai/api/paas/v4", "glm_api_key", "glm-4.6v"),
+    "openrouter": ("https://openrouter.ai/api/v1", "openrouter_api_key", None),
+    # Google's own OpenAI-compatible endpoint. Direct rather than via a gateway,
+    # so there is no upstream to pin and no gateway margin.
+    "gemini": (
+        "https://generativelanguage.googleapis.com/v1beta/openai/",
+        "gemini_api_key",
+        "gemini-3.5-flash-lite",
+    ),
+}
+
+# Clients are cheap to reuse and not free to build; a full labelling run makes
+# ~25k calls, and constructing a client per call also discards connection reuse.
+_clients: dict[tuple[str, str | None], Any] = {}
+_client_lock = threading.Lock()
+
+
+def _openai_client(api_key: str, base_url: str | None = None) -> Any:
+    with _client_lock:
+        client = _clients.get((api_key, base_url))
+        if client is None:
+            from openai import OpenAI
+
+            client = _clients[(api_key, base_url)] = OpenAI(
+                api_key=api_key, base_url=base_url
+            )
+        return client
+
+
+def _anthropic_client(api_key: str | None) -> Any:
+    with _client_lock:
+        client = _clients.get((api_key or "", "anthropic"))
+        if client is None:
+            import anthropic
+
+            client = _clients[(api_key or "", "anthropic")] = anthropic.Anthropic(
+                api_key=api_key
+            )
+        return client
+
 
 # ---------------------------------------------------------------------------
 # SSR — purchase intent
@@ -212,8 +255,7 @@ USAGE = Usage()
 #
 # pymc-labs' API takes one reference_set_id per call, so the averaging lives
 # here rather than in the library — but the behaviour is the reference's, not
-# an extension of ours. Anchors are embedded once and cached, so raising m from
-# three to six costs nothing per card.
+# an extension of ours.
 SSR_REFERENCE_SETS: tuple[tuple[str, ...], ...] = (
     (
         "I would never buy this card",
@@ -284,46 +326,52 @@ JUDGE_TEMPERATURE = 0.0
 # reply into a position between the anchors — so it follows the paper rather than
 # being a free choice: "OpenAI's model 'text-embedding-3-small'".
 _EMBED_MODEL = "text-embedding-3-small"
-_openai_client = None
-_ref_cache: dict[tuple[str, ...], np.ndarray] = {}
+
+_anchors: np.ndarray | None = None
+_anchor_lock = threading.Lock()
 
 
-def _embed(texts, retries: int = 4) -> np.ndarray:
-    """Embed texts as unit vectors. Raises rather than degrading silently.
+def _embed(texts: list[str], retries: int = 4) -> np.ndarray:
+    """Embed texts as unit row vectors. Raises rather than degrading silently.
 
     A failed embedding cannot be defaulted: every SSR score is a cosine against
     these vectors, so a placeholder would be a fabricated score rather than a
     missing one.
     """
-    global _openai_client
-    if _openai_client is None:
-        if not settings.openai_api_key:
-            raise RuntimeError(
-                "OPENAI_API_KEY is required for SSR embeddings "
-                f"({_EMBED_MODEL}); set it in .env"
-            )
-        from openai import OpenAI
+    if not settings.openai_api_key:
+        raise RuntimeError(
+            f"OPENAI_API_KEY is required for SSR embeddings ({_EMBED_MODEL})"
+        )
+    client = _openai_client(settings.openai_api_key)
 
-        _openai_client = OpenAI(api_key=settings.openai_api_key)
-
-    items = list(texts)
+    last: Exception | None = None
     for attempt in range(retries):
         try:
-            resp = _openai_client.embeddings.create(model=_EMBED_MODEL, input=items)
+            resp = client.embeddings.create(model=_EMBED_MODEL, input=texts)
             USAGE.record_embedding(getattr(resp.usage, "total_tokens", 0) or 0)
             vecs = np.asarray([d.embedding for d in resp.data], dtype=float)
             return vecs / np.linalg.norm(vecs, axis=1, keepdims=True)
         except Exception as e:
+            last = e
             log.warning(f"Embedding failed (attempt {attempt + 1}/{retries}): {e}")
-            if attempt == retries - 1:
-                raise
-            time.sleep(min(2**attempt, 30))
-    raise RuntimeError("unreachable")
+            if attempt < retries - 1:
+                time.sleep(min(2**attempt, 30))
+    raise RuntimeError(f"Embedding failed after {retries} attempts") from last
 
 
-def _cosine(a: np.ndarray, b: np.ndarray) -> np.ndarray:
-    """Cosine rescaled from [-1,1] to [0,1], as the reference does."""
-    return (1 + np.dot(a, b.T)) / 2
+def anchor_embeddings() -> np.ndarray:
+    """(sets, 5, dim) unit vectors for the reference statements.
+
+    Embedded once per process, in a single call, under a lock — concurrent
+    scoring threads would otherwise each re-embed the same statements.
+    """
+    global _anchors
+    with _anchor_lock:
+        if _anchors is None:
+            flat = [s for refs in SSR_REFERENCE_SETS for s in refs]
+            vecs = _embed(flat)
+            _anchors = vecs.reshape(len(SSR_REFERENCE_SETS), -1, vecs.shape[1])
+        return _anchors
 
 
 def similarities_to_pmf(sims: np.ndarray, epsilon: float = 0.0) -> np.ndarray:
@@ -332,13 +380,12 @@ def similarities_to_pmf(sims: np.ndarray, epsilon: float = 0.0) -> np.ndarray:
     Reference divides by (cos_sum - n*cos_min + epsilon); adding epsilon to the
     minimum element and dividing by the sum is the same quantity.
     """
-    s = np.asarray(sims, dtype=float) - np.min(sims)
+    s = np.asarray(sims, dtype=float)
+    s = s - s.min()
     if epsilon > 0:
-        s[int(np.argmin(sims))] += epsilon
+        s[int(s.argmin())] += epsilon
     total = s.sum()
-    if total == 0:
-        return np.ones(len(s)) / len(s)
-    return s / total
+    return s / total if total else np.full(len(s), 1 / len(s))
 
 
 def scale_pmf(pmf: np.ndarray, temperature: float) -> np.ndarray:
@@ -347,7 +394,7 @@ def scale_pmf(pmf: np.ndarray, temperature: float) -> np.ndarray:
         return pmf
     if temperature == 0.0:
         out = np.zeros_like(pmf)
-        out[int(np.argmax(pmf))] = 1.0
+        out[int(pmf.argmax())] = 1.0
         return out
     scaled = pmf ** (1.0 / temperature)
     return scaled / scaled.sum()
@@ -356,21 +403,19 @@ def scale_pmf(pmf: np.ndarray, temperature: float) -> np.ndarray:
 def ssr_score(response: str, temperature: float = 1.0, epsilon: float = 0.0) -> dict:
     """Map one free-text response to a Likert PMF and a 0-1 score."""
     emb = _embed([response])[0]
-    pmfs = []
-    for refs in SSR_REFERENCE_SETS:
-        if refs not in _ref_cache:
-            _ref_cache[refs] = _embed(refs)
-        sims = _cosine(emb.reshape(1, -1), _ref_cache[refs])[0]
-        pmfs.append(similarities_to_pmf(sims, epsilon))
+    # Cosine rescaled from [-1,1] to [0,1], as the reference does. Vectors are
+    # unit-norm, so the dot product is the cosine.
+    sims = (1 + anchor_embeddings() @ emb) / 2
+    pmfs = np.stack([similarities_to_pmf(s, epsilon) for s in sims])
 
     # Temperature is applied after averaging the anchor sets. The reference
     # scales a single set's PMF; with one set the two are identical.
-    pmf = scale_pmf(np.mean(pmfs, axis=0), temperature)
-    expected = float(np.dot(pmf, np.arange(1, 6)))
+    pmf = scale_pmf(pmfs.mean(axis=0), temperature)
+    expected = float(pmf @ np.arange(1, 6))
     return {"pmf": pmf.tolist(), "likert": expected, "score": (expected - 1) / 4}
 
 
-def _persona_prompt(profile: dict) -> str:
+def persona_prompt(profile: dict) -> str:
     return (
         f"You are a {profile['age']}-year-old {profile['gender']} living in "
         f"{profile['region']} with {profile['income']} income. You regularly buy "
@@ -468,11 +513,17 @@ def rubric_prompt(dim: str) -> str:
 
 
 def extract_rating(text: str) -> float | None:
-    """Pull the 1-10 rating out of a judge response."""
+    """Pull the 1-10 rating out of a judge response, or None if absent.
+
+    Out-of-range values are rejected rather than clamped: the bare-bracket
+    fallback also matches things like a year in "[2024]", and clamping would
+    turn that into a confident 10.
+    """
     m = _SCORE_RE.search(text or "") or _SCORE_RE_FALLBACK.search(text or "")
     if not m:
         return None
-    return max(1.0, min(10.0, float(m.group(1))))
+    value = float(m.group(1))
+    return value if 1.0 <= value <= 10.0 else None
 
 
 # ---------------------------------------------------------------------------
@@ -483,24 +534,6 @@ def image_to_b64(image: Image.Image) -> str:
     buf = io.BytesIO()
     image.convert("RGB").save(buf, format="PNG")
     return base64.standard_b64encode(buf.getvalue()).decode("ascii")
-
-
-# Judges reachable through the OpenAI chat-completions shape, as
-# provider -> (base_url, settings attribute holding the key, default model).
-# One transport covers hosted OpenAI, Z.ai, OpenRouter and a local vLLM
-# server, so comparing judges is a flag rather than a new code path.
-OPENAI_COMPATIBLE: dict[str, tuple[str | None, str, str | None]] = {
-    "openai": (None, "openai_api_key", "gpt-4o"),
-    "glm": ("https://api.z.ai/api/paas/v4", "glm_api_key", "glm-4.6v"),
-    "openrouter": ("https://openrouter.ai/api/v1", "openrouter_api_key", None),
-    # Google's own OpenAI-compatible endpoint. Direct rather than via a gateway,
-    # so there is no upstream to pin and no gateway margin.
-    "gemini": (
-        "https://generativelanguage.googleapis.com/v1beta/openai/",
-        "gemini_api_key",
-        "gemini-3.5-flash-lite",
-    ),
-}
 
 
 def openrouter_route(spec: str | None) -> dict | None:
@@ -514,9 +547,130 @@ def openrouter_route(spec: str | None) -> dict | None:
     if not spec or not spec.strip():
         return None
     spec = spec.strip()
-    if spec.startswith("{"):
-        return json.loads(spec)
-    return {"order": [spec], "allow_fallbacks": False}
+    return json.loads(spec) if spec.startswith("{") else {
+        "order": [spec],
+        "allow_fallbacks": False,
+    }
+
+
+def _resolve(provider: str, model: str | None) -> tuple[str | None, str | None, str]:
+    """(base_url, api_key, model) for a provider, or raise.
+
+    Resolved before any request: a missing key or unknown provider is a
+    configuration error, and discovering it inside the retry loop would burn
+    the retries and return "", which the caller records as a card that failed
+    to score rather than a misconfiguration.
+    """
+    if provider == "anthropic":
+        return None, settings.anthropic_api_key, model or settings.llm_model
+    if provider not in OPENAI_COMPATIBLE:
+        raise ValueError(
+            f"unknown provider {provider!r}; expected 'anthropic' or one of "
+            f"{sorted(OPENAI_COMPATIBLE)}"
+        )
+    base_url, key_attr, default_model = OPENAI_COMPATIBLE[provider]
+    api_key = getattr(settings, key_attr)
+    if not api_key:
+        raise RuntimeError(f"{key_attr.upper()} is required for --provider {provider}")
+    chosen = model or default_model
+    if chosen is None:
+        raise RuntimeError(f"--provider {provider} has no default model; pass --model")
+    return base_url, api_key, chosen
+
+
+def _call_openai_compatible(
+    image_b64: str,
+    system_prompt: str,
+    user_text: str,
+    *,
+    base_url: str | None,
+    api_key: str,
+    model: str,
+    temperature: float,
+    max_tokens: int,
+    route: dict | None,
+) -> str:
+    resp = _openai_client(api_key, base_url).chat.completions.create(
+        model=model,
+        max_tokens=max_tokens,
+        temperature=temperature,
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "image_url",
+                        "image_url": {
+                            "url": f"data:image/png;base64,{image_b64}",
+                            "detail": "high",
+                        },
+                    },
+                    {"type": "text", "text": user_text},
+                ],
+            },
+        ],
+        **({"extra_body": {"provider": route}} if route else {}),
+    )
+    if resp.usage is not None:
+        details = getattr(resp.usage, "prompt_tokens_details", None)
+        USAGE.record_call(
+            inp=resp.usage.prompt_tokens or 0,
+            out=resp.usage.completion_tokens or 0,
+            cache_read=getattr(details, "cached_tokens", 0) or 0,
+            served_by=(resp.model_extra or {}).get("provider"),
+        )
+    if not resp.choices:
+        return ""
+    message = resp.choices[0].message
+    # Some reasoning models leave `content` empty and put the answer in a vendor
+    # field, which reads as a failed call rather than a short reply.
+    text = message.content or ""
+    if text.strip():
+        return text
+    extra = message.model_extra or {}
+    return extra.get("reasoning_content") or extra.get("reasoning") or ""
+
+
+def _call_anthropic(
+    image_b64: str,
+    system_prompt: str,
+    user_text: str,
+    *,
+    api_key: str | None,
+    model: str,
+    temperature: float,
+    max_tokens: int,
+) -> str:
+    msg = _anthropic_client(api_key).messages.create(
+        model=model,
+        max_tokens=max_tokens,
+        temperature=temperature,
+        system=system_prompt,
+        messages=[
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "image",
+                        "source": {
+                            "type": "base64",
+                            "media_type": "image/png",
+                            "data": image_b64,
+                        },
+                    },
+                    {"type": "text", "text": user_text},
+                ],
+            }
+        ],
+    )
+    USAGE.record_call(
+        inp=getattr(msg.usage, "input_tokens", 0) or 0,
+        out=getattr(msg.usage, "output_tokens", 0) or 0,
+        cache_write=getattr(msg.usage, "cache_creation_input_tokens", 0) or 0,
+        cache_read=getattr(msg.usage, "cache_read_input_tokens", 0) or 0,
+    )
+    return "".join(b.text for b in msg.content if getattr(b, "type", None) == "text")
 
 
 def call_vlm(
@@ -532,110 +686,31 @@ def call_vlm(
     route: dict | None = None,
 ) -> str:
     """One VLM call returning raw text, with exponential backoff. "" on failure."""
-    # Resolved before the retry loop: a missing key or unknown provider is a
-    # configuration error, and retrying it five times only to return "" would
-    # present it downstream as a card that failed to score.
-    base_url = api_key = chosen = None
-    if provider in OPENAI_COMPATIBLE:
-        base_url, key_attr, default_model = OPENAI_COMPATIBLE[provider]
-        api_key = getattr(settings, key_attr)
-        if not api_key:
-            raise RuntimeError(
-                f"{key_attr.upper()} is required for --provider {provider}"
-            )
-        chosen = model or default_model
-        if chosen is None:
-            raise RuntimeError(
-                f"--provider {provider} has no default model; pass --model"
-            )
-    elif provider != "anthropic":
-        raise ValueError(
-            f"unknown provider {provider!r}; expected 'anthropic' or one of "
-            f"{sorted(OPENAI_COMPATIBLE)}"
-        )
+    base_url, api_key, chosen = _resolve(provider, model)
 
     for attempt in range(retries):
         try:
-            if provider in OPENAI_COMPATIBLE:
-                from openai import OpenAI
-
-                client = OpenAI(api_key=api_key, base_url=base_url)
-                resp = client.chat.completions.create(
+            if provider == "anthropic":
+                return _call_anthropic(
+                    image_b64,
+                    system_prompt,
+                    user_text,
+                    api_key=api_key,
                     model=chosen,
-                    **({"extra_body": {"provider": route}} if route else {}),
-                    max_tokens=max_tokens,
                     temperature=temperature,
-                    messages=[
-                        {"role": "system", "content": system_prompt},
-                        {
-                            "role": "user",
-                            "content": [
-                                {
-                                    "type": "image_url",
-                                    "image_url": {
-                                        "url": f"data:image/png;base64,{image_b64}",
-                                        "detail": "high",
-                                    },
-                                },
-                                {"type": "text", "text": user_text},
-                            ],
-                        },
-                    ],
+                    max_tokens=max_tokens,
                 )
-                u = resp.usage
-                if u is not None:
-                    details = getattr(u, "prompt_tokens_details", None)
-                    USAGE.record_call(
-                        inp=u.prompt_tokens or 0,
-                        out=u.completion_tokens or 0,
-                        cache_read=getattr(details, "cached_tokens", 0) or 0,
-                        served_by=(resp.model_extra or {}).get("provider"),
-                    )
-                if not resp.choices:
-                    return ""
-                message = resp.choices[0].message
-                # Some reasoning models leave `content` empty and put the answer
-                # in a vendor field. Empty content with a large completion_tokens
-                # is that case, not a short reply.
-                text = message.content or ""
-                if not text.strip():
-                    extra = message.model_extra or {}
-                    text = extra.get("reasoning_content") or extra.get("reasoning") or ""
-                return text
-
-            import anthropic
-
-            msg = anthropic.Anthropic(api_key=settings.anthropic_api_key).messages.create(
-                model=model or settings.llm_model,
-                max_tokens=max_tokens,
+            return _call_openai_compatible(
+                image_b64,
+                system_prompt,
+                user_text,
+                base_url=base_url,
+                api_key=api_key,
+                model=chosen,
                 temperature=temperature,
-                system=system_prompt,
-                messages=[
-                    {
-                        "role": "user",
-                        "content": [
-                            {
-                                "type": "image",
-                                "source": {
-                                    "type": "base64",
-                                    "media_type": "image/png",
-                                    "data": image_b64,
-                                },
-                            },
-                            {"type": "text", "text": user_text},
-                        ],
-                    }
-                ],
+                max_tokens=max_tokens,
+                route=route,
             )
-            u = msg.usage
-            USAGE.record_call(
-                inp=getattr(u, "input_tokens", 0) or 0,
-                out=getattr(u, "output_tokens", 0) or 0,
-                cache_write=getattr(u, "cache_creation_input_tokens", 0) or 0,
-                cache_read=getattr(u, "cache_read_input_tokens", 0) or 0,
-            )
-            blocks = [b.text for b in msg.content if getattr(b, "type", None) == "text"]
-            return blocks[0] if blocks else ""
         except Exception as e:
             USAGE.record_failure()
             log.warning(f"{provider} call failed (attempt {attempt + 1}/{retries}): {e}")
@@ -659,24 +734,21 @@ class CardScorer:
     # The paper restricts its study to epsilon = 0 and T = 1; these match.
     ssr_temperature: float = 1.0
     ssr_epsilon: float = 0.0
-    _explanations: dict = field(default_factory=dict, init=False, repr=False)
 
-    def score(
-        self,
-        image: Image.Image,
-        *,
-        occasion: str = "",
-        headline: str = "",
-        inside_message: str = "",
-    ) -> dict:
-        """Return {dimension: 0-1 score} plus SSR detail and explanations.
+    def _call(self, b64: str, system: str, user: str, *, temperature: float, max_tokens: int) -> str:
+        return call_vlm(
+            b64,
+            system,
+            user,
+            provider=self.provider,
+            model=self.model,
+            route=self.route,
+            temperature=temperature,
+            max_tokens=max_tokens,
+        )
 
-        Dimensions whose judge call fails are omitted rather than defaulted, so
-        a failure cannot masquerade as a low score.
-        """
-        b64 = image_to_b64(image)
-        out: dict = {}
-
+    def _purchase_intent(self, b64: str, occasion: str, headline: str) -> dict:
+        """SSR over every persona sample that produced usable text."""
         context = f"a greeting card for {occasion}" if occasion else "a greeting card"
         if headline:
             context += f' with the headline "{headline}"'
@@ -688,19 +760,15 @@ class CardScorer:
         pmfs, scores, replies = [], [], []
         for profile in self.profiles:
             for _ in range(self.samples_per_persona):
-                reply = call_vlm(
+                reply = self._call(
                     b64,
-                    _persona_prompt(profile),
+                    persona_prompt(profile),
                     question,
-                    provider=self.provider,
-                    model=self.model,
-                    route=self.route,
                     temperature=SSR_ELICITATION_TEMPERATURE,
                     max_tokens=200,
                 )
-                # A failed call previously became a stand-in sentence, which SSR
-                # then scored — turning silence into a confident mid-scale
-                # number. Drop it instead, as the rubric path already does.
+                # A failed call must not be stood in for: SSR would score the
+                # substitute, turning silence into a confident mid-scale number.
                 if not reply.strip():
                     continue
                 r = ssr_score(reply, self.ssr_temperature, self.ssr_epsilon)
@@ -708,26 +776,43 @@ class CardScorer:
                 scores.append(r["score"])
                 replies.append(reply)
 
-        if scores:
-            out["purchase_intent"] = float(np.mean(scores))
-            out["purchase_intent_std"] = float(np.std(scores))
-            out["purchase_intent_pmf"] = np.mean(pmfs, axis=0).tolist()
-            out["purchase_intent_n"] = len(scores)
-        else:
+        if not scores:
             log.warning("No usable SSR replies; omitting purchase_intent")
+            return {"ssr_responses": []}
+        return {
+            "purchase_intent": float(np.mean(scores)),
+            "purchase_intent_std": float(np.std(scores)),
+            "purchase_intent_pmf": np.mean(pmfs, axis=0).tolist(),
+            "purchase_intent_n": len(scores),
+            "ssr_responses": replies,
+        }
+
+    def score(
+        self,
+        image: Image.Image,
+        *,
+        occasion: str = "",
+        headline: str = "",
+        inside_message: str = "",
+    ) -> dict:
+        """Return {dimension: 0-1 score} plus SSR detail and explanations.
+
+        Dimensions whose call fails are omitted rather than defaulted, so a
+        failure cannot masquerade as a low score.
+        """
+        b64 = image_to_b64(image)
+        out: dict = self._purchase_intent(b64, occasion, headline)
 
         meta = (
             f"Occasion: {occasion}\nHeadline: {headline}\n"
             f"Inside message: {inside_message}\n\n"
         )
+        explanations: dict[str, str] = {}
         for dim in RUBRIC_DIMS:
-            reply = call_vlm(
+            reply = self._call(
                 b64,
                 JUDGE_SYSTEM_PROMPT,
                 meta + rubric_prompt(dim),
-                provider=self.provider,
-                model=self.model,
-                route=self.route,
                 temperature=JUDGE_TEMPERATURE,
                 max_tokens=1024,
             )
@@ -737,8 +822,7 @@ class CardScorer:
                 continue
             out[dim] = (rating - 1) / 9
             out[f"{dim}_raw_1_10"] = rating
-            self._explanations[dim] = reply
+            explanations[dim] = reply
 
-        out["ssr_responses"] = replies
-        out["explanations"] = dict(self._explanations)
+        out["explanations"] = explanations
         return out
