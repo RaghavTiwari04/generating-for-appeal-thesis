@@ -24,7 +24,6 @@ import pandas as pd
 from scipy.stats import spearmanr
 from sklearn.linear_model import Ridge
 from sklearn.metrics import roc_auc_score
-from sklearn.model_selection import cross_val_predict
 
 from common.logging import get_logger
 from models.predictor.calibrate import (
@@ -36,6 +35,16 @@ from models.predictor.calibrate import (
 from models.predictor.infer import CardFeatures, PredictorRunner
 
 log = get_logger(__name__)
+
+
+@dataclass
+class BaselineTrainingData:
+    """The training split, so baselines can be fitted where the predictor was."""
+
+    image_embeddings: np.ndarray
+    occasion_features: np.ndarray
+    targets: np.ndarray
+    test_image_embeddings: np.ndarray
 
 
 @dataclass
@@ -62,6 +71,7 @@ def evaluate(
     reference_purchase_intent: np.ndarray,
     per_head_targets: dict[str, np.ndarray],
     baseline_features: pd.DataFrame | None = None,
+    train_baseline: BaselineTrainingData | None = None,
     out_dir: str | Path = "./artifacts/predictor_eval",
 ) -> PredictorEvalReport:
     out = Path(out_dir)
@@ -97,7 +107,7 @@ def evaluate(
         sale_pred,
         reference_purchase_intent,
         baseline_features=baseline_features,
-        image_embeddings=np.stack([f.image_emb for f in features]) if features else None,
+        train_baseline=train_baseline,
     )
 
     report = PredictorEvalReport(
@@ -122,18 +132,21 @@ def evaluate(
     return report
 
 
-def _cv_spearman(X: np.ndarray, targets: np.ndarray, *, folds: int = 5) -> float:
-    """Out-of-fold Spearman for a ridge fit on X.
+def _fit_predict_spearman(
+    train_X: np.ndarray, train_y: np.ndarray, test_X: np.ndarray, test_y: np.ndarray
+) -> float:
+    """Spearman for a ridge fitted on train and scored on test.
 
-    Baselines were previously fitted and scored on the same rows, so their
-    numbers were in-sample while the predictor's were held out. That flatters
-    the baseline, which makes a win over it less convincing than it looks.
-    Cross-validated predictions put both on held-out footing.
+    Cross-validating inside the test split would be the easier exam: plain
+    K-fold ignores seller groups, so the baseline could fit one card by a seller
+    and predict another by the same seller, while the predictor trains on
+    strictly disjoint sellers. Giving the baseline the same split the predictor
+    had is the only comparison that means anything.
     """
-    if len(targets) < folds * 2:
+    if len(train_y) < 10 or len(test_y) < 10:
         return float("nan")
-    pred = cross_val_predict(Ridge(alpha=1.0), X, targets, cv=folds)
-    return float(spearmanr(pred, targets)[0] or 0.0)
+    ridge = Ridge(alpha=1.0).fit(train_X, train_y)
+    return float(spearmanr(ridge.predict(test_X), test_y)[0] or 0.0)
 
 
 def _baselines(
@@ -141,20 +154,31 @@ def _baselines(
     targets: np.ndarray,
     *,
     baseline_features: pd.DataFrame | None,
-    image_embeddings: np.ndarray | None = None,
+    train_baseline: BaselineTrainingData | None = None,
 ) -> dict[str, float]:
     out: dict[str, float] = {}
     rng = np.random.default_rng(0)
     out["random_spearman"] = float(spearmanr(rng.random(len(targets)), targets)[0] or 0.0)
 
+    if train_baseline is None:
+        return out
+
     if baseline_features is not None and not baseline_features.empty:
-        out["ridge_handcrafted_spearman"] = _cv_spearman(
-            baseline_features.to_numpy(dtype=float), targets
+        out["ridge_handcrafted_spearman"] = _fit_predict_spearman(
+            train_baseline.occasion_features,
+            train_baseline.targets,
+            baseline_features.to_numpy(dtype=float),
+            targets,
         )
 
     # The control that matters: a linear read-out of the same frozen features
-    # the predictor consumes. Beating occasion alone only shows the images carry
-    # signal; beating this shows the trunk earns its place.
-    if image_embeddings is not None and len(image_embeddings):
-        out["ridge_image_embedding_spearman"] = _cv_spearman(image_embeddings, targets)
+    # the predictor consumes, fitted on the same split. Beating occasion alone
+    # only shows the images carry signal; beating this shows the trunk earns
+    # its place.
+    out["ridge_image_embedding_spearman"] = _fit_predict_spearman(
+        train_baseline.image_embeddings,
+        train_baseline.targets,
+        train_baseline.test_image_embeddings,
+        targets,
+    )
     return out

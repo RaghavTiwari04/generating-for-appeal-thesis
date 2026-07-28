@@ -32,6 +32,8 @@ from models.predictor.infer import CardFeatures, PredictorRunner
 
 log = get_logger(__name__)
 
+_PI = HEAD_NAMES.index("purchase_intent")
+
 
 def _dataset_to_features(ds: PredictorDataset) -> tuple[
     list[CardFeatures], np.ndarray, dict[str, np.ndarray]
@@ -109,6 +111,7 @@ def run(
     embedder = CLIPEmbedder()
     ds = PredictorDataset(test_df, text_embedder=embedder.embed_texts)
     predictor = PredictorRunner(ckpt, calib_path)
+    train_ds = PredictorDataset(splits["train"], text_embedder=None)
 
     log.info("Extracting features...")
     features, pi_targets, head_targets = _dataset_to_features(ds)
@@ -119,7 +122,18 @@ def run(
     features_pi = [f for f, m in zip(features, pi_mask, strict=False) if m]
     pi_valid = pi_targets[pi_mask]
 
-    from eval.predictor_eval import evaluate
+    from eval.predictor_eval import BaselineTrainingData, evaluate
+
+    # Baselines are fitted on the training split, the same data the predictor
+    # saw, so the comparison is like for like.
+    train_baseline = BaselineTrainingData(
+        image_embeddings=np.stack([train_ds[i]["image_emb"].numpy() for i in range(len(train_ds))]),
+        occasion_features=_baseline_features(splits["train"]).to_numpy(dtype=float),
+        targets=np.array(
+            [float(train_ds[i]["targets"][_PI].item()) for i in range(len(train_ds))]
+        ),
+        test_image_embeddings=np.stack([f.image_emb for f in features_pi]),
+    )
 
     report = evaluate(
         predictor=predictor,
@@ -130,6 +144,7 @@ def run(
             for name, vals in head_targets.items()
         },
         baseline_features=_baseline_features(test_df[pi_mask]),
+        train_baseline=train_baseline,
         out_dir=out_dir,
     )
 
