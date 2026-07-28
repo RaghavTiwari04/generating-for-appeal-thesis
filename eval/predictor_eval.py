@@ -45,6 +45,12 @@ class BaselineTrainingData:
     occasion_features: np.ndarray
     targets: np.ndarray
     test_image_embeddings: np.ndarray
+    # The predictor's full input, concatenated. Separates "the trunk overfits"
+    # from "the extra inputs do not help": if a linear model on everything beats
+    # one on the image alone, the inputs earn their place and the architecture
+    # is the problem.
+    full_features: np.ndarray | None = None
+    test_full_features: np.ndarray | None = None
 
 
 @dataclass
@@ -181,4 +187,12 @@ def _baselines(
         train_baseline.test_image_embeddings,
         targets,
     )
+
+    if train_baseline.full_features is not None:
+        out["ridge_all_inputs_spearman"] = _fit_predict_spearman(
+            train_baseline.full_features,
+            train_baseline.targets,
+            train_baseline.test_full_features,
+            targets,
+        )
     return out

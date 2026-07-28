@@ -111,7 +111,7 @@ def run(
     embedder = CLIPEmbedder()
     ds = PredictorDataset(test_df, text_embedder=embedder.embed_texts)
     predictor = PredictorRunner(ckpt, calib_path)
-    train_ds = PredictorDataset(splits["train"], text_embedder=None)
+    train_ds = PredictorDataset(splits["train"], text_embedder=embedder.embed_texts)
 
     log.info("Extracting features...")
     features, pi_targets, head_targets = _dataset_to_features(ds)
@@ -126,13 +126,29 @@ def run(
 
     # Baselines are fitted on the training split, the same data the predictor
     # saw, so the comparison is like for like.
+    def _stack(ds, key):
+        return np.stack([ds[i][key].numpy() for i in range(len(ds))])
+
+    def _concat(images, texts, occ_onehot):
+        return np.hstack([images, texts, occ_onehot])
+
+    train_occ = _baseline_features(splits["train"]).to_numpy(dtype=float)
+    test_occ = _baseline_features(test_df[pi_mask]).to_numpy(dtype=float)
     train_baseline = BaselineTrainingData(
-        image_embeddings=np.stack([train_ds[i]["image_emb"].numpy() for i in range(len(train_ds))]),
-        occasion_features=_baseline_features(splits["train"]).to_numpy(dtype=float),
+        image_embeddings=_stack(train_ds, "image_emb"),
+        occasion_features=train_occ,
         targets=np.array(
             [float(train_ds[i]["targets"][_PI].item()) for i in range(len(train_ds))]
         ),
         test_image_embeddings=np.stack([f.image_emb for f in features_pi]),
+        full_features=_concat(
+            _stack(train_ds, "image_emb"), _stack(train_ds, "text_emb"), train_occ
+        ),
+        test_full_features=_concat(
+            np.stack([f.image_emb for f in features_pi]),
+            np.stack([f.text_emb for f in features_pi]),
+            test_occ,
+        ),
     )
 
     report = evaluate(
