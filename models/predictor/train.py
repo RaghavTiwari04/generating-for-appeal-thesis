@@ -260,6 +260,8 @@ def train(
     head_hidden: int = 128,
     dropout: float = 0.1,
     occasion_emb_dim: int = 32,
+    skip_connection: bool = True,
+    input_norm: bool = True,
     early_stop_patience: int = 5,
     seed: int = 42,
     seeds: int = 1,
@@ -281,6 +283,8 @@ def train(
         head_hidden=head_hidden,
         dropout=dropout,
         occasion_emb_dim=occasion_emb_dim,
+        skip_connection=skip_connection,
+        input_norm=input_norm,
     )
 
     if cfg.wandb_enabled and settings.wandb_api_key:

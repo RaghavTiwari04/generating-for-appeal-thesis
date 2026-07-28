@@ -59,6 +59,16 @@ class PredictorConfig:
     trunk_hidden: int = 512
     head_hidden: int = 128
     dropout: float = 0.1
+    # A ridge probe on these same features beat the trunk on every head. A
+    # linear path from input to output makes the network a strict superset of
+    # that probe, so it can only lose to one through an optimisation failure
+    # rather than through its hypothesis space.
+    skip_connection: bool = True
+    # SigLIP embeddings are L2-normalised over 768 dimensions, so components sit
+    # around 0.04. Ridge is scale-invariant through its closed form; gradient
+    # descent is not, and small inputs mean small gradients into the first
+    # layer.
+    input_norm: bool = True
     head_names: tuple[str, ...] = field(default_factory=lambda: HEAD_NAMES)
 
 
@@ -85,6 +95,10 @@ class SaleabilityPredictor(nn.Module):
             + self.cfg.occasion_emb_dim
         )
 
+        self.input_norm = (
+            nn.LayerNorm(in_dim) if self.cfg.input_norm else nn.Identity()
+        )
+
         self.trunk = nn.Sequential(
             nn.Linear(in_dim, self.cfg.trunk_hidden),
             nn.GELU(),
@@ -105,6 +119,14 @@ class SaleabilityPredictor(nn.Module):
             }
         )
 
+        self.skips = (
+            nn.ModuleDict(
+                {name: nn.Linear(in_dim, 1) for name in self.cfg.head_names}
+            )
+            if self.cfg.skip_connection
+            else None
+        )
+
     def forward(
         self,
         image_emb: torch.Tensor,
@@ -112,9 +134,15 @@ class SaleabilityPredictor(nn.Module):
         occasion_idx: torch.Tensor,
     ) -> dict[str, torch.Tensor]:
         occ = self.occasion_emb(occasion_idx)
-        x = torch.cat([image_emb, text_emb, occ], dim=-1)
+        x = self.input_norm(torch.cat([image_emb, text_emb, occ], dim=-1))
         z = self.trunk(x)
-        return {name: torch.sigmoid(head(z)).squeeze(-1) for name, head in self.heads.items()}
+        out = {}
+        for name, head in self.heads.items():
+            logit = head(z)
+            if self.skips is not None:
+                logit = logit + self.skips[name](x)
+            out[name] = torch.sigmoid(logit).squeeze(-1)
+        return out
 
 
 def head_loss_weights(purchase_intent_factor: float = 2.0) -> dict[str, float]:
