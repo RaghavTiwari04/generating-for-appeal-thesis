@@ -9,9 +9,22 @@ Backbone is set by CLIP_MODEL_ID. Note the pooling below reads
 head) but not for CLIP, where the projected `get_image_features()` is wanted —
 so swapping to a CLIP checkpoint needs a code change, not just the env var.
 
-The processor resizes to a square, so portrait cards are distorted or cropped.
-That applies to every CLIP-style backbone and is a limitation of the approach
-rather than of this checkpoint.
+Two knobs address what the backbone would otherwise lose on card images:
+
+  CLIP_PAD_SQUARE=1  pad to square before the processor rather than letting it
+      squash a portrait card into 384x384. Padding uses the border's median
+      colour, which for card art is usually the background, so the model is not
+      shown hard letterbox edges as a feature.
+
+  CLIP_CROPS=5  embed the whole image plus four quadrants and average. The
+      judge sees these cards at ~1030px while the backbone sees a 384px
+      downsample, so fine typography and print texture — exactly what the
+      aesthetic and distinctiveness dimensions turn on — never reach it.
+      Averaging keeps the result 768-d, so no migration.
+
+Both must match between training and rerank time: pipeline/rerank.py embeds
+candidates live, and a mismatch would silently score them against a different
+feature distribution.
 """
 
 from __future__ import annotations
@@ -49,6 +62,39 @@ class EmbedderConfig:
     device: str = "cuda" if torch.cuda.is_available() else "cpu"
     dtype: torch.dtype = torch.float16 if torch.cuda.is_available() else torch.float32
     batch_size: int = 32
+    pad_to_square: bool = os.environ.get("CLIP_PAD_SQUARE", "0") == "1"
+    # 1 = whole image only. 5 = whole image plus four quadrants, averaged.
+    crops: int = int(os.environ.get("CLIP_CROPS", "1"))
+
+
+def _pad_to_square(img: Image.Image) -> Image.Image:
+    """Letterbox onto a square using the border's median colour.
+
+    The processor resizes to a square regardless, so a portrait card is
+    otherwise squashed — every proportion the model sees is wrong. Padding with
+    the median border colour keeps the geometry without teaching the model a
+    hard edge, since for card art that colour is usually the background.
+    """
+    w, h = img.size
+    if w == h:
+        return img
+    arr = np.asarray(img)
+    edges = np.concatenate([arr[0], arr[-1], arr[:, 0], arr[:, -1]], axis=0)
+    bg = tuple(int(v) for v in np.median(edges, axis=0))
+    side = max(w, h)
+    canvas = Image.new("RGB", (side, side), bg)
+    canvas.paste(img, ((side - w) // 2, (side - h) // 2))
+    return canvas
+
+
+def _quadrants(img: Image.Image) -> list[Image.Image]:
+    w, h = img.size
+    return [
+        img.crop((0, 0, w // 2, h // 2)),
+        img.crop((w // 2, 0, w, h // 2)),
+        img.crop((0, h // 2, w // 2, h)),
+        img.crop((w // 2, h // 2, w, h)),
+    ]
 
 
 class CLIPEmbedder:
@@ -62,20 +108,36 @@ class CLIPEmbedder:
             .eval()
         )
 
+    def _views(self, img: Image.Image) -> list[Image.Image]:
+        """The views of one card that get embedded and averaged."""
+        views = [img] + (_quadrants(img) if self.cfg.crops >= 5 else [])
+        return [_pad_to_square(v) for v in views] if self.cfg.pad_to_square else views
+
     @torch.inference_mode()
-    def embed_images(self, images: Iterable[Image.Image | Path]) -> np.ndarray:
-        imgs = [Image.open(i).convert("RGB") if isinstance(i, (str, Path)) else i for i in images]
-        if not imgs:
-            return np.zeros((0, EMBED_DIM), dtype=np.float32)
+    def _encode(self, imgs: list[Image.Image]) -> np.ndarray:
         out = []
         for i in range(0, len(imgs), self.cfg.batch_size):
             batch = imgs[i : i + self.cfg.batch_size]
             inputs = self.processor(images=batch, return_tensors="pt").to(self.cfg.device)
-            vision_out = self.model.vision_model(**inputs)
-            feats = vision_out.pooler_output
-            feats = torch.nn.functional.normalize(feats, dim=-1)
-            out.append(feats.float().cpu().numpy())
+            feats = self.model.vision_model(**inputs).pooler_output
+            out.append(torch.nn.functional.normalize(feats, dim=-1).float().cpu().numpy())
         return np.concatenate(out, axis=0)
+
+    def embed_images(self, images: Iterable[Image.Image | Path]) -> np.ndarray:
+        imgs = [Image.open(i).convert("RGB") if isinstance(i, (str, Path)) else i for i in images]
+        if not imgs:
+            return np.zeros((0, EMBED_DIM), dtype=np.float32)
+
+        views = [self._views(img) for img in imgs]
+        n_views = len(views[0])
+        feats = self._encode([v for per_image in views for v in per_image])
+        if n_views == 1:
+            return feats
+        # Average the views back to one vector per card, then renormalise so the
+        # result stays a unit vector like the single-view case — dedup and the
+        # predictor both assume that.
+        pooled = feats.reshape(len(imgs), n_views, -1).mean(axis=1)
+        return pooled / np.linalg.norm(pooled, axis=1, keepdims=True)
 
     @torch.inference_mode()
     def embed_texts(self, texts: list[str]) -> np.ndarray:
@@ -174,7 +236,7 @@ def run_embed_missing(
             )
 
         with connection() as conn, conn.cursor() as cur:
-            for listing_id, emb in zip(ids, embeddings):
+            for listing_id, emb in zip(ids, embeddings, strict=True):
                 cur.execute(
                     _UPSERT_FEATURE,
                     {
