@@ -149,6 +149,17 @@ def run(
             np.stack([f.text_emb for f in features_pi]),
             test_occ,
         ),
+        head_targets={
+            name: np.array(
+                [
+                    float(train_ds[i]["targets"][j])
+                    if train_ds[i]["mask"][j]
+                    else float("nan")
+                    for i in range(len(train_ds))
+                ]
+            )
+            for j, name in enumerate(HEAD_NAMES)
+        },
     )
 
     report = evaluate(

@@ -51,6 +51,10 @@ class BaselineTrainingData:
     # is the problem.
     full_features: np.ndarray | None = None
     test_full_features: np.ndarray | None = None
+    # Per-head targets, so the linear control covers every head rather than
+    # purchase intent alone. The MLP now reaches its label ceiling on aesthetic,
+    # so "linear beats the MLP" cannot be assumed to hold across heads.
+    head_targets: dict[str, np.ndarray] | None = None
 
 
 @dataclass
@@ -115,6 +119,14 @@ def evaluate(
         baseline_features=baseline_features,
         train_baseline=train_baseline,
     )
+
+    if train_baseline is not None:
+        baselines.update(
+            {
+                f"ridge_image_{h}": v
+                for h, v in _per_head_baselines(train_baseline, per_head_targets).items()
+            }
+        )
 
     report = PredictorEvalReport(
         spearman_purchase_intent=float(rho_pi or 0.0),
@@ -194,5 +206,26 @@ def _baselines(
             train_baseline.targets,
             train_baseline.test_full_features,
             targets,
+        )
+    return out
+
+
+def _per_head_baselines(
+    train_baseline: BaselineTrainingData, per_head_targets: dict[str, np.ndarray]
+) -> dict[str, float]:
+    """Ridge on the image embedding, fitted per head on the training split."""
+    out: dict[str, float] = {}
+    if train_baseline.head_targets is None:
+        return out
+    for head, test_y in per_head_targets.items():
+        train_y = train_baseline.head_targets.get(head)
+        if train_y is None:
+            continue
+        tr, te = ~np.isnan(train_y), ~np.isnan(test_y)
+        out[head] = _fit_predict_spearman(
+            train_baseline.image_embeddings[tr],
+            train_y[tr],
+            train_baseline.test_image_embeddings[te],
+            test_y[te],
         )
     return out
