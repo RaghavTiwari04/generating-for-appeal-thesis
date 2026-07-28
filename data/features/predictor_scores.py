@@ -32,13 +32,13 @@ DEFAULT_CALIB = Path("./artifacts/predictor/isotonic.joblib")
 
 _SELECT_SQL = """
 SELECT lf.listing_id,
-       lf.clip_embedding,
+       COALESCE(lf.image_features, lf.clip_embedding::real[]) AS clip_embedding,
        lf.extracted_text,
        lf.occasion,
        l.currency
 FROM listing_features lf
 JOIN listings l USING (listing_id)
-WHERE lf.clip_embedding IS NOT NULL
+WHERE COALESCE(lf.image_features, lf.clip_embedding::real[]) IS NOT NULL
   AND lf.occasion IS NOT NULL
   AND (lf.predictor_scores IS NULL OR lf.predictor_scores = 'null'::jsonb)
 ORDER BY l.last_seen_at DESC

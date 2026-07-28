@@ -302,6 +302,14 @@ def train(
     # cards; the spread then measures training variance rather than split luck.
     splits = split_by_seller(df, SplitConfig(seed=cfg.seed))
 
+    # Feature width comes from the data, not a constant: a larger backbone or a
+    # second one concatenated changes it, and the checkpoint records whatever
+    # was used so inference rebuilds the matching shape.
+    image_dim = len(df["clip_embedding"].iloc[0])
+    if image_dim != arch_cfg.image_dim:
+        log.info(f"Image features are {image_dim}-d; adjusting from {arch_cfg.image_dim}")
+        arch_cfg = replace(arch_cfg, image_dim=image_dim)
+
     # Real text vectors, matching what rerank serves. Training on zeros would
     # leave the text block of the trunk untrained.
     text_embedder = None

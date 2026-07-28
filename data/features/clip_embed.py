@@ -22,9 +22,20 @@ Two knobs address what the backbone would otherwise lose on card images:
       aesthetic and distinctiveness dimensions turn on — never reach it.
       Averaging keeps the result 768-d, so no migration.
 
-Both must match between training and rerank time: pipeline/rerank.py embeds
-candidates live, and a mismatch would silently score them against a different
-feature distribution.
+  CLIP_MODEL_ID=a,b  embed with each backbone and concatenate. A second
+      encoder with a different inductive bias — DINOv2 alongside SigLIP —
+      carries texture and visual-similarity structure a single tower does not.
+      The first entry supplies the text tower, since DINOv2 has none.
+
+Anything other than one 768-d backbone no longer fits `clip_embedding`, which
+is VECTOR(768) behind the HNSW index dedup searches. Wider features go to
+`listing_features.image_features` (REAL[], no index) and readers prefer that
+column when it is populated. Dedup is left on the original column so the
+clusters the labelled pool was built from do not move.
+
+All of these must match between training and rerank time: pipeline/rerank.py
+embeds candidates live, and a mismatch would silently score them against a
+different feature distribution.
 """
 
 from __future__ import annotations
@@ -53,11 +64,15 @@ log = get_logger(__name__)
 # siglip-so400m-patch14-384 is stronger again but emits 1152-d, which needs a
 # schema change and a predictor config change.
 DEFAULT_MODEL_ID = os.environ.get("CLIP_MODEL_ID", "google/siglip-base-patch16-384")
-EMBED_DIM = 768  # matches migrations/0001_init.sql VECTOR(768)
+# The width `clip_embedding` can hold; wider features go to image_features.
+VECTOR_COLUMN_DIM = 768
+EMBED_DIM = VECTOR_COLUMN_DIM  # kept for callers that assume the default stack
 
 
 @dataclass
 class EmbedderConfig:
+    # Comma-separated to concatenate backbones; the first supplies the text
+    # tower, since a vision-only encoder such as DINOv2 has none.
     model_id: str = DEFAULT_MODEL_ID
     device: str = "cuda" if torch.cuda.is_available() else "cpu"
     dtype: torch.dtype = torch.float16 if torch.cuda.is_available() else torch.float32
@@ -100,13 +115,29 @@ def _quadrants(img: Image.Image) -> list[Image.Image]:
 class CLIPEmbedder:
     def __init__(self, cfg: EmbedderConfig | None = None):
         self.cfg = cfg or EmbedderConfig()
-        log.info(f"Loading embedder: {self.cfg.model_id} on {self.cfg.device}")
-        self.processor = AutoProcessor.from_pretrained(self.cfg.model_id)
-        self.model = (
-            AutoModel.from_pretrained(self.cfg.model_id, torch_dtype=self.cfg.dtype)
-            .to(self.cfg.device)
-            .eval()
-        )
+        self.model_ids = [m.strip() for m in self.cfg.model_id.split(",") if m.strip()]
+        log.info(f"Loading embedder(s): {', '.join(self.model_ids)} on {self.cfg.device}")
+        self.processors, self.models = [], []
+        for model_id in self.model_ids:
+            self.processors.append(AutoProcessor.from_pretrained(model_id))
+            self.models.append(
+                AutoModel.from_pretrained(model_id, torch_dtype=self.cfg.dtype)
+                .to(self.cfg.device)
+                .eval()
+            )
+        # The text tower is the first backbone's; vision-only encoders have none.
+        self.processor = self.processors[0]
+        self.model = self.models[0]
+
+    @property
+    def source(self) -> str:
+        """Identifies the encoder stack that produced a set of features."""
+        parts = list(self.model_ids)
+        if self.cfg.crops > 1:
+            parts.append(f"crops={self.cfg.crops}")
+        if self.cfg.pad_to_square:
+            parts.append("pad")
+        return "|".join(parts)
 
     def _views(self, img: Image.Image) -> list[Image.Image]:
         """The views of one card that get embedded and averaged."""
@@ -114,14 +145,27 @@ class CLIPEmbedder:
         return [_pad_to_square(v) for v in views] if self.cfg.pad_to_square else views
 
     @torch.inference_mode()
-    def _encode(self, imgs: list[Image.Image]) -> np.ndarray:
+    def _encode_one(self, model, processor, imgs: list[Image.Image]) -> np.ndarray:
         out = []
         for i in range(0, len(imgs), self.cfg.batch_size):
             batch = imgs[i : i + self.cfg.batch_size]
-            inputs = self.processor(images=batch, return_tensors="pt").to(self.cfg.device)
-            feats = self.model.vision_model(**inputs).pooler_output
+            inputs = processor(images=batch, return_tensors="pt").to(self.cfg.device)
+            # SigLIP exposes vision_model; a vision-only encoder is called
+            # directly. Both expose pooler_output.
+            tower = getattr(model, "vision_model", model)
+            feats = tower(**inputs).pooler_output
             out.append(torch.nn.functional.normalize(feats, dim=-1).float().cpu().numpy())
         return np.concatenate(out, axis=0)
+
+    def _encode(self, imgs: list[Image.Image]) -> np.ndarray:
+        # Each backbone's block is unit-normalised before concatenation, so no
+        # one encoder dominates the distance purely by having a larger scale.
+        return np.hstack(
+            [
+                self._encode_one(m, p, imgs)
+                for m, p in zip(self.models, self.processors, strict=True)
+            ]
+        )
 
     def embed_images(self, images: Iterable[Image.Image | Path]) -> np.ndarray:
         imgs = [Image.open(i).convert("RGB") if isinstance(i, (str, Path)) else i for i in images]
@@ -169,13 +213,34 @@ ORDER BY l.last_seen_at DESC
 LIMIT %(limit)s;
 """
 
-_UPSERT_FEATURE = """
-INSERT INTO listing_features (listing_id, clip_embedding, feature_version)
-VALUES (%(listing_id)s, %(embedding)s, %(version)s)
+# 768-d features go to both columns: clip_embedding so dedup's index keeps
+# working, image_features so readers have one column to prefer regardless of
+# width.
+_UPSERT_NARROW = """
+INSERT INTO listing_features
+    (listing_id, clip_embedding, image_features, image_feature_source, feature_version)
+VALUES (%(listing_id)s, %(embedding)s, %(embedding)s, %(source)s, %(version)s)
 ON CONFLICT (listing_id) DO UPDATE
-SET clip_embedding = EXCLUDED.clip_embedding,
-    feature_version = EXCLUDED.feature_version,
-    computed_at = NOW();
+SET clip_embedding       = EXCLUDED.clip_embedding,
+    image_features       = EXCLUDED.image_features,
+    image_feature_source = EXCLUDED.image_feature_source,
+    feature_version      = EXCLUDED.feature_version,
+    computed_at          = NOW();
+"""
+
+# Anything wider than VECTOR(768) cannot enter clip_embedding, so it goes to
+# image_features alone and dedup keeps clustering on the original vectors —
+# re-clustering would move the duplicate groups the labelled pool was built
+# from.
+_UPSERT_WIDE = """
+INSERT INTO listing_features
+    (listing_id, image_features, image_feature_source, feature_version)
+VALUES (%(listing_id)s, %(embedding)s, %(source)s, %(version)s)
+ON CONFLICT (listing_id) DO UPDATE
+SET image_features       = EXCLUDED.image_features,
+    image_feature_source = EXCLUDED.image_feature_source,
+    feature_version      = EXCLUDED.feature_version,
+    computed_at          = NOW();
 """
 
 
@@ -208,6 +273,7 @@ def run_embed_missing(
     if not rows:
         return 0
 
+    log.info(f"Feature source: {embedder.source}")
     processed = failed = 0
     for start in range(0, len(rows), COMMIT_EVERY):
         chunk = rows[start : start + COMMIT_EVERY]
@@ -229,19 +295,20 @@ def run_embed_missing(
 
         embedder.cfg.batch_size = batch_size
         embeddings = embedder.embed_images(imgs)
-        if embeddings.shape[1] != EMBED_DIM:
-            raise RuntimeError(
-                f"{embedder.cfg.model_id} produced {embeddings.shape[1]}-d embeddings, "
-                f"but listing_features.clip_embedding is VECTOR({EMBED_DIM})"
-            )
+        sql = (
+            _UPSERT_NARROW
+            if embeddings.shape[1] == VECTOR_COLUMN_DIM
+            else _UPSERT_WIDE
+        )
 
         with connection() as conn, conn.cursor() as cur:
             for listing_id, emb in zip(ids, embeddings, strict=True):
                 cur.execute(
-                    _UPSERT_FEATURE,
+                    sql,
                     {
                         "listing_id": listing_id,
                         "embedding": emb.tolist(),
+                        "source": embedder.source,
                         "version": feature_version,
                     },
                 )

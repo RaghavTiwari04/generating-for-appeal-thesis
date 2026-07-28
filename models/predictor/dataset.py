@@ -40,7 +40,9 @@ SELECT
     l.listing_id,
     l.seller_id,
     lf.occasion,
-    lf.clip_embedding,
+    -- image_features holds whatever the current encoder stack produced, at
+    -- any width; clip_embedding is the 768-d default that dedup also indexes.
+    COALESCE(lf.image_features, lf.clip_embedding::real[]) AS clip_embedding,
     lf.extracted_text,
     -- LLM labels: rubric judge for the quality dims, SSR for purchase intent
     -- `raw` carries every dimension; `score` is only the sortable summary and
@@ -55,7 +57,7 @@ JOIN saleability_labels sl_vlm
       -- nothing, yet still be forward-passed each epoch, counted in the val
       -- and test splits, and weighted by the occasion sampler.
       AND sl_vlm.label_source = 'llm_ssr_rubric_v2'
-WHERE lf.clip_embedding IS NOT NULL
+WHERE COALESCE(lf.image_features, lf.clip_embedding::real[]) IS NOT NULL
   AND lf.occasion IS NOT NULL;
 """
 
