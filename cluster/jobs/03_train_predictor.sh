@@ -28,9 +28,17 @@ TRUNK="${TRUNK:-512}"
 HEAD_HIDDEN="${HEAD_HIDDEN:-128}"
 DROPOUT="${DROPOUT:-0.1}"
 WEIGHT_DECAY="${WEIGHT_DECAY:-0.01}"
+# 1,792 cards at batch 64 is 28 steps an epoch, so the epoch count is really a
+# step budget: 30 epochs is ~840 steps, and early stopping often ends it around
+# 400. Ridge solves its objective exactly, so an under-trained MLP loses to it
+# for reasons that look like capacity but are not.
+EPOCHS="${EPOCHS:-30}"
+LR="${LR:-1e-4}"
+PATIENCE="${PATIENCE:-5}"
 echo "seeds=$SEEDS trunk=$TRUNK head=$HEAD_HIDDEN dropout=$DROPOUT wd=$WEIGHT_DECAY"
+echo "epochs=$EPOCHS lr=$LR patience=$PATIENCE"
 
-python -m models.predictor.train --epochs 30 --batch-size 64     --seeds "$SEEDS" --trunk-hidden "$TRUNK" --head-hidden "$HEAD_HIDDEN"     --dropout "$DROPOUT" --weight-decay "$WEIGHT_DECAY"
+python -m models.predictor.train --batch-size 64     --epochs "$EPOCHS" --lr "$LR" --early-stop-patience "$PATIENCE"     --seeds "$SEEDS" --trunk-hidden "$TRUNK" --head-hidden "$HEAD_HIDDEN"     --dropout "$DROPOUT" --weight-decay "$WEIGHT_DECAY"
 python -m eval.predictor_eval_standalone
 python -m data.features.predictor_scores
 

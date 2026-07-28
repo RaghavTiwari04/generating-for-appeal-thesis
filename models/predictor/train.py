@@ -260,6 +260,7 @@ def train(
     head_hidden: int = 128,
     dropout: float = 0.1,
     occasion_emb_dim: int = 32,
+    early_stop_patience: int = 5,
     seed: int = 42,
     seeds: int = 1,
     out_dir: str = "./artifacts/predictor",
@@ -270,6 +271,7 @@ def train(
         epochs=epochs, batch_size=batch_size, lr=lr,
         weight_decay=weight_decay,
         purchase_intent_loss_factor=purchase_intent_loss_factor,
+        early_stop_patience=early_stop_patience,
         seed=seed, out_dir=out_dir, wandb_enabled=wandb,
     )
     # Arch overrides so the sweep can vary model size
