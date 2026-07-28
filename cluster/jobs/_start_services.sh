@@ -31,15 +31,26 @@ if [ -n "$PG_MAJOR" ] && [ "$PG_MAJOR" -ge 14 ] 2>/dev/null; then
     PG_START_OPTS="-c recovery_init_sync_method=syncfs"
 fi
 
-# Only one Postgres can own $PG_DIR, so a second job on the same node must
-# attach to the running server rather than start its own. Record which case we
-# are in: a job that did not start the server must not stop it on exit, or it
-# kills the database under whichever job did.
+# Only one Postgres can own $PG_DIR, so a second job landing on the same node
+# finds the port already answering. It cannot use it: SLURM gives each job its
+# own IPC namespace, so the running postmaster's shared memory segment is not
+# reachable from here and any real connection fails with "could not open shared
+# memory segment" — pg_isready succeeds anyway, because it only probes the
+# socket.
+#
+# So test an actual query, and if the port is taken by another job's server,
+# stop rather than proceed into a database that cannot be read.
+PG_STARTED_HERE=1
 if pg_isready -h localhost -p 5433 -q 2>/dev/null; then
-    PG_STARTED_HERE=0
-    echo "Postgres already running on this node — attaching, will not stop it"
-else
-    PG_STARTED_HERE=1
+    if psql -h localhost -p 5433 -d greeting_cards -c 'SELECT 1' >/dev/null 2>&1; then
+        PG_STARTED_HERE=0
+        echo "Postgres already running and reachable — attaching, will not stop it"
+    else
+        echo "FATAL: port 5433 is held by another job's Postgres on $(hostname)." >&2
+        echo "SLURM isolates IPC per job, so it cannot be attached to. Wait for" >&2
+        echo "that job to finish, or submit to a different node." >&2
+        return 1 2>/dev/null || exit 1
+    fi
 fi
 
 # Start Postgres — pg_ctl handles stale PIDs natively.
