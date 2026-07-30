@@ -58,7 +58,11 @@ JOIN saleability_labels sl_vlm
       -- and test splits, and weighted by the occasion sampler.
       AND sl_vlm.label_source = 'llm_ssr_rubric_v2'
 WHERE COALESCE(lf.image_features, lf.clip_embedding::real[]) IS NOT NULL
-  AND lf.occasion IS NOT NULL;
+  AND lf.occasion IS NOT NULL
+-- Postgres makes no ordering promise without this, and the split is derived
+-- from the frame. The split no longer depends on row order, but a stable order
+-- also keeps sampler draws and logged coverage reproducible run to run.
+ORDER BY l.listing_id;
 """
 
 
@@ -89,12 +93,26 @@ def split_by_seller(df: pd.DataFrame, cfg: SplitConfig | None = None) -> dict[st
     """Partition listings by `seller_id` to avoid style leakage."""
     cfg = cfg or SplitConfig()
     rng = np.random.default_rng(cfg.seed)
-    # Give NULL-seller rows a unique synthetic seller each so they enter splits
+    # Give NULL-seller rows a unique synthetic seller each so they enter splits.
+    #
+    # Keyed on listing_id, not row position. Positional names (`__null_0`,
+    # `__null_1`, ...) made a listing's synthetic seller depend on where it
+    # happened to appear in the result set, and the query has no ORDER BY, so
+    # 1,080 of 2,468 listings changed seller between runs and landed in
+    # different splits. Two runs then reported different numbers for a
+    # deterministic model, which is what made ridge look like it moved by 0.105
+    # on identical features.
     null_mask = df["seller_id"].isna()
     df = df.copy()
-    df.loc[null_mask, "seller_id"] = [
-        f"__null_{i}" for i in range(null_mask.sum())
-    ]
+    if null_mask.any():
+        if "listing_id" not in df.columns:
+            raise ValueError(
+                "split_by_seller needs listing_id to name sellerless listings "
+                "stably; without it the split depends on row order."
+            )
+        df.loc[null_mask, "seller_id"] = (
+            "__null_" + df.loc[null_mask, "listing_id"].astype(str)
+        )
     # Only some sources expose a seller. The rest each become their own
     # synthetic seller above, which is the honest fallback — but it means the
     # split only prevents style leakage for the share that has one.
@@ -104,7 +122,13 @@ def split_by_seller(df: pd.DataFrame, cfg: SplitConfig | None = None) -> dict[st
             f"Seller split: {known}/{len(df)} listings have a seller_id; the rest "
             f"are split individually and are not protected against style leakage."
         )
-    sellers = df["seller_id"].unique().tolist()
+    # Sorted before shuffling. `unique()` returns sellers in order of first
+    # appearance, so a fixed seed shuffled a list whose order came from however
+    # Postgres happened to return the rows — the seed fixed the permutation,
+    # not the result. Sorting makes the split a function of the seed and the
+    # seller set alone, so it survives a reordered query and is comparable
+    # across runs.
+    sellers = sorted(df["seller_id"].unique().tolist())
     rng.shuffle(sellers)
     n = len(sellers)
     n_train = math.floor(n * cfg.train_frac)

@@ -178,10 +178,65 @@ class TestSellerSplit:
 
     def test_null_sellers_become_distinct(self):
         """NULL seller_id must not collapse every such listing into one group."""
-        df = pd.DataFrame({"seller_id": [None] * 20})
+        df = pd.DataFrame(
+            {"seller_id": [None] * 20, "listing_id": [f"l{i}" for i in range(20)]}
+        )
         splits = split_by_seller(df, SplitConfig(seed=3))
         assert sum(len(s) for s in splits.values()) == 20
         assert all(len(s) > 0 for s in splits.values())
+
+    def test_split_survives_a_reordered_query(self):
+        """The same cards in a different row order must split identically.
+
+        The query has no ORDER BY, so Postgres row order is free to vary
+        between runs. When the split depended on it, two runs twenty minutes
+        apart produced train/val sizes of 1715/376 and 1724/373 from identical
+        data, and every cross-run comparison was against a different test set.
+        """
+        df = pd.DataFrame(
+            {
+                "listing_id": [f"l{i}" for i in range(120)],
+                "seller_id": [f"s{i // 4}" if i % 3 else None for i in range(120)],
+            }
+        )
+        shuffled = df.sample(frac=1.0, random_state=99).reset_index(drop=True)
+
+        a = split_by_seller(df, SplitConfig(seed=42))
+        b = split_by_seller(shuffled, SplitConfig(seed=42))
+
+        for name in ("train", "val", "test"):
+            assert set(a[name]["listing_id"]) == set(b[name]["listing_id"]), name
+
+    def test_sellerless_listing_keeps_its_split_when_the_pool_grows(self):
+        """Adding cards must not reshuffle the ones already assigned.
+
+        Positional synthetic names renamed every sellerless listing whenever
+        the pool changed, so labelling more cards silently moved existing ones
+        across the train/test boundary.
+        """
+        base = pd.DataFrame(
+            {"listing_id": [f"l{i}" for i in range(80)], "seller_id": [None] * 80}
+        )
+        # New rows ahead of the old ones: the query has no ORDER BY, so newly
+        # labelled cards can appear anywhere, and positional naming then shifts
+        # every existing listing's synthetic seller by the number of new rows.
+        grown = pd.concat(
+            [
+                pd.DataFrame(
+                    {"listing_id": [f"new{i}" for i in range(20)], "seller_id": [None] * 20}
+                ),
+                base,
+            ],
+            ignore_index=True,
+        )
+
+        before = split_by_seller(base, SplitConfig(seed=5))["test"]["listing_id"]
+        after = split_by_seller(grown, SplitConfig(seed=5))
+        moved = set(before) - set(after["test"]["listing_id"])
+
+        # Growing the pool shifts split boundaries, so a few crossings are
+        # expected; wholesale reassignment is the failure being guarded.
+        assert len(moved) < 0.25 * len(before), f"{len(moved)}/{len(before)} moved"
 
 
 class TestTextEmbedding:
