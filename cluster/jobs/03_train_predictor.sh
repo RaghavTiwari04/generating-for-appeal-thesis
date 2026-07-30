@@ -35,9 +35,10 @@ WEIGHT_DECAY="${WEIGHT_DECAY:-0.01}"
 EPOCHS="${EPOCHS:-30}"
 LR="${LR:-1e-4}"
 PATIENCE="${PATIENCE:-5}"
-# SKIP=--no-skip-connection / NORM=--no-input-norm to ablate them.
-SKIP="${SKIP:---skip-connection}"
-NORM="${NORM:---input-norm}"
+# Both measured harmful, so off by default. SKIP=--skip-connection /
+# NORM=--input-norm to reproduce the ablation.
+SKIP="${SKIP:---no-skip-connection}"
+NORM="${NORM:---no-input-norm}"
 echo "seeds=$SEEDS trunk=$TRUNK head=$HEAD_HIDDEN dropout=$DROPOUT wd=$WEIGHT_DECAY"
 echo "epochs=$EPOCHS lr=$LR patience=$PATIENCE"
 

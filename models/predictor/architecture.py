@@ -59,16 +59,19 @@ class PredictorConfig:
     trunk_hidden: int = 512
     head_hidden: int = 128
     dropout: float = 0.1
-    # A ridge probe on these same features beat the trunk on every head. A
-    # linear path from input to output makes the network a strict superset of
-    # that probe, so it can only lose to one through an optimisation failure
-    # rather than through its hypothesis space.
-    skip_connection: bool = True
-    # SigLIP embeddings are L2-normalised over 768 dimensions, so components sit
-    # around 0.04. Ridge is scale-invariant through its closed form; gradient
-    # descent is not, and small inputs mean small gradients into the first
-    # layer.
-    input_norm: bool = True
+    # Both default off: measured, both hurt. The idea was that a linear path
+    # from input to output would make the network a superset of the ridge probe
+    # that beats it, and that normalising the input would fix conditioning for
+    # L2-normalised embeddings whose components sit near 0.04. Instead every
+    # head fell — occasion_fit by 0.120 — and seed spread on that head went from
+    # 0.015 to 0.090, which is optimisation instability, not a capacity gain. A
+    # 1568-to-1 path straight into the logit is a large gradient route at
+    # lr 1e-2, and LayerNorm across the concatenated vector mixes image, text
+    # and occasion blocks of different scales.
+    #
+    # Kept switchable because the ablation is worth reporting.
+    skip_connection: bool = False
+    input_norm: bool = False
     head_names: tuple[str, ...] = field(default_factory=lambda: HEAD_NAMES)
 
 
