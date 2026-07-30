@@ -1,19 +1,23 @@
 """Per-head ridge on the image embedding — the predictor that actually wins.
 
-Measured on the same seller-grouped test split, same pad+crops features, with
-the MLP given the easier task (it gets a validation split for early stopping;
-ridge fits on train alone):
+Measured on the seller-grouped split at seed 42 — 1,727 train, 370 val — with
+pad+crops features, the MLP at 1500 epochs and lr 1e-2, and ridge fitting on
+train alone while the MLP additionally gets the val split for early stopping:
 
-    head                  MLP (5 seeds)   ridge
-    occasion_fit              0.529       0.631
-    aesthetic                 0.661       0.787
-    emotional_resonance       0.357       0.467
-    distinctiveness           0.461       0.625
-    purchase_intent           0.472       0.536
+    head                  MLP (5 seeds)     ridge     gap
+    occasion_fit          0.571 +/- 0.041   0.632     3.3 SE
+    aesthetic             0.800 +/- 0.008   0.830     8.4 SE
+    emotional_resonance   0.512 +/- 0.043   0.565     2.8 SE
+    distinctiveness       0.614 +/- 0.022   0.672     5.9 SE
+    purchase_intent       0.582 +/- 0.017   0.619     4.9 SE
+    best-of-8 recovered   71.6% +/- 0.9%    73.6%     ~5 SE
 
-Seed sd on the MLP is about 0.007, so every gap is many standard deviations.
-Best-of-8 recovery, which is what reranking is actually judged on, goes 66.4%
-to 71.4%.
+Ridge leads on every head and on the selection task the pipeline performs.
+
+These are the first numbers comparable across runs. Before the split was made
+independent of query row order, each run drew a different test set, and the
+same deterministic ridge reported 0.641 and then 0.536 on unchanged features.
+Any figure predating that fix is not comparable to these.
 
 Image embedding only. A ridge on the predictor's full input — image, text and
 occasion concatenated — scores 0.521 on purchase intent against 0.536 for the

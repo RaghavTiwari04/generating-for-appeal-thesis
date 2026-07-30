@@ -41,10 +41,11 @@ class OrchestratorConfig:
     predictor_calib: Path | None = Path("./artifacts/predictor/isotonic.joblib")
     image_seed_base: int | None = None
     condition_tag: str = "C_pipeline_rerank"
-    # "ridge" is the default because it is the model that ranks best: it leads
-    # the MLP on all five heads on the held-out split and recovers 71.4% of the
-    # best-of-8 gain against the MLP's 66.4%. "mlp" and "llm" stay selectable
-    # so the comparison can be re-run.
+    # "ridge" is the default because it is the model that ranks best. On the
+    # seller-grouped split it leads the MLP on all five heads and recovers
+    # 73.6% of the best-of-8 gain against 71.6% +/- 0.9% over five seeds — a
+    # gap of about five standard errors. "mlp" and "llm" stay selectable so the
+    # comparison can be re-run.
     scorer: str = "ridge"  # "ridge" | "mlp" | "llm"
 
 
