@@ -154,6 +154,7 @@ def _train_once(
     cfg: TrainConfig,
     arch_cfg: PredictorConfig,
     loaders: dict[str, DataLoader],
+    feature_stats: tuple[torch.Tensor, torch.Tensor] | None,
     device: torch.device,
     out: Path,
     wandb_run: Any,
@@ -170,6 +171,8 @@ def _train_once(
     )
 
     model = SaleabilityPredictor(arch_cfg).to(device)
+    if feature_stats is not None:
+        model.set_feature_stats(*feature_stats)
     opt = torch.optim.AdamW(model.parameters(), lr=cfg.lr, weight_decay=cfg.weight_decay)
     sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=cfg.epochs)
     weights = head_loss_weights(cfg.purchase_intent_loss_factor)
@@ -277,6 +280,7 @@ def train(
     occasion_emb_dim: int = 32,
     skip_connection: bool = False,
     input_norm: bool = False,
+    standardise: bool = False,
     early_stop_patience: int = 150,
     seed: int = 42,
     seeds: int = 5,
@@ -299,6 +303,7 @@ def train(
         occasion_emb_dim=occasion_emb_dim,
         skip_connection=skip_connection,
         input_norm=input_norm,
+        standardise=standardise,
     )
 
     if cfg.wandb_enabled and settings.wandb_api_key:
@@ -355,6 +360,24 @@ def train(
         "test": DataLoader(datasets["test"], batch_size=cfg.batch_size),
     }
 
+    # From the training split alone — statistics over val or test would leak
+    # the distribution the model is measured on. Computed once, since the split
+    # and the cached features do not vary by seed.
+    feature_stats = None
+    if arch_cfg.standardise:
+        cached = torch.cat(
+            [
+                torch.stack([datasets["train"][i]["image_emb"] for i in range(len(datasets["train"]))]),
+                torch.stack([datasets["train"][i]["text_emb"] for i in range(len(datasets["train"]))]),
+            ],
+            dim=1,
+        )
+        feature_stats = (cached.mean(0), cached.std(0))
+        log.info(
+            f"Standardising cached features: mean |{feature_stats[0].abs().mean():.4f}|, "
+            f"std {feature_stats[1].mean():.4f} before scaling"
+        )
+
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     out = Path(cfg.out_dir)
     out.mkdir(parents=True, exist_ok=True)
@@ -368,6 +391,7 @@ def train(
             cfg=run_cfg,
             arch_cfg=arch_cfg,
             loaders=loaders,
+            feature_stats=feature_stats,
             device=device,
             out=out,
             wandb_run=wandb_run,

@@ -37,10 +37,32 @@ class OrchestratorConfig:
     n_candidates: int = 8
     top_k: int = 3
     predictor_ckpt: Path = Path("./artifacts/predictor/best.ckpt")
+    predictor_ridge: Path = Path("./artifacts/predictor/ridge.npz")
     predictor_calib: Path | None = Path("./artifacts/predictor/isotonic.joblib")
     image_seed_base: int | None = None
     condition_tag: str = "C_pipeline_rerank"
-    scorer: str = "predictor"  # "predictor" | "llm"
+    # "ridge" is the default because it is the model that ranks best: it leads
+    # the MLP on all five heads on the held-out split and recovers 71.4% of the
+    # best-of-8 gain against the MLP's 66.4%. "mlp" and "llm" stay selectable
+    # so the comparison can be re-run.
+    scorer: str = "ridge"  # "ridge" | "mlp" | "llm"
+
+
+def _load_predictor(cfg: OrchestratorConfig, calib: Path | None):
+    """The scoring model rerank ranks with. Both expose the same `.score()`."""
+    if cfg.scorer == "mlp":
+        from models.predictor.infer import PredictorRunner
+
+        return PredictorRunner(cfg.predictor_ckpt, calib)
+
+    from models.predictor.ridge import RidgePredictor
+
+    if not cfg.predictor_ridge.exists():
+        raise SystemExit(
+            f"No ridge model at {cfg.predictor_ridge}. Fit one with "
+            "`python -m models.predictor.ridge`, or set scorer='mlp'."
+        )
+    return RidgePredictor.load(cfg.predictor_ridge, calib)
 
 
 def generate(request: dict, cfg: OrchestratorConfig | None = None) -> list[Candidate]:
@@ -108,10 +130,9 @@ def generate(request: dict, cfg: OrchestratorConfig | None = None) -> list[Candi
         ranked = rerank_llm(candidates, top_k=cfg.top_k)
     else:
         from data.features.clip_embed import CLIPEmbedder
-        from models.predictor.infer import PredictorRunner
 
         calib = cfg.predictor_calib if (cfg.predictor_calib and cfg.predictor_calib.exists()) else None
-        predictor = PredictorRunner(cfg.predictor_ckpt, calib)
+        predictor = _load_predictor(cfg, calib)
         embedder = CLIPEmbedder()
         ranked = rerank(
             candidates, predictor=predictor, embedder=embedder, top_k=cfg.top_k

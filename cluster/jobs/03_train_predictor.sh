@@ -20,29 +20,41 @@ echo "=== Predictor training ==="
 echo "GPU: $(nvidia-smi --query-gpu=name --format=csv,noheader)"
 echo "Start: $(date)"
 
-# Seeds to average over. One run is not a measurement here: identical configs
-# have differed by 0.12 on a head, so a change cannot be told from noise
-# without the spread.
+# Seeds to average over. One run is not a measurement: seed-to-seed sd on
+# purchase intent is about 0.013, so anything under roughly 0.03 is noise.
 SEEDS="${SEEDS:-5}"
 TRUNK="${TRUNK:-512}"
 HEAD_HIDDEN="${HEAD_HIDDEN:-128}"
 DROPOUT="${DROPOUT:-0.1}"
 WEIGHT_DECAY="${WEIGHT_DECAY:-0.01}"
 # 1,792 cards at batch 64 is 28 steps an epoch, so the epoch count is really a
-# step budget: 30 epochs is ~840 steps, and early stopping often ends it around
-# 400. Ridge solves its objective exactly, so an under-trained MLP loses to it
-# for reasons that look like capacity but are not.
-EPOCHS="${EPOCHS:-30}"
-LR="${LR:-1e-4}"
-PATIENCE="${PATIENCE:-5}"
+# step budget. These defaults used to be 30 epochs at lr 1e-4 — about 840 steps
+# — which is the configuration measured at 0.510 on purchase intent against
+# 0.586 for the values below. Every comparison the job ran against the ridge
+# baseline while those defaults stood was therefore comparing ridge to a
+# deliberately under-trained MLP, which is exactly the confound to avoid: ridge
+# solves its objective exactly, so an under-trained MLP loses to it for reasons
+# that look like capacity but are not.
+EPOCHS="${EPOCHS:-1500}"
+LR="${LR:-1e-2}"
+PATIENCE="${PATIENCE:-150}"
 # Both measured harmful, so off by default. SKIP=--skip-connection /
 # NORM=--input-norm to reproduce the ablation.
 SKIP="${SKIP:---no-skip-connection}"
 NORM="${NORM:---no-input-norm}"
+# Per-dimension z-scoring from the training split. Ridge picks its penalty per
+# head by CV; the MLP applies one weight decay to raw embeddings, so this is
+# the closest thing to the advantage ridge gets for free.
+STANDARDISE="${STANDARDISE:---no-standardise}"
 echo "seeds=$SEEDS trunk=$TRUNK head=$HEAD_HIDDEN dropout=$DROPOUT wd=$WEIGHT_DECAY"
-echo "epochs=$EPOCHS lr=$LR patience=$PATIENCE"
+echo "epochs=$EPOCHS lr=$LR patience=$PATIENCE standardise=$STANDARDISE"
 
-python -m models.predictor.train --batch-size 64     --epochs "$EPOCHS" --lr "$LR" --early-stop-patience "$PATIENCE"     --seeds "$SEEDS" --trunk-hidden "$TRUNK" --head-hidden "$HEAD_HIDDEN"     --dropout "$DROPOUT" --weight-decay "$WEIGHT_DECAY" "$SKIP" "$NORM"
+python -m models.predictor.train --batch-size 64     --epochs "$EPOCHS" --lr "$LR" --early-stop-patience "$PATIENCE"     --seeds "$SEEDS" --trunk-hidden "$TRUNK" --head-hidden "$HEAD_HIDDEN"     --dropout "$DROPOUT" --weight-decay "$WEIGHT_DECAY" "$SKIP" "$NORM" "$STANDARDISE"
+
+# The linear control, fitted on the same split. It is what reranking uses by
+# default, and it is the bar the MLP has to clear to earn its place.
+python -m models.predictor.ridge
+
 python -m eval.predictor_eval_standalone
 python -m data.features.predictor_scores
 

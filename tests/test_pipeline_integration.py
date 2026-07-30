@@ -209,8 +209,10 @@ class TestOrchestrator:
             "pipeline.orchestrator.put_image": MagicMock(return_value=("abc", "s3://bucket/key")),
         }
 
+    @pytest.mark.parametrize("scorer", ["ridge", "mlp"])
     def test_orchestrator_returns_candidates(
-        self, dummy_brief: Brief, dummy_cover: Image.Image, dummy_scores: dict
+        self, dummy_brief: Brief, dummy_cover: Image.Image, dummy_scores: dict,
+        scorer: str, tmp_path: Path,
     ) -> None:
         # render_card returns a RenderedCard; the orchestrator reads .image
         # and .text_in_image from it.
@@ -235,6 +237,9 @@ class TestOrchestrator:
              patch("models.predictor.infer.PredictorRunner", return_value=MagicMock(
                  score=MagicMock(return_value=[dummy_scores] * 2)
              )), \
+             patch("models.predictor.ridge.RidgePredictor.load", return_value=MagicMock(
+                 score=MagicMock(return_value=[dummy_scores] * 2)
+             )), \
              patch("data.features.clip_embed.CLIPEmbedder", return_value=MagicMock(
                  embed_images=MagicMock(return_value=np.zeros((2, 768))),
                  embed_texts=MagicMock(return_value=np.zeros((2, 768))),
@@ -243,8 +248,14 @@ class TestOrchestrator:
              patch("pipeline.orchestrator.connection", return_value=conn_ctx):
 
             from pipeline.orchestrator import OrchestratorConfig, generate
+            # The ridge path refuses to run without its artifact, so the file
+            # has to exist even though loading it is patched out.
+            ridge_path = tmp_path / "ridge.npz"
+            ridge_path.touch()
             cfg = OrchestratorConfig(n_candidates=2, top_k=2,
+                                     scorer=scorer,
                                      predictor_ckpt=Path("/dev/null"),
+                                     predictor_ridge=ridge_path,
                                      predictor_calib=None)
             result = generate({"occasion": "birthday/general", "tone": "warm-humorous"}, cfg)
 

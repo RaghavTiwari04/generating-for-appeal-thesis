@@ -15,8 +15,14 @@ from PIL import Image
 from common.logging import get_logger
 
 if TYPE_CHECKING:
+    from typing import Protocol
+
     from data.features.clip_embed import CLIPEmbedder
-    from models.predictor.infer import PredictorRunner
+
+    class Predictor(Protocol):
+        """Either scoring model. The caller picks; rerank only needs scores."""
+
+        def score(self, features: list) -> list[dict[str, float]]: ...
 
 log = get_logger(__name__)
 
@@ -45,11 +51,11 @@ def _compute_saleability(scores: dict[str, float]) -> float:
 def rerank(
     candidates: list[Candidate],
     *,
-    predictor: PredictorRunner,
+    predictor: Predictor,
     embedder: CLIPEmbedder,
     top_k: int | None = None,
 ) -> list[Candidate]:
-    """Rerank via trained predictor (CLIP + MLP). Requires checkpoint."""
+    """Rerank via the trained predictor on cached CLIP features."""
     from models.predictor.infer import CardFeatures
 
     if not candidates:

@@ -61,6 +61,41 @@ class TestCheckpointRoundTrip:
         assert runner.model.cfg.trunk_hidden == 256
         assert runner.model.cfg.head_hidden == 64
 
+    def test_standardiser_statistics_survive_the_round_trip(self):
+        """Buffers must travel with the checkpoint.
+
+        They are fitted on the training split. If they reset to identity on
+        load, inference feeds the trunk unscaled features while the weights
+        expect scaled ones, and nothing about the failure is visible.
+        """
+        arch = PredictorConfig(standardise=True)
+        model = SaleabilityPredictor(arch)
+        mean = torch.full_like(model.feat_mean, 0.25)
+        std = torch.full_like(model.feat_std, 4.0)
+        model.set_feature_stats(mean, std)
+
+        with tempfile.TemporaryDirectory() as d:
+            ckpt = Path(d) / "best.ckpt"
+            torch.save(
+                {"state_dict": model.state_dict(), "config": {}, "arch": asdict(arch)},
+                ckpt,
+            )
+            runner = PredictorRunner(ckpt)
+
+        assert torch.allclose(runner.model.feat_mean.cpu(), mean)
+        assert torch.allclose(runner.model.feat_std.cpu(), std)
+
+    def test_zero_variance_dimension_does_not_produce_infinities(self):
+        """A dimension constant across the corpus has std 0; clamp it."""
+        model = SaleabilityPredictor(PredictorConfig(standardise=True))
+        model.set_feature_stats(
+            torch.zeros_like(model.feat_mean), torch.zeros_like(model.feat_std)
+        )
+        out = model(
+            torch.randn(2, 768), torch.randn(2, 768), torch.zeros(2, dtype=torch.long)
+        )
+        assert all(torch.isfinite(v).all() for v in out.values())
+
     def test_legacy_checkpoint_without_arch_still_loads(self):
         model = SaleabilityPredictor(PredictorConfig())
         with tempfile.TemporaryDirectory() as d:

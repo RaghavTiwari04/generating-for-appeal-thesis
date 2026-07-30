@@ -72,6 +72,14 @@ class PredictorConfig:
     # Kept switchable because the ablation is worth reporting.
     skip_connection: bool = False
     input_norm: bool = False
+    # Per-dimension z-scoring using statistics from the training split, held as
+    # a buffer so inference applies the same shift. This is not `input_norm`:
+    # LayerNorm normalises each sample across a vector that concatenates image,
+    # text and occasion blocks of different scales, which is what made it hurt.
+    # Standardising per dimension against fixed training statistics leaves the
+    # blocks alone and fixes conditioning, which is the part ridge gets for free
+    # by choosing its penalty per head.
+    standardise: bool = False
     head_names: tuple[str, ...] = field(default_factory=lambda: HEAD_NAMES)
 
 
@@ -102,6 +110,18 @@ class SaleabilityPredictor(nn.Module):
             nn.LayerNorm(in_dim) if self.cfg.input_norm else nn.Identity()
         )
 
+        # Buffers, not parameters: they travel with the state dict, so a loaded
+        # checkpoint standardises exactly as it did in training, and the
+        # optimiser never touches them. Identity until `set_feature_stats`
+        # supplies the training statistics.
+        #
+        # Covers the image and text blocks only. The occasion block is a learned
+        # embedding whose distribution moves during training, so statistics
+        # frozen at step 0 would describe nothing and would fight the embedding.
+        cached_dim = self.cfg.image_dim + self.cfg.text_dim
+        self.register_buffer("feat_mean", torch.zeros(cached_dim))
+        self.register_buffer("feat_std", torch.ones(cached_dim))
+
         self.trunk = nn.Sequential(
             nn.Linear(in_dim, self.cfg.trunk_hidden),
             nn.GELU(),
@@ -130,14 +150,28 @@ class SaleabilityPredictor(nn.Module):
             else None
         )
 
+    @torch.no_grad()
+    def set_feature_stats(self, mean: torch.Tensor, std: torch.Tensor) -> None:
+        """Install training-split statistics for the cached feature blocks.
+
+        Clamped because an embedding dimension that is constant across the
+        corpus has zero variance, and dividing by it would put infinities into
+        the first forward pass.
+        """
+        self.feat_mean.copy_(mean.to(self.feat_mean))
+        self.feat_std.copy_(std.to(self.feat_std).clamp(min=1e-6))
+
     def forward(
         self,
         image_emb: torch.Tensor,
         text_emb: torch.Tensor,
         occasion_idx: torch.Tensor,
     ) -> dict[str, torch.Tensor]:
+        cached = torch.cat([image_emb, text_emb], dim=-1)
+        if self.cfg.standardise:
+            cached = (cached - self.feat_mean) / self.feat_std
         occ = self.occasion_emb(occasion_idx)
-        x = self.input_norm(torch.cat([image_emb, text_emb, occ], dim=-1))
+        x = self.input_norm(torch.cat([cached, occ], dim=-1))
         z = self.trunk(x)
         out = {}
         for name, head in self.heads.items():
