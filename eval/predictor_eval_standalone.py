@@ -13,6 +13,7 @@ Usage:
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import numpy as np
@@ -83,6 +84,47 @@ def _baseline_features(df: pd.DataFrame) -> pd.DataFrame:
     return pd.get_dummies(
         df["occasion"].fillna("birthday/general"), prefix="occ", dtype=float
     ).reset_index(drop=True)
+
+
+def _seed_spread(
+    ckpt_dir: Path,
+    calib_path: Path | None,
+    features: list,
+    targets: np.ndarray,
+) -> dict[str, float]:
+    """Best-of-N recovery across every seed the training run produced.
+
+    The report's headline recovery comes from `best.ckpt`, which is one seed —
+    whichever validated best. Purchase-intent Spearman varies by about 0.03 sd
+    across seeds, so a single checkpoint's recovery is a one-sample draw. Read
+    against a deterministic ridge it looked decisive in both directions on
+    consecutive runs: 77.0% versus 76.5% one session, 67.1% versus 71.4% the
+    next. Neither gap meant anything without this spread.
+    """
+    from eval.predictor_eval import best_of_n
+
+    ckpts = sorted(ckpt_dir.glob("seed_*.ckpt"))
+    if len(ckpts) < 2:
+        return {}
+
+    recovered = []
+    for path in ckpts:
+        runner = PredictorRunner(path, calib_path)
+        preds = np.array([s["purchase_intent"] for s in runner.score(features)])
+        result = best_of_n(preds, targets)
+        if result:
+            recovered.append(result["recovered"])
+
+    if not recovered:
+        return {}
+    vals = np.array(recovered)
+    return {
+        "seeds": float(len(vals)),
+        "recovered_mean": float(vals.mean()),
+        "recovered_sd": float(vals.std(ddof=1)) if len(vals) > 1 else 0.0,
+        "recovered_min": float(vals.min()),
+        "recovered_max": float(vals.max()),
+    }
 
 
 def run(
@@ -175,6 +217,22 @@ def run(
         out_dir=out_dir,
     )
 
+    # Written after `evaluate`, which owns report.json — this needs every seed
+    # checkpoint, which only exists once training has finished.
+    spread = _seed_spread(ckpt.parent, calib_path, features_pi, pi_valid)
+    if spread:
+        ridge = report.best_of_n.get("ridge_recovered", float("nan"))
+        log.info(
+            f"Best-of-8 recovery over {int(spread['seeds'])} seeds: "
+            f"{spread['recovered_mean']:.1%} +/- {spread['recovered_sd']:.1%} "
+            f"(range {spread['recovered_min']:.1%}-{spread['recovered_max']:.1%}) "
+            f"vs ridge {ridge:.1%}"
+        )
+        path = out_dir / "report.json"
+        data = json.loads(path.read_text())
+        data["best_of_n_seed_spread"] = spread
+        path.write_text(json.dumps(data, indent=2))
+
     log.info(
         f"\nResults:\n"
         f"  Spearman vs purchase intent : {report.spearman_purchase_intent:.3f}\n"
@@ -185,10 +243,8 @@ def run(
 
     # Generate reliability plot if matplotlib available
     try:
-        import json as _json
-
         from eval.reports.figures import fig4_reliability
-        cal = _json.loads((out_dir / "calibration.json").read_text())
+        cal = json.loads((out_dir / "calibration.json").read_text())
         fig4_reliability(cal, out_dir / "reliability.png")
         log.info("Reliability plot saved")
     except Exception as e:
