@@ -64,6 +64,55 @@ class PredictorEvalReport:
     per_head_spearman: dict[str, float]
     ece: float
     baselines: dict[str, float]
+    best_of_n: dict[str, float]
+
+
+def best_of_n(
+    predictions: np.ndarray,
+    targets: np.ndarray,
+    *,
+    n: int = 8,
+    trials: int = 20_000,
+    seed: int = 0,
+) -> dict[str, float]:
+    """Score the predictor at the job it actually does: pick 1 of N.
+
+    Spearman measures agreement over the whole test set, but reranking only
+    ever chooses among N candidates and only the winner matters. The two come
+    apart — a model can order the full range well and still fail among N
+    similar cards.
+
+    Draws random N-card subsets and reports, in judge-score units:
+
+      picked   what the predictor's choice scores
+      random   what one draw scores, which is what condition B does
+      oracle   the best card available in that subset, the ceiling
+      recovered  (picked - random) / (oracle - random), the share of the
+                 achievable gain that reranking captures
+
+    `recovered` is the B-versus-C contrast measured before a single card is
+    generated: 1.0 means reranking always finds the best of the N, 0.0 means it
+    does no better than picking at random.
+    """
+    if len(targets) < n + 1:
+        return {}
+    rng = np.random.default_rng(seed)
+    idx = rng.integers(0, len(targets), size=(trials, n))
+
+    subsets = targets[idx]
+    picked = subsets[np.arange(trials), predictions[idx].argmax(axis=1)]
+    oracle = subsets.max(axis=1)
+    random_pick = subsets[:, 0]
+
+    gain = oracle.mean() - random_pick.mean()
+    return {
+        "n": float(n),
+        "picked": float(picked.mean()),
+        "random": float(random_pick.mean()),
+        "oracle": float(oracle.mean()),
+        "recovered": float((picked.mean() - random_pick.mean()) / gain) if gain else float("nan"),
+        "top1_accuracy": float((picked == oracle).mean()),
+    }
 
 
 def _top_quartile_auc(predictions: np.ndarray, targets: np.ndarray) -> float:
@@ -128,12 +177,21 @@ def evaluate(
             }
         )
 
+    bon = best_of_n(sale_pred, reference_purchase_intent)
+    if bon:
+        log.info(
+            f"Best-of-{int(bon['n'])}: picked {bon['picked']:.3f} vs random "
+            f"{bon['random']:.3f} vs oracle {bon['oracle']:.3f} — "
+            f"recovers {bon['recovered']:.1%} of the achievable gain"
+        )
+
     report = PredictorEvalReport(
         spearman_purchase_intent=float(rho_pi or 0.0),
         auc_top_quartile=auc,
         per_head_spearman=per_head,
         ece=cal_report.ece,
         baselines=baselines,
+        best_of_n=bon,
     )
     (out / "report.json").write_text(
         json.dumps(
@@ -141,6 +199,7 @@ def evaluate(
                 "spearman_purchase_intent": report.spearman_purchase_intent,
                 "auc_top_quartile": report.auc_top_quartile,
                 "per_head_spearman": report.per_head_spearman,
+                "best_of_n": report.best_of_n,
                 "ece": report.ece,
                 "baselines": report.baselines,
             },
