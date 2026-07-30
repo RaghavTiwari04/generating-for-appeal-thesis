@@ -77,9 +77,18 @@ class EmbedderConfig:
     device: str = "cuda" if torch.cuda.is_available() else "cpu"
     dtype: torch.dtype = torch.float16 if torch.cuda.is_available() else torch.float32
     batch_size: int = 32
-    pad_to_square: bool = os.environ.get("CLIP_PAD_SQUARE", "0") == "1"
+    # Defaults are the configuration that won the feature ablation, and they
+    # have to be defaults rather than env vars: pipeline/rerank.py builds a
+    # CLIPEmbedder() with no environment set, so a candidate would otherwise be
+    # embedded differently from the corpus the predictor trained on.
+    #
+    # Measured on purchase intent, ridge on held-out cards: base+pad+crops 0.641,
+    # base+pad 0.624, base alone 0.601, siglip-large 0.613, base+DINOv2 0.601.
+    # Crops cost four extra forward passes per image and lose a little on the
+    # heads that judge whole-card composition, which averaging quadrants dilutes.
+    pad_to_square: bool = os.environ.get("CLIP_PAD_SQUARE", "1") == "1"
     # 1 = whole image only. 5 = whole image plus four quadrants, averaged.
-    crops: int = int(os.environ.get("CLIP_CROPS", "1"))
+    crops: int = int(os.environ.get("CLIP_CROPS", "5"))
 
 
 def _pad_to_square(img: Image.Image) -> Image.Image:

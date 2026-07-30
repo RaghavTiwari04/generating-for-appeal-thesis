@@ -185,6 +185,22 @@ def evaluate(
             f"recovers {bon['recovered']:.1%} of the achievable gain"
         )
 
+    # The same measurement for the linear baseline. It leads the predictor on
+    # every head, so what it would recover is what shipping it would buy.
+    if train_baseline is not None:
+        ridge_pred = _ridge_predict(
+            train_baseline.image_embeddings,
+            train_baseline.targets,
+            train_baseline.test_image_embeddings,
+        )
+        ridge_bon = best_of_n(ridge_pred, reference_purchase_intent)
+        if ridge_bon:
+            bon.update({f"ridge_{k}": v for k, v in ridge_bon.items()})
+            log.info(
+                f"Best-of-{int(ridge_bon['n'])} (ridge): picked "
+                f"{ridge_bon['picked']:.3f} — recovers {ridge_bon['recovered']:.1%}"
+            )
+
     report = PredictorEvalReport(
         spearman_purchase_intent=float(rho_pi or 0.0),
         auc_top_quartile=auc,
@@ -209,6 +225,13 @@ def evaluate(
     return report
 
 
+def _ridge_predict(
+    train_X: np.ndarray, train_y: np.ndarray, test_X: np.ndarray
+) -> np.ndarray:
+    """Out-of-sample ridge predictions, alpha chosen on the training split."""
+    return RidgeCV(alphas=np.logspace(-3, 4, 22)).fit(train_X, train_y).predict(test_X)
+
+
 def _fit_predict_spearman(
     train_X: np.ndarray, train_y: np.ndarray, test_X: np.ndarray, test_y: np.ndarray
 ) -> float:
@@ -226,8 +249,8 @@ def _fit_predict_spearman(
     # scales with dimensionality, so a fixed value would compare a 768-d feature
     # set against a 1024-d or 1536-d one at different effective regularisation
     # and read the difference as feature quality.
-    ridge = RidgeCV(alphas=np.logspace(-3, 4, 22)).fit(train_X, train_y)
-    return float(spearmanr(ridge.predict(test_X), test_y)[0] or 0.0)
+    pred = _ridge_predict(train_X, train_y, test_X)
+    return float(spearmanr(pred, test_y)[0] or 0.0)
 
 
 def _baselines(
