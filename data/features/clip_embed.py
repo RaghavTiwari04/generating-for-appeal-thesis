@@ -27,11 +27,11 @@ Two knobs address what the backbone would otherwise lose on card images:
       carries texture and visual-similarity structure a single tower does not.
       The first entry supplies the text tower, since DINOv2 has none.
 
-Anything other than one 768-d backbone no longer fits `clip_embedding`, which
-is VECTOR(768) behind the HNSW index dedup searches. Wider features go to
-`listing_features.image_features` (REAL[], no index) and readers prefer that
-column when it is populated. Dedup is left on the original column so the
-clusters the labelled pool was built from do not move.
+Every variant lands in `listing_features.image_features` (REAL[], any width, no
+index), and readers prefer that column when it is populated. `clip_embedding`
+is VECTOR(768) behind the HNSW index dedup searches, and it is written once and
+then left alone: the duplicate clusters the labelled pool was built from came
+out of those vectors, so re-embedding must not move them.
 
 All of these must match between training and rerank time: pipeline/rerank.py
 embeds candidates live, and a mismatch would silently score them against a
@@ -212,41 +212,38 @@ class CLIPEmbedder:
 # ---------------------------------------------------------------------------
 # Bulk job: compute + persist embeddings for listings missing them
 # ---------------------------------------------------------------------------
-_SELECT_MISSING = """
+# Selection is by encoder stack, not by NULL. Gating on `clip_embedding IS
+# NULL` meant a catalogue that had been embedded once could never be re-embedded
+# with a different configuration: the padding and multi-crop settings would be
+# read from the environment, the job would report success, and nothing would
+# change. `image_feature_source` records the stack that produced each row, so a
+# row whose features came from a different one is the definition of stale.
+_SELECT_STALE = """
 SELECT l.listing_id, li.storage_path
 FROM listings l
 JOIN listing_images li ON li.listing_id = l.listing_id AND li.is_primary
 LEFT JOIN listing_features lf ON lf.listing_id = l.listing_id
-WHERE lf.clip_embedding IS NULL
+WHERE lf.image_features IS NULL
+   OR lf.image_feature_source IS DISTINCT FROM %(source)s
 ORDER BY l.last_seen_at DESC
 LIMIT %(limit)s;
 """
 
-# 768-d features go to both columns: clip_embedding so dedup's index keeps
-# working, image_features so readers have one column to prefer regardless of
-# width.
-_UPSERT_NARROW = """
+# image_features always takes the current stack, at whatever width.
+#
+# clip_embedding is filled only when the row has none — COALESCE keeps whatever
+# is already there. It is VECTOR(768) behind the HNSW index dedup searches, and
+# the duplicate clusters the labelled pool was built from came out of those
+# exact vectors. Overwriting them with a re-embed would move cluster boundaries
+# underneath 2,468 existing labels. A fresh catalogue still gets its canonical
+# vectors from the first run, so dedup is never left with nothing.
+_UPSERT_FEATURE = """
 INSERT INTO listing_features
     (listing_id, clip_embedding, image_features, image_feature_source, feature_version)
-VALUES (%(listing_id)s, %(embedding)s, %(embedding)s, %(source)s, %(version)s)
+VALUES (%(listing_id)s, %(vector)s, %(features)s, %(source)s, %(version)s)
 ON CONFLICT (listing_id) DO UPDATE
-SET clip_embedding       = EXCLUDED.clip_embedding,
+SET clip_embedding       = COALESCE(listing_features.clip_embedding, EXCLUDED.clip_embedding),
     image_features       = EXCLUDED.image_features,
-    image_feature_source = EXCLUDED.image_feature_source,
-    feature_version      = EXCLUDED.feature_version,
-    computed_at          = NOW();
-"""
-
-# Anything wider than VECTOR(768) cannot enter clip_embedding, so it goes to
-# image_features alone and dedup keeps clustering on the original vectors —
-# re-clustering would move the duplicate groups the labelled pool was built
-# from.
-_UPSERT_WIDE = """
-INSERT INTO listing_features
-    (listing_id, image_features, image_feature_source, feature_version)
-VALUES (%(listing_id)s, %(embedding)s, %(source)s, %(version)s)
-ON CONFLICT (listing_id) DO UPDATE
-SET image_features       = EXCLUDED.image_features,
     image_feature_source = EXCLUDED.image_feature_source,
     feature_version      = EXCLUDED.feature_version,
     computed_at          = NOW();
@@ -262,7 +259,12 @@ def run_embed_missing(
     feature_version: str = "siglip-base-384-v1",
     batch_size: int = 32,
 ) -> int:
-    """Embed cover images for listings with no CLIP feature. Returns count written.
+    """Embed cover images whose features are missing or from another encoder
+    stack. Returns count written.
+
+    Re-running after changing the backbone, padding or crop settings picks up
+    every row again, because selection compares `image_feature_source` against
+    the current stack rather than testing for NULL.
 
     The default limit covers the whole catalogue: the job script invokes this
     with no arguments, and a small default silently embedded a fraction of the
@@ -275,14 +277,13 @@ def run_embed_missing(
 
     embedder = CLIPEmbedder()
     with connection() as conn, conn.cursor() as cur:
-        cur.execute(_SELECT_MISSING, {"limit": limit})
+        cur.execute(_SELECT_STALE, {"source": embedder.source, "limit": limit})
         rows = cur.fetchall()
 
+    log.info(f"Feature source: {embedder.source}")
     log.info(f"Embedding {len(rows)} listings ({batch_size} per GPU batch)")
     if not rows:
         return 0
-
-    log.info(f"Feature source: {embedder.source}")
     processed = failed = 0
     for start in range(0, len(rows), COMMIT_EVERY):
         chunk = rows[start : start + COMMIT_EVERY]
@@ -304,19 +305,19 @@ def run_embed_missing(
 
         embedder.cfg.batch_size = batch_size
         embeddings = embedder.embed_images(imgs)
-        sql = (
-            _UPSERT_NARROW
-            if embeddings.shape[1] == VECTOR_COLUMN_DIM
-            else _UPSERT_WIDE
-        )
+        # Wider than the vector column means it can only go to image_features;
+        # NULL leaves any existing clip_embedding alone either way.
+        fits_vector_column = embeddings.shape[1] == VECTOR_COLUMN_DIM
 
         with connection() as conn, conn.cursor() as cur:
             for listing_id, emb in zip(ids, embeddings, strict=True):
+                features = emb.tolist()
                 cur.execute(
-                    sql,
+                    _UPSERT_FEATURE,
                     {
                         "listing_id": listing_id,
-                        "embedding": emb.tolist(),
+                        "vector": features if fits_vector_column else None,
+                        "features": features,
                         "source": embedder.source,
                         "version": feature_version,
                     },
