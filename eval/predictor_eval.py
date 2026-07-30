@@ -22,7 +22,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 from scipy.stats import spearmanr
-from sklearn.linear_model import Ridge
+from sklearn.linear_model import RidgeCV
 from sklearn.metrics import roc_auc_score
 
 from common.logging import get_logger
@@ -163,7 +163,11 @@ def _fit_predict_spearman(
     """
     if len(train_y) < 10 or len(test_y) < 10:
         return float("nan")
-    ridge = Ridge(alpha=1.0).fit(train_X, train_y)
+    # Alpha is chosen on the training split rather than fixed. The right penalty
+    # scales with dimensionality, so a fixed value would compare a 768-d feature
+    # set against a 1024-d or 1536-d one at different effective regularisation
+    # and read the difference as feature quality.
+    ridge = RidgeCV(alphas=np.logspace(-3, 4, 22)).fit(train_X, train_y)
     return float(spearmanr(ridge.predict(test_X), test_y)[0] or 0.0)
 
 
