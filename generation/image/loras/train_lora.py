@@ -48,6 +48,12 @@ log = get_logger(__name__)
 # a few dozen designs repeated, and the LoRA would overfit to those while the
 # count suggested otherwise. This is the same collapse `data/labels/vlm_labels`
 # applies before spending judge calls.
+#
+# The representative is always the labelled member. Labelling keeps the lowest
+# listing_id per cluster, and unlabelled rows COALESCE to score 0, so the
+# labelled one sorts first — and on a genuine 0.0 the listing_id tiebreak
+# returns that same row. So the ranking below is over judge scores rather than
+# over a mix of scored and unscored cards.
 _TOP_FOR_OCC_SQL = """
 SELECT storage_path
 FROM (
