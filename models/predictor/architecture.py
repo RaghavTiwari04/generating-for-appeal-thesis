@@ -59,15 +59,16 @@ class PredictorConfig:
     trunk_hidden: int = 512
     head_hidden: int = 128
     dropout: float = 0.1
-    # Both default off: measured, both hurt. The idea was that a linear path
-    # from input to output would make the network a superset of the ridge probe
-    # that beats it, and that normalising the input would fix conditioning for
-    # L2-normalised embeddings whose components sit near 0.04. Instead every
-    # head fell — occasion_fit by 0.120 — and seed spread on that head went from
-    # 0.015 to 0.090, which is optimisation instability, not a capacity gain. A
-    # 1568-to-1 path straight into the logit is a large gradient route at
-    # lr 1e-2, and LayerNorm across the concatenated vector mixes image, text
-    # and occasion blocks of different scales.
+    # Both default off. Every head fell when they were switched on, and seed
+    # spread widened rather than narrowed — optimisation instability, not a
+    # capacity limit. A 1568-to-1 path straight into the logit is a large
+    # gradient route at lr 1e-2, and LayerNorm across the concatenated vector
+    # mixes image, text and occasion blocks of different scales.
+    #
+    # Those runs held lr at 1e-2, which `standardise` below later showed is the
+    # thing that actually breaks: the same collapse appeared there and went away
+    # entirely at lr 1e-4. So this is evidence against these options at that
+    # learning rate, not against the ideas.
     #
     # Kept switchable because the ablation is worth reporting.
     skip_connection: bool = False
@@ -79,6 +80,13 @@ class PredictorConfig:
     # Standardising per dimension against fixed training statistics leaves the
     # blocks alone and fixes conditioning, which is the part ridge gets for free
     # by choosing its penalty per head.
+    #
+    # Requires lr 1e-4. Feature std is about 0.018, so this scales the input by
+    # roughly 55x and first-layer gradients by the square of that; at lr 1e-2
+    # every head collapsed. Paired correctly it is the best MLP measured —
+    # purchase intent 0.604 +/- 0.014 against 0.582 +/- 0.017 without it, and
+    # best-of-8 recovery within one standard error of ridge. Off by default
+    # because the default lr is 1e-2 and the two cannot be changed separately.
     standardise: bool = False
     head_names: tuple[str, ...] = field(default_factory=lambda: HEAD_NAMES)
 

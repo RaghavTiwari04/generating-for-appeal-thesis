@@ -45,6 +45,15 @@ NORM="${NORM:---no-input-norm}"
 # Per-dimension z-scoring from the training split. Ridge picks its penalty per
 # head by CV; the MLP applies one weight decay to raw embeddings, so this is
 # the closest thing to the advantage ridge gets for free.
+#
+# MUST be paired with LR=1e-4. Feature std is about 0.018, so standardising
+# scales the input roughly 55x and first-layer gradients by the square of that.
+# Run at the default lr 1e-2 — and together with a skip connection and weight
+# decay cut to 1e-4 — every head collapsed (purchase intent 0.305, best-of-8
+# recovery 32.8% +/- 12.1%, range 19-51%): an unstable optimisation, not a
+# worse model. At LR=1e-4 it is the best MLP measured: purchase intent
+# 0.604 +/- 0.014 against 0.582 +/- 0.017, and best-of-8 72.7% +/- 2.0%, which
+# is within one standard error of ridge's 73.6%.
 STANDARDISE="${STANDARDISE:---no-standardise}"
 echo "seeds=$SEEDS trunk=$TRUNK head=$HEAD_HIDDEN dropout=$DROPOUT wd=$WEIGHT_DECAY"
 echo "epochs=$EPOCHS lr=$LR patience=$PATIENCE standardise=$STANDARDISE"
