@@ -124,6 +124,8 @@ def generate(request: dict, cfg: OrchestratorConfig | None = None) -> list[Candi
                 brief=brief.model_dump(),
                 occasion=request["occasion"],
                 seed=(cfg.image_seed_base + i) if cfg.image_seed_base is not None else None,
+                text_in_image=card.text_in_image,
+                headline_match=card.match_score,
             )
         )
 
@@ -207,7 +209,17 @@ def _persist(
                             "cover_path": storage_path,
                             "inside_message": cand.inside_message,
                             "headline_text": cand.headline,
-                            "predicted_scores": Jsonb(cand.scores or {}),
+                            # Lettering outcome rides along with the scores so
+                            # the share of cards Flux lettered itself is
+                            # queryable per condition and per LoRA, rather than
+                            # only appearing in a log line.
+                            "predicted_scores": Jsonb(
+                                {
+                                    **(cand.scores or {}),
+                                    "text_in_image": cand.text_in_image,
+                                    "headline_match": cand.headline_match,
+                                }
+                            ),
                             "seed": cand.seed,
                         },
                     )

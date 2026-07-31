@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import io
 import json
+import re
 from pathlib import Path
 
 import numpy as np
@@ -55,10 +56,14 @@ log = get_logger(__name__)
 # returns that same row. So the ranking below is over judge scores rather than
 # over a mix of scored and unscored cards.
 _TOP_FOR_OCC_SQL = """
-SELECT storage_path
+SELECT storage_path, extracted_text
 FROM (
     SELECT DISTINCT ON (COALESCE(lf.duplicate_cluster_id::text, l.listing_id::text))
            li.storage_path,
+           -- OCR of the card front. Captions name the words the card actually
+           -- shows, so the lettering is conditioned on the prompt instead of
+           -- being averaged into the style.
+           lf.extracted_text,
            COALESCE(sl.score, 0) AS score
     FROM listings l
     JOIN listing_features lf USING (listing_id)
@@ -200,10 +205,50 @@ def _caption_images(paths: list[Path]) -> list[str] | None:
     return captions
 
 
+# Longer than a headline is body copy or OCR noise, and quoting a paragraph in
+# the caption would teach the model to fill the card with text.
+_MAX_CAPTION_WORDS = 8
+
+
+def _card_text(raw: object) -> str:
+    """The card's own greeting, cleaned for use inside a caption.
+
+    OCR returns the whole front, so this keeps the leading words — the headline
+    is set largest and reads first — and drops anything that would turn the
+    caption into a paragraph. Quotes are stripped because the caption wraps the
+    result in its own.
+    """
+    if not isinstance(raw, str):
+        return ""
+    words = re.sub(r'["""\'\n\r]+', " ", raw).split()
+    return " ".join(words[:_MAX_CAPTION_WORDS]).strip()
+
+
+def _training_caption(blip_caption: str, card_text: str, occasion_tag: str) -> str:
+    """The prompt one training image is paired with.
+
+    When the card's own words are named, the lettering becomes something the
+    caption varies rather than a constant the style averages over. Without it a
+    LoRA trained on birthday cards learns "Happy Birthday" as part of the look,
+    and then fights the brief's actual headline at generation time.
+
+    Phrased to match `generation.image.headline_text.augment_prompt`, which
+    asks for a greeting "lettered into the design" — training and inference
+    then describe the same thing the same way.
+    """
+    if not blip_caption:
+        return ""
+    caption = f"TOK {blip_caption}, a greeting card for {occasion_tag}"
+    if card_text:
+        caption += f', with the greeting "{card_text}" lettered into the design'
+    return caption
+
+
 def _materialise_training_images(
-    occasion: str, limit: int, dest: Path, *, erase_text: bool = True,
+    occasion: str, limit: int, dest: Path, *, erase_text: bool = False,
     resolution: int = 1024,
-) -> list[Path]:
+) -> list[tuple[Path, str]]:
+    """Fetch training images. Returns (path, card text) so captions can quote it."""
     import pandas as pd
 
     df = pd.read_sql(_TOP_FOR_OCC_SQL, engine(), params={"occasion": occasion, "limit": limit})
@@ -225,7 +270,7 @@ def _materialise_training_images(
             f"{occasion}: top {limit} of {available} distinct designs by saleability"
         )
 
-    paths: list[Path] = []
+    items: list[tuple[Path, str]] = []
     dest.mkdir(parents=True, exist_ok=True)
     # Clear prior runs. `--instance_data_dir` opens every file in the directory
     # as an image, so a leftover metadata.jsonl would crash training, and stale
@@ -245,11 +290,18 @@ def _materialise_training_images(
             img = _pad_to_square(img, resolution)
             out = dest / f"{i:04d}.png"
             img.save(out)
-            paths.append(out)
+            # Blank when the text was erased: quoting words the image no longer
+            # shows would train the model to letter cards that have none.
+            items.append((out, "" if erase_text else _card_text(row["extracted_text"])))
         except Exception as e:
             log.warning(f"Skipping {row['storage_path']}: {e}")
-    log.info(f"Materialised {len(paths)} training images to {dest}")
-    return paths
+
+    with_text = sum(1 for _, t in items if t)
+    log.info(
+        f"Materialised {len(items)} training images to {dest} "
+        f"({with_text} carrying readable card text)"
+    )
+    return items
 
 
 def train(
@@ -259,7 +311,10 @@ def train(
     lr: float = 1e-4,
     n_images: int = 150,
     resolution: int = 1024,
-    erase_text: bool = typer.Option(True, help="Inpaint text regions out of training images"),
+    erase_text: bool = typer.Option(
+        False,
+        help="Inpaint text regions out of training images (captions then omit the card's words)",
+    ),
     caption_images: bool = typer.Option(True, help="BLIP-caption each image instead of one fixed prompt"),
     base_model: str = "black-forest-labs/FLUX.1-dev",
     out_root: Path = Path(__file__).parent,
@@ -276,12 +331,14 @@ def train(
     out_dir = out_root / occasion.replace("/", "_")
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    paths = _materialise_training_images(
+    items = _materialise_training_images(
         occasion, n_images, image_dir, erase_text=erase_text, resolution=resolution,
     )
-    if not paths:
+    if not items:
         log.warning(f"No training images for occasion '{occasion}' — skipping LoRA training")
         return
+    paths = [p for p, _ in items]
+    card_texts = [t for _, t in items]
 
     train_script = Path("diffusers/examples/dreambooth/train_dreambooth_lora_flux.py")
     if not train_script.exists():
@@ -302,13 +359,15 @@ def train(
     captions = _caption_images(paths) if caption_images else None
     if captions:
         metadata = image_dir / "metadata.jsonl"
+        quoted = 0
         with metadata.open("w", encoding="utf-8") as fh:
             # strict: a caption list shorter than the image list would silently
             # drop training images off the end of the metadata file.
-            for path, cap in zip(paths, captions, strict=True):
-                text = f"TOK {cap}, a greeting card for {occasion_tag}" if cap else instance_prompt
+            for path, cap, card_text in zip(paths, captions, card_texts, strict=True):
+                text = _training_caption(cap, card_text, occasion_tag) or instance_prompt
+                quoted += bool(cap and card_text)
                 fh.write(json.dumps({"file_name": path.name, "prompt": text}) + "\n")
-        log.info(f"Wrote per-image captions to {metadata}")
+        log.info(f"Wrote per-image captions to {metadata} ({quoted} naming the card's own words)")
         data_args = [
             f"--dataset_name={image_dir}",
             "--image_column=image",

@@ -40,6 +40,10 @@ class Candidate:
     seed: int | None = None
     scores: dict[str, float] | None = None
     card_id: str | None = None
+    # Whether Flux lettered the headline itself, and how much of it OCR read
+    # back. Kept off `scores`, which the reranker overwrites wholesale.
+    text_in_image: bool | None = None
+    headline_match: float | None = None
 
 
 def _compute_saleability(scores: dict[str, float]) -> float:
