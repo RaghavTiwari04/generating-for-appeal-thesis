@@ -23,16 +23,21 @@ echo "=== LoRA training ==="
 echo "GPU: $(nvidia-smi --query-gpu=name,memory.total --format=csv,noheader)"
 echo "Start: $(date)"
 
-OCCASIONS=(
-    "birthday/general"
-    "birthday/milestone"
-    "birthday/kids"
-    "birthday/relationship"
-)
+# One LoRA over all four birthday subtypes, not one each.
+#
+# The text encoder is not trained, so the LoRA carries style only and the
+# occasion's semantics come from the prompt. The four subtypes share one visual
+# idiom, so training them separately fits nearly the same distribution four
+# times from a quarter of the data each. Passing the group name selects every
+# `birthday/*` subtype, and generation resolves `birthday/kids` to this LoRA
+# when no subtype-specific one exists.
+#
+# To go back to per-subtype LoRAs, loop over the four occasion strings instead;
+# the trainer still accepts them and generation prefers a subtype match.
+OCCASION="${OCCASION:-birthday}"
+N_IMAGES="${N_IMAGES:-150}"
 
-for occ in "${OCCASIONS[@]}"; do
-    echo "--- Training LoRA for: $occ ($(date)) ---"
-    python -m generation.image.loras.train_lora --occasion "$occ" --rank 32 --steps 1000 --lr 1e-4
-done
+echo "--- Training LoRA for: $OCCASION ($(date)) ---"
+python -m generation.image.loras.train_lora     --occasion "$OCCASION" --rank 32 --steps 1000 --lr 1e-4 --n-images "$N_IMAGES"
 
 echo "=== Done: $(date) ==="

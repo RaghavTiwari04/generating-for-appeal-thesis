@@ -70,7 +70,12 @@ FROM (
     JOIN listing_images li ON li.listing_id = l.listing_id AND li.is_primary
     LEFT JOIN saleability_labels sl
       ON sl.listing_id = l.listing_id AND sl.label_source = 'llm_ssr_rubric_v2'
-    WHERE lf.occasion = %(occasion)s
+    -- `birthday/kids` selects that subtype; `birthday` selects all of them, so
+    -- one LoRA can be trained over a whole group. The LoRA learns style only —
+    -- the text encoder is not trained — and the four birthday subtypes share
+    -- one visual idiom, so splitting them fits nearly the same distribution
+    -- four times from a quarter of the data each.
+    WHERE (lf.occasion = %(occasion)s OR split_part(lf.occasion, '/', 1) = %(occasion)s)
     ORDER BY COALESCE(lf.duplicate_cluster_id::text, l.listing_id::text),
              COALESCE(sl.score, 0) DESC,
              l.listing_id
@@ -86,7 +91,7 @@ SELECT COUNT(DISTINCT COALESCE(lf.duplicate_cluster_id::text, l.listing_id::text
 FROM listings l
 JOIN listing_features lf USING (listing_id)
 JOIN listing_images li ON li.listing_id = l.listing_id AND li.is_primary
-WHERE lf.occasion = %(occasion)s;
+WHERE (lf.occasion = %(occasion)s OR split_part(lf.occasion, '/', 1) = %(occasion)s);
 """
 
 

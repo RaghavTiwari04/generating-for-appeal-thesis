@@ -132,11 +132,28 @@ class DiffusionRunner:
         self._fill_pipe = self._init_pipe(pipe)
         return self._fill_pipe
 
-    def _apply_loras(self, pipe: Any, occasion: str | None) -> None:
+    def _resolve_lora(self, occasion: str | None) -> Path | None:
+        """The LoRA directory serving an occasion, subtype first then group.
+
+        `birthday/kids` prefers `loras/birthday_kids` and falls back to
+        `loras/birthday`, so a single LoRA trained over a whole group serves
+        every subtype without the pipeline needing to know which it got.
+        """
         if not occasion:
-            return
-        lora_dir = LORA_ROOT / occasion.replace("/", "_")
-        if not lora_dir.exists():
+            return None
+        names = [occasion.replace("/", "_")]
+        group = occasion.split("/")[0]
+        if group != occasion:
+            names.append(group)
+        for name in names:
+            path = LORA_ROOT / name
+            if path.exists():
+                return path
+        return None
+
+    def _apply_loras(self, pipe: Any, occasion: str | None) -> None:
+        lora_dir = self._resolve_lora(occasion)
+        if lora_dir is None:
             log.debug(f"No LoRA for occasion={occasion}, skipping")
             return
         if str(lora_dir) in self._active_loras:
@@ -145,7 +162,7 @@ class DiffusionRunner:
             pipe.load_lora_weights(str(lora_dir))
             pipe.fuse_lora(lora_scale=self.cfg.lora_scale)
             self._active_loras.append(str(lora_dir))
-            self._lora_occasion = occasion
+            self._lora_occasion = lora_dir.name
             log.info(f"Loaded LoRA: {lora_dir.name} (scale={self.cfg.lora_scale})")
         except Exception as e:
             log.warning(f"LoRA load failed for {occasion}: {e}")
@@ -155,11 +172,18 @@ class DiffusionRunner:
 
         `fuse_lora` bakes weights into the pipeline irreversibly, so a resident
         pipeline cannot be re-targeted — loading a second LoRA would stack on
-        top of the first. Reloading is only needed when the occasion changes.
+        top of the first.
+
+        Compared on the resolved LoRA, not the requested occasion: with one
+        LoRA per group, `birthday/general` and `birthday/kids` both resolve to
+        `loras/birthday`, and keying on the occasion would rebuild the whole
+        Flux pipeline between them to arrive at the same weights.
         """
-        if self._lora_occasion is not None and occasion != self._lora_occasion:
+        wanted = self._resolve_lora(occasion)
+        wanted_name = wanted.name if wanted else None
+        if self._lora_occasion is not None and wanted_name != self._lora_occasion:
             log.info(
-                f"Occasion changed ({self._lora_occasion} -> {occasion}), "
+                f"LoRA changed ({self._lora_occasion} -> {wanted_name}), "
                 "reloading pipeline to avoid stacking fused LoRAs"
             )
             self._free_pipeline()
