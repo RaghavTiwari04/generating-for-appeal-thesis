@@ -1,18 +1,22 @@
 """Per-head ridge on the image embedding — the predictor that actually wins.
 
 Measured on the seller-grouped split at seed 42 — 1,727 train, 370 val — with
-pad+crops features, the MLP at 1500 epochs and lr 1e-2, and ridge fitting on
-train alone while the MLP additionally gets the val split for early stopping:
+the default single-view features, the MLP at 1500 epochs and lr 1e-2, and ridge
+fitting on train alone while the MLP additionally gets the val split for early
+stopping:
 
-    head                  MLP (5 seeds)     ridge     gap
-    occasion_fit          0.571 +/- 0.041   0.632     3.3 SE
-    aesthetic             0.800 +/- 0.008   0.830     8.4 SE
-    emotional_resonance   0.512 +/- 0.043   0.565     2.8 SE
-    distinctiveness       0.614 +/- 0.022   0.672     5.9 SE
-    purchase_intent       0.582 +/- 0.017   0.619     4.9 SE
-    best-of-8 recovered   71.6% +/- 0.9%    73.6%     ~5 SE
+    head                  MLP (5 seeds)     ridge
+    occasion_fit          0.572 +/- 0.018   0.645
+    aesthetic             0.806 +/- 0.006   0.844
+    emotional_resonance   0.539 +/- 0.017   0.584
+    distinctiveness       0.592 +/- 0.022   0.675
+    purchase_intent       0.621 +/- 0.017   0.624
+    best-of-8 recovered   74.1% +/- 3.6%    75.5%
 
-Ridge leads on every head and on the selection task the pipeline performs.
+Ridge leads clearly on the four quality heads. On purchase intent and on
+best-of-8 — the two that decide reranking — the models are level, so ridge is
+the default for being deterministic and having no training loop rather than for
+ranking better.
 
 These are the first numbers comparable across runs. Before the split was made
 independent of query row order, each run drew a different test set, and the

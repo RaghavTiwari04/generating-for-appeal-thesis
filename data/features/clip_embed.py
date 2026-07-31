@@ -9,7 +9,9 @@ Backbone is set by CLIP_MODEL_ID. Note the pooling below reads
 head) but not for CLIP, where the projected `get_image_features()` is wanted —
 so swapping to a CLIP checkpoint needs a code change, not just the env var.
 
-Two knobs address what the backbone would otherwise lose on card images:
+Three knobs exist for what the backbone might otherwise lose on card images.
+The first two were measured and made things worse; they stay switchable because
+the ablation is worth reporting, but both default off.
 
   CLIP_PAD_SQUARE=1  pad to square before the processor rather than letting it
       squash a portrait card into 384x384. Padding uses the border's median
@@ -21,6 +23,10 @@ Two knobs address what the backbone would otherwise lose on card images:
       downsample, so fine typography and print texture — exactly what the
       aesthetic and distinctiveness dimensions turn on — never reach it.
       Averaging keeps the result 768-d, so no migration.
+
+      Measured on the fixed split, both together lose on every head against the
+      plain single view and cost four extra forward passes per image. See
+      EmbedderConfig below for the numbers.
 
   CLIP_MODEL_ID=a,b  embed with each backbone and concatenate. A second
       encoder with a different inductive bias — DINOv2 alongside SigLIP —
@@ -77,18 +83,22 @@ class EmbedderConfig:
     device: str = "cuda" if torch.cuda.is_available() else "cpu"
     dtype: torch.dtype = torch.float16 if torch.cuda.is_available() else torch.float32
     batch_size: int = 32
-    # Defaults are the configuration that won the feature ablation, and they
-    # have to be defaults rather than env vars: pipeline/rerank.py builds a
-    # CLIPEmbedder() with no environment set, so a candidate would otherwise be
-    # embedded differently from the corpus the predictor trained on.
+    # Plain single-view embedding, and it has to be a default rather than an env
+    # var: pipeline/rerank.py builds a CLIPEmbedder() with no environment set,
+    # so a candidate would otherwise be embedded differently from the corpus the
+    # predictor trained on, and the only symptom would be poor reranking.
     #
-    # Measured on purchase intent, ridge on held-out cards: base+pad+crops 0.641,
-    # base+pad 0.624, base alone 0.601, siglip-large 0.613, base+DINOv2 0.601.
-    # Crops cost four extra forward passes per image and lose a little on the
-    # heads that judge whole-card composition, which averaging quadrants dilutes.
-    pad_to_square: bool = os.environ.get("CLIP_PAD_SQUARE", "1") == "1"
+    # Padding and multi-crop were briefly the default on an ablation measuring
+    # 0.641 for base+pad+crops against 0.601 for base. That ablation ran while
+    # the train/test split still depended on query row order, so it compared
+    # different test sets. Re-measured on the fixed split, ridge on held-out
+    # cards, base wins every head: purchase intent 0.624 against 0.619,
+    # aesthetic 0.844 against 0.830, best-of-8 recovery 75.5% against 73.6%,
+    # and the MLP gains more still (purchase intent 0.621 against 0.582). So
+    # the four extra forward passes per image bought a regression.
+    pad_to_square: bool = os.environ.get("CLIP_PAD_SQUARE", "0") == "1"
     # 1 = whole image only. 5 = whole image plus four quadrants, averaged.
-    crops: int = int(os.environ.get("CLIP_CROPS", "5"))
+    crops: int = int(os.environ.get("CLIP_CROPS", "1"))
 
 
 def _pad_to_square(img: Image.Image) -> Image.Image:
