@@ -38,16 +38,44 @@ from common.storage import get_object
 log = get_logger(__name__)
 
 
+# One image per duplicate cluster, and the cluster's best-scoring member stands
+# for it.
+#
+# Print-on-demand catalogues carry the same design in many colourways: dedup
+# found 1,111 redundant copies among 1,816 listings. Ordering by score without
+# collapsing them puts near-identical copies next to each other — they score
+# near-identically because they are the same artwork — so the top 150 could be
+# a few dozen designs repeated, and the LoRA would overfit to those while the
+# count suggested otherwise. This is the same collapse `data/labels/vlm_labels`
+# applies before spending judge calls.
 _TOP_FOR_OCC_SQL = """
-SELECT li.storage_path
+SELECT storage_path
+FROM (
+    SELECT DISTINCT ON (COALESCE(lf.duplicate_cluster_id::text, l.listing_id::text))
+           li.storage_path,
+           COALESCE(sl.score, 0) AS score
+    FROM listings l
+    JOIN listing_features lf USING (listing_id)
+    JOIN listing_images li ON li.listing_id = l.listing_id AND li.is_primary
+    LEFT JOIN saleability_labels sl
+      ON sl.listing_id = l.listing_id AND sl.label_source = 'llm_ssr_rubric_v2'
+    WHERE lf.occasion = %(occasion)s
+    ORDER BY COALESCE(lf.duplicate_cluster_id::text, l.listing_id::text),
+             COALESCE(sl.score, 0) DESC,
+             l.listing_id
+) representatives
+ORDER BY score DESC
+LIMIT %(limit)s;
+"""
+
+# How many distinct designs exist for an occasion, so the job can say whether
+# `n_images` is a selection or simply the whole pool.
+_DISTINCT_FOR_OCC_SQL = """
+SELECT COUNT(DISTINCT COALESCE(lf.duplicate_cluster_id::text, l.listing_id::text))
 FROM listings l
 JOIN listing_features lf USING (listing_id)
 JOIN listing_images li ON li.listing_id = l.listing_id AND li.is_primary
-LEFT JOIN saleability_labels sl
-  ON sl.listing_id = l.listing_id AND sl.label_source = 'llm_ssr_rubric_v2'
-WHERE lf.occasion = %(occasion)s
-ORDER BY COALESCE(sl.score, 0) DESC
-LIMIT %(limit)s;
+WHERE lf.occasion = %(occasion)s;
 """
 
 
@@ -173,6 +201,24 @@ def _materialise_training_images(
     import pandas as pd
 
     df = pd.read_sql(_TOP_FOR_OCC_SQL, engine(), params={"occasion": occasion, "limit": limit})
+
+    # Whether `limit` selects or just takes everything. At limit >= pool the
+    # "top-saleability" ordering does no work, and the LoRA trains on every
+    # design including the ones the judge scored worst — worth seeing in the
+    # log rather than inferring from the image count afterwards.
+    available = pd.read_sql(
+        _DISTINCT_FOR_OCC_SQL, engine(), params={"occasion": occasion}
+    ).iloc[0, 0]
+    if limit >= available:
+        log.warning(
+            f"{occasion}: {available} distinct designs available, {limit} requested — "
+            f"training on the whole pool, so saleability ranking selects nothing."
+        )
+    else:
+        log.info(
+            f"{occasion}: top {limit} of {available} distinct designs by saleability"
+        )
+
     paths: list[Path] = []
     dest.mkdir(parents=True, exist_ok=True)
     # Clear prior runs. `--instance_data_dir` opens every file in the directory
@@ -251,7 +297,9 @@ def train(
     if captions:
         metadata = image_dir / "metadata.jsonl"
         with metadata.open("w", encoding="utf-8") as fh:
-            for path, cap in zip(paths, captions):
+            # strict: a caption list shorter than the image list would silently
+            # drop training images off the end of the metadata file.
+            for path, cap in zip(paths, captions, strict=True):
                 text = f"TOK {cap}, a greeting card for {occasion_tag}" if cap else instance_prompt
                 fh.write(json.dumps({"file_name": path.name, "prompt": text}) + "\n")
         log.info(f"Wrote per-image captions to {metadata}")
