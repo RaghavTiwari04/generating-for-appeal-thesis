@@ -217,15 +217,32 @@ def _generate_pipeline_rerank(
 # ---------------------------------------------------------------------------
 # Condition D — human bestsellers (DB query, no generation)
 # ---------------------------------------------------------------------------
+# One listing per duplicate cluster, best-scoring member representing it.
+#
+# Without the collapse the pool is colourways of a few designs: print-on-demand
+# catalogues carry the same artwork many times, copies score near-identically
+# because they are the same artwork, so they sort adjacently and fill the top
+# 50. Sampling from that shows the same design repeatedly across the
+# evaluation, and condition D is meant to stand for the range of what human
+# designers sell — a handful of designs in different colours would understate
+# it and bias the equivalence test the whole study turns on.
 _TOP_LISTINGS_SQL = """
-SELECT l.listing_id, li.storage_path, l.title, lf.occasion
-FROM listings l
-JOIN listing_features lf USING (listing_id)
-JOIN listing_images li ON li.listing_id = l.listing_id AND li.is_primary
-LEFT JOIN saleability_labels sl
-  ON sl.listing_id = l.listing_id AND sl.label_source = 'llm_ssr_rubric_v2'
-WHERE lf.occasion = %(occasion)s
-ORDER BY COALESCE(sl.score, 0) DESC
+SELECT listing_id, storage_path, title, occasion
+FROM (
+    SELECT DISTINCT ON (COALESCE(lf.duplicate_cluster_id::text, l.listing_id::text))
+           l.listing_id, li.storage_path, l.title, lf.occasion,
+           COALESCE(sl.score, 0) AS score
+    FROM listings l
+    JOIN listing_features lf USING (listing_id)
+    JOIN listing_images li ON li.listing_id = l.listing_id AND li.is_primary
+    LEFT JOIN saleability_labels sl
+      ON sl.listing_id = l.listing_id AND sl.label_source = 'llm_ssr_rubric_v2'
+    WHERE lf.occasion = %(occasion)s
+    ORDER BY COALESCE(lf.duplicate_cluster_id::text, l.listing_id::text),
+             COALESCE(sl.score, 0) DESC,
+             l.listing_id
+) representatives
+ORDER BY score DESC
 LIMIT %(limit)s;
 """
 
