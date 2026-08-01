@@ -55,43 +55,60 @@ log = get_logger(__name__)
 # labelled one sorts first — and on a genuine 0.0 the listing_id tiebreak
 # returns that same row. So the ranking below is over judge scores rather than
 # over a mix of scored and unscored cards.
+#
+# Selection is stratified: each subtype contributes its own top slice rather
+# than competing in one pool. birthday/general holds 2,011 of the group's 2,463
+# distinct designs, so a single ranking would fill the training set with it and
+# leave kids, milestone and relationship barely represented — and with the text
+# encoder frozen, a prompt cannot recover a style the LoRA never saw. For a
+# single subtype the partition has one group and this is an ordinary top-N.
 _TOP_FOR_OCC_SQL = """
 SELECT storage_path, extracted_text
 FROM (
-    SELECT DISTINCT ON (COALESCE(lf.duplicate_cluster_id::text, l.listing_id::text))
-           li.storage_path,
-           -- OCR of the card front. Captions name the words the card actually
-           -- shows, so the lettering is conditioned on the prompt instead of
-           -- being averaged into the style.
-           lf.extracted_text,
-           COALESCE(sl.score, 0) AS score
-    FROM listings l
-    JOIN listing_features lf USING (listing_id)
-    JOIN listing_images li ON li.listing_id = l.listing_id AND li.is_primary
-    LEFT JOIN saleability_labels sl
-      ON sl.listing_id = l.listing_id AND sl.label_source = 'llm_ssr_rubric_v2'
-    -- `birthday/kids` selects that subtype; `birthday` selects all of them, so
-    -- one LoRA can be trained over a whole group. The LoRA learns style only —
-    -- the text encoder is not trained — and the four birthday subtypes share
-    -- one visual idiom, so splitting them fits nearly the same distribution
-    -- four times from a quarter of the data each.
-    WHERE (lf.occasion = %(occasion)s OR split_part(lf.occasion, '/', 1) = %(occasion)s)
-    ORDER BY COALESCE(lf.duplicate_cluster_id::text, l.listing_id::text),
-             COALESCE(sl.score, 0) DESC,
-             l.listing_id
-) representatives
-ORDER BY score DESC
-LIMIT %(limit)s;
+    SELECT *,
+           ROW_NUMBER() OVER (
+               PARTITION BY occasion ORDER BY score DESC, storage_path
+           ) AS rank_in_occasion
+    FROM (
+        SELECT DISTINCT ON (COALESCE(lf.duplicate_cluster_id::text, l.listing_id::text))
+               li.storage_path,
+               lf.occasion,
+               -- OCR of the card front. Captions name the words the card
+               -- actually shows, so the lettering is conditioned on the prompt
+               -- instead of being averaged into the style.
+               lf.extracted_text,
+               COALESCE(sl.score, 0) AS score
+        FROM listings l
+        JOIN listing_features lf USING (listing_id)
+        JOIN listing_images li ON li.listing_id = l.listing_id AND li.is_primary
+        LEFT JOIN saleability_labels sl
+          ON sl.listing_id = l.listing_id AND sl.label_source = 'llm_ssr_rubric_v2'
+        -- `birthday/kids` selects that subtype; `birthday` selects all of them,
+        -- so one LoRA can be trained over a whole group. The LoRA learns style
+        -- only — the text encoder is not trained — and the four birthday
+        -- subtypes share one visual idiom, so splitting them fits nearly the
+        -- same distribution four times from a quarter of the data each.
+        WHERE (lf.occasion = %(occasion)s OR split_part(lf.occasion, '/', 1) = %(occasion)s)
+        ORDER BY COALESCE(lf.duplicate_cluster_id::text, l.listing_id::text),
+                 COALESCE(sl.score, 0) DESC,
+                 l.listing_id
+    ) representatives
+) ranked
+WHERE rank_in_occasion <= %(per_occasion)s
+ORDER BY score DESC;
 """
 
-# How many distinct designs exist for an occasion, so the job can say whether
-# `n_images` is a selection or simply the whole pool.
-_DISTINCT_FOR_OCC_SQL = """
-SELECT COUNT(DISTINCT COALESCE(lf.duplicate_cluster_id::text, l.listing_id::text))
+# The subtypes a group covers, so the per-subtype quota can be worked out
+# before selecting.
+_SUBTYPES_SQL = """
+SELECT lf.occasion,
+       COUNT(DISTINCT COALESCE(lf.duplicate_cluster_id::text, l.listing_id::text)) AS designs
 FROM listings l
 JOIN listing_features lf USING (listing_id)
 JOIN listing_images li ON li.listing_id = l.listing_id AND li.is_primary
-WHERE (lf.occasion = %(occasion)s OR split_part(lf.occasion, '/', 1) = %(occasion)s);
+WHERE (lf.occasion = %(occasion)s OR split_part(lf.occasion, '/', 1) = %(occasion)s)
+GROUP BY 1
+ORDER BY 1;
 """
 
 
@@ -256,24 +273,37 @@ def _materialise_training_images(
     """Fetch training images. Returns (path, card text) so captions can quote it."""
     import pandas as pd
 
-    df = pd.read_sql(_TOP_FOR_OCC_SQL, engine(), params={"occasion": occasion, "limit": limit})
+    subtypes = pd.read_sql(_SUBTYPES_SQL, engine(), params={"occasion": occasion})
+    if subtypes.empty:
+        log.warning(f"No listings for occasion '{occasion}'")
+        return []
 
-    # Whether `limit` selects or just takes everything. At limit >= pool the
-    # "top-saleability" ordering does no work, and the LoRA trains on every
-    # design including the ones the judge scored worst — worth seeing in the
-    # log rather than inferring from the image count afterwards.
-    available = pd.read_sql(
-        _DISTINCT_FOR_OCC_SQL, engine(), params={"occasion": occasion}
-    ).iloc[0, 0]
-    if limit >= available:
-        log.warning(
-            f"{occasion}: {available} distinct designs available, {limit} requested — "
-            f"training on the whole pool, so saleability ranking selects nothing."
-        )
-    else:
-        log.info(
-            f"{occasion}: top {limit} of {available} distinct designs by saleability"
-        )
+    # Floor, so the quota never overshoots `limit` in total and the outer query
+    # needs no second trim — a trim by score would drop whole subtypes, which is
+    # the imbalance the stratification exists to prevent.
+    per_occasion = max(1, limit // len(subtypes))
+    df = pd.read_sql(
+        _TOP_FOR_OCC_SQL,
+        engine(),
+        params={"occasion": occasion, "per_occasion": per_occasion},
+    )
+
+    # Whether the quota selects or just takes everything. Where it meets the
+    # pool the saleability ordering does no work and the LoRA trains on every
+    # design including the ones the judge scored worst — worth seeing in the log
+    # rather than inferring from the image count afterwards.
+    if len(subtypes) > 1:
+        log.info(f"{occasion}: {per_occasion} per subtype across {len(subtypes)} subtypes")
+    for row in subtypes.itertuples():
+        if per_occasion >= row.designs:
+            log.warning(
+                f"  {row.occasion}: {row.designs} distinct designs, quota {per_occasion} — "
+                f"whole pool, so saleability ranking selects nothing here"
+            )
+        else:
+            log.info(
+                f"  {row.occasion}: top {per_occasion} of {row.designs} by saleability"
+            )
 
     items: list[tuple[Path, str]] = []
     dest.mkdir(parents=True, exist_ok=True)
