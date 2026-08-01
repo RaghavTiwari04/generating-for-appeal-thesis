@@ -248,7 +248,7 @@ if __name__ == "__main__":
         relationship: str | None = None,
         n: int = 8,
         top_k: int = 3,
-        scorer: str = "predictor",
+        scorer: str = "ridge",  # "ridge" | "mlp" | "llm"
     ) -> None:
         ensure_buckets()
         try:
