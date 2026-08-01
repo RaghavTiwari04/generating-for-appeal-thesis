@@ -13,6 +13,10 @@ dependencies = [
     "diffusers>=0.27",
     "peft>=0.10",
     "accelerate>=0.30",
+    # LoRA training reads its per-image captions through a HF dataset, and the
+    # diffusers training script imports this only after loading the Flux
+    # transformer — undeclared, it failed fifteen minutes into a job.
+    "datasets>=2.19",
     "safetensors>=0.4",
     "sentencepiece>=0.2",
     # Image / vision

@@ -391,6 +391,21 @@ def train(
 
     # Per-image captions go through the dataset path; instance_data_dir applies
     # one fixed prompt to every image and cannot carry them.
+    #
+    # Checked before captioning rather than left to the training script, which
+    # imports `datasets` only once it reaches the data stage — after loading the
+    # Flux transformer shards. Missing, it cost fifteen minutes of model
+    # downloads to reach a one-line ImportError.
+    if caption_images:
+        try:
+            import datasets  # noqa: F401
+        except ImportError as e:
+            raise SystemExit(
+                f"Per-image captions need the `datasets` package ({e}). "
+                "Install it with `pip install datasets`, or pass "
+                "--no-caption-images to train on one fixed prompt instead."
+            ) from e
+
     captions = _caption_images(paths) if caption_images else None
     if captions:
         metadata = image_dir / "metadata.jsonl"
@@ -433,6 +448,18 @@ def train(
     ]
     log.info(f"Launching LoRA training: {' '.join(cmd)}")
     subprocess.run(cmd, check=True)
+
+    # An empty output directory is the worst outcome: generation resolves the
+    # LoRA by directory and logs a miss at debug level, so condition B would run
+    # on base Flux and look like condition A with a different label. Only
+    # metadata.json would suggest otherwise, and it is written below.
+    weights = list(out_dir.glob("*.safetensors"))
+    if not weights:
+        raise SystemExit(
+            f"Training reported success but wrote no weights to {out_dir}. "
+            "Refusing to record metadata for a LoRA that does not exist."
+        )
+    log.info(f"Weights: {', '.join(p.name for p in weights)}")
 
     (out_dir / "metadata.json").write_text(
         json.dumps(
