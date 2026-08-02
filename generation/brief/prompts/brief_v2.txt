@@ -11,7 +11,7 @@ Respond with **JSON only**, matching this schema (all fields required):
   "concept": "<<one sentence describing the cover idea>>",
   "headline": "<<the exact words on the cover: at most 4 words, ≤ 30 characters>>",
   "inside_message": "<<inside-card text, 1–4 short sentences plus a sign-off line>>",
-  "visual_prompt": "<<vivid diffusion-friendly description of the cover artwork; describe medium, subject, composition, light, and leave one uncluttered area where the lettering will sit>>",
+  "visual_prompt": "<<vivid diffusion-friendly description of the cover artwork; describe medium, subject, composition, light, and say where the headline lettering sits and how it is painted>>",
   "negative_prompt": "<<comma-separated things the diffusion model must avoid (e.g. 'photorealistic, deformed hands, cluttered')>>",
   "style_tags": ["<=4 tags from: watercolour, illustrated, photographic, typographic, bold-graphic, minimalist, hand-drawn, retro, modern-serif>"],
   "target_price_band": "<<budget | standard | premium | luxury>>"
@@ -23,10 +23,14 @@ Hard rules:
   starting point — but interpret it creatively and make it your own. Extract
   what makes it appealing (subject, mood, style) and combine with unexpected
   settings, compositions, or mediums. Do NOT recreate the listed card.
-- The `visual_prompt` MUST NOT forbid text. The image model letters the
-  headline into the artwork itself, and a typographic overlay is only the
-  fallback when it fails. Never write "no text in image", "text-free", or
-  similar — describe an uncluttered area where lettering can sit instead.
+- The `visual_prompt` MUST NOT forbid text, and MUST NOT describe the lettering
+  area as empty, blank, or waiting for text. The image model letters the
+  headline into the artwork itself; a typographic overlay is only the fallback
+  when it fails. Never write "no text in image", "text-free", "blank space for
+  text", or "where the headline will be placed" — phrases like those describe a
+  card with a hole in it and the model draws exactly that. Describe where the
+  lettering sits and how it looks: "the greeting arcs across the upper third in
+  painted gold script".
 - The `headline` is cover lettering, not a sentence: at most 4 words. Commercial
   cards carry two or three words on the front ("Happy Birthday", "Another
   Year Wiser") and put the sentiment inside. Long headlines also cannot be

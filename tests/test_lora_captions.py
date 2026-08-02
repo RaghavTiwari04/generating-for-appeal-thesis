@@ -35,28 +35,32 @@ class TestCardText:
 
 class TestTrainingCaption:
     def test_names_the_cards_own_words(self):
+        from generation.image.headline_text import LETTERING_STYLE
+
         caption = _training_caption("a watercolour cake", "Happy Birthday", "birthday general")
-        assert 'greeting "Happy Birthday" lettered into the design' in caption
+        assert f'greeting "Happy Birthday" in {LETTERING_STYLE}' in caption
         assert caption.startswith("TOK a watercolour cake")
 
     def test_omits_the_greeting_clause_when_there_is_no_text(self):
         """Erased-text runs must not claim words the image no longer shows."""
+        from generation.image.headline_text import LETTERING_STYLE
+
         caption = _training_caption("a watercolour cake", "", "birthday general")
-        assert "lettered into the design" not in caption
+        assert LETTERING_STYLE not in caption
         assert caption == "TOK a watercolour cake, a greeting card for birthday general"
 
     def test_no_blip_caption_yields_nothing_so_the_caller_falls_back(self):
         assert _training_caption("", "Happy Birthday", "birthday general") == ""
 
     def test_phrasing_matches_the_inference_prompt(self):
-        """Training and generation should describe lettering the same way.
+        """Training and generation must describe lettering the same way.
 
-        `augment_prompt` asks for a greeting "lettered into the design"; if
-        these drift apart the LoRA is conditioned on wording the pipeline never
-        uses.
+        The LoRA is conditioned on the words describing its training images, so
+        wording used at generation but never during training asks for something
+        it was never shown. Both sides read LETTERING_STYLE; this fails if
+        either grows its own copy.
         """
-        from generation.image.headline_text import augment_prompt
+        from generation.image.headline_text import LETTERING_STYLE, augment_prompt
 
-        shared = "lettered into the design"
-        assert shared in augment_prompt("a cake", "Happy Birthday")
-        assert shared in _training_caption("a cake", "Happy Birthday", "birthday general")
+        assert LETTERING_STYLE in augment_prompt("a cake", "Happy Birthday")
+        assert LETTERING_STYLE in _training_caption("a cake", "Happy Birthday", "birthday general")

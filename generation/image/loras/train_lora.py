@@ -254,15 +254,18 @@ def _training_caption(blip_caption: str, card_text: str, occasion_tag: str) -> s
     LoRA trained on birthday cards learns "Happy Birthday" as part of the look,
     and then fights the brief's actual headline at generation time.
 
-    Phrased to match `generation.image.headline_text.augment_prompt`, which
-    asks for a greeting "lettered into the design" — training and inference
-    then describe the same thing the same way.
+    Phrased with the same LETTERING_STYLE that `augment_prompt` uses at
+    generation time, so training and inference describe lettering identically.
+    Wording the model only ever meets at generation asks for something it was
+    never shown.
     """
     if not blip_caption:
         return ""
+    from generation.image.headline_text import LETTERING_STYLE
+
     caption = f"TOK {blip_caption}, a greeting card for {occasion_tag}"
     if card_text:
-        caption += f', with the greeting "{card_text}" lettered into the design'
+        caption += f', with the greeting "{card_text}" in {LETTERING_STYLE}'
     return caption
 
 

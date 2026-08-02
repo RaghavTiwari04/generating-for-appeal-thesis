@@ -36,6 +36,13 @@ log = get_logger(__name__)
 # Share of headline words that must survive OCR for the render to count.
 MATCH_THRESHOLD = 0.8
 
+# How lettering is described, to the image model at generation time and to the
+# LoRA in its training captions. One constant because the two must agree: the
+# LoRA is conditioned on the words that describe its training images, so
+# wording used at generation but never during training asks for something the
+# model was never shown.
+LETTERING_STYLE = "hand-lettering integrated into the artwork"
+
 
 @dataclass
 class RenderedCard:
@@ -45,10 +52,17 @@ class RenderedCard:
 
 
 def augment_prompt(visual_prompt: str, headline: str) -> str:
-    """Ask for the greeting as designed lettering rather than an overlay."""
+    """Ask for the greeting as designed lettering rather than an overlay.
+
+    The lettering leads. Appended after the scene description it sat at the end
+    of ninety words of composition, palette and lighting detail, and the model
+    drew the artwork and little or no text — OCR read back 0.00 on three of
+    four cards and 0.33 on the fourth. Diffusion text rendering is far more
+    reliable when the words are the first thing asked for.
+    """
     return (
-        f'{visual_prompt}. The greeting "{headline}" is lettered into the design '
-        f"as part of the artwork, clearly legible and correctly spelled"
+        f'A greeting card with the words "{headline}" in large, clearly legible, '
+        f"correctly spelled {LETTERING_STYLE}. {visual_prompt}"
     )
 
 
@@ -68,6 +82,16 @@ def match_score(ocr_text: str, headline: str) -> float:
         return 0.0
     got = set(_words(ocr_text))
     return sum(w in got for w in want) / len(want)
+
+
+def _ocr_preview(image: Image.Image, limit: int = 80) -> str:
+    """What OCR actually read, for the failure log. Empty when unavailable."""
+    try:
+        from data.features.ocr import ocr_image
+
+        return " ".join(ocr_image(image).text.split())[:limit]
+    except Exception:
+        return ""
 
 
 def verify_headline(image: Image.Image, headline: str) -> float:
@@ -111,7 +135,15 @@ def render_card(
         return RenderedCard(image=cover, text_in_image=True, match_score=score)
 
     # Attempt 2: reserve and blank a region, then set type into it.
-    log.info(f"Headline not legible (match={score:.2f}); falling back to overlay")
+    #
+    # The OCR read is logged, not just the score: a score of zero cannot
+    # distinguish "the model drew nothing" from "the model drew garbled
+    # glyphs", and those call for opposite fixes — more prompt weight on the
+    # text versus less, or a different LoRA scale.
+    log.info(
+        f"Headline not legible (match={score:.2f}, ocr={_ocr_preview(cover)!r}); "
+        "falling back to overlay"
+    )
     spec = LayoutMaskSpec(width=runner.cfg.width, height=runner.cfg.height)
     mask, _ = build_headline_mask(spec)
     images = runner.generate(
