@@ -11,9 +11,9 @@ from generation.brief.schema import Brief, validate_request
 
 _VALID_BRIEF_JSON = {
     "concept": "Wildflowers and a cup of tea",
-    "headline": "For the woman who taught me everything",
+    "headline": "Thanks For Everything, Mum",
     "inside_message": "Happy Birthday, Mum. Thank you for everything. Love always.",
-    "visual_prompt": "Watercolour wildflowers no text in image blank space top-left",
+    "visual_prompt": "Watercolour wildflowers, uncluttered band across the top",
     "negative_prompt": "photorealistic, harsh shadows",
     "style_tags": ["watercolour", "floral"],
     "target_price_band": "premium",

@@ -28,10 +28,12 @@ from models.predictor.architecture import HEAD_NAMES
 def dummy_brief() -> Brief:
     return Brief(
         concept="Wildflowers and tea",
-        headline="For the woman who taught me everything",
+        headline="Thanks For Everything, Mum",
         inside_message="Happy Birthday, Mum.",
-        visual_prompt="Watercolour wildflowers no text in image blank space top-left",
-        negative_prompt="photorealistic, text in image",
+        # v2 briefs no longer forbid text: the image model letters the headline
+        # itself and the overlay is the fallback.
+        visual_prompt="Watercolour wildflowers, uncluttered band across the top",
+        negative_prompt="photorealistic, deformed hands",
         style_tags=["watercolour", "illustrated"],
         target_price_band="premium",
     )

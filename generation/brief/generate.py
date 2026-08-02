@@ -17,8 +17,14 @@ from generation.brief.schema import Brief, BriefRequest, validate_request
 
 log = get_logger(__name__)
 
-PROMPT_PATH = Path(__file__).parent / "prompts" / "brief_v1.txt"
-PROMPT_VERSION = "brief_v1"
+# v2 stopped the brief telling the image model not to render text, and caps the
+# headline at four words. v1 required `visual_prompt` to say "no text in image",
+# which contradicted the lettering request appended at generation time and left
+# every card falling back to the typographic overlay. Kept as a separate file
+# because the version is recorded per card, so briefs from before and after
+# stay distinguishable.
+PROMPT_PATH = Path(__file__).parent / "prompts" / "brief_v2.txt"
+PROMPT_VERSION = "brief_v2"
 
 
 def _render_template(req: BriefRequest) -> str:

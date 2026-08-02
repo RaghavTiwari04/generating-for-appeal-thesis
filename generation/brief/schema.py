@@ -18,7 +18,12 @@ class BriefRequest(BaseModel):
 
 class Brief(BaseModel):
     concept: str
-    headline: str = Field(max_length=90)
+    # Cover lettering, not a sentence. 90 characters allowed briefs like
+    # "Here's to you - every wonderfully ridiculous bit of you.", which no image
+    # model can letter legibly, so the card fell back to a typographic overlay
+    # every time. Commercial fronts carry two or three words; the sentiment goes
+    # in `inside_message`.
+    headline: str = Field(max_length=30)
     inside_message: str
     visual_prompt: str
     negative_prompt: str
