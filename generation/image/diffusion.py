@@ -12,6 +12,7 @@ trained by `generation/image/loras/train_lora.py` (separate script, GPU-only).
 from __future__ import annotations
 
 import gc
+import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -49,7 +50,12 @@ class DiffusionConfig:
     width: int = 896
     gen_steps: int = 28
     gen_guidance: float = 3.5
-    lora_scale: float = 0.4
+    # How strongly the style LoRA is fused. Settable because it is the knob for
+    # the trade-off between style transfer and the base model's abilities:
+    # style LoRAs are known to degrade Flux's text rendering, and this pipeline
+    # asks Flux to letter the headline itself. LORA_SCALE=0 fuses nothing,
+    # which is the control run for "is the LoRA the reason no text appears".
+    lora_scale: float = float(os.environ.get("LORA_SCALE", "0.4"))
     fill_steps: int = 50
     fill_guidance: float = 30.0
     # Holding Flux + Flux-Fill resident costs ~48GB. On an 80GB card that fits,
@@ -152,6 +158,9 @@ class DiffusionRunner:
         return None
 
     def _apply_loras(self, pipe: Any, occasion: str | None) -> None:
+        if self.cfg.lora_scale == 0.0:
+            log.info("LORA_SCALE=0, generating from the base model")
+            return
         lora_dir = self._resolve_lora(occasion)
         if lora_dir is None:
             log.debug(f"No LoRA for occasion={occasion}, skipping")

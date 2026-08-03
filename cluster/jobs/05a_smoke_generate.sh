@@ -37,8 +37,11 @@ source cluster/jobs/_start_services.sh
 OCCASION="${OCCASION:-birthday/general}"
 N="${N:-4}"
 TONE="${TONE:-warm-sincere}"
+# LORA_SCALE=0 generates from base Flux, which is the control for "is the LoRA
+# the reason the headline is not being lettered".
+export LORA_SCALE="${LORA_SCALE:-0.4}"
 
-echo "=== Smoke generation: $OCCASION ($N candidates) ==="
+echo "=== Smoke generation: $OCCASION ($N candidates, lora_scale=$LORA_SCALE) ==="
 echo "GPU: $(nvidia-smi --query-gpu=name,memory.total --format=csv,noheader)"
 echo "Start: $(date)"
 
