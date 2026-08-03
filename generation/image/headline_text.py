@@ -1,20 +1,22 @@
-"""Render the headline into the artwork, falling back to a typographic overlay.
+"""Render the headline into the artwork.
 
 Commercial cards integrate their lettering into the design. The original
 pipeline instead reserved a fixed region (top-left, 55% x 25%), inpainted it to
 blank with a second Flux Fill pass, and drew text into the emptiness — so every
 card shared one layout and the type never belonged to the artwork.
 
-Flux renders text well enough to try the direct route first:
+Flux letters these cards well, so it does it directly: the greeting leads the
+prompt and the model draws it as part of the design.
 
-  1. Ask the model for the greeting as part of the design.
-  2. OCR the result and check the headline actually came out.
-  3. Only if it did not, fall back to the reserved-region overlay.
+An OCR check used to gate that, falling back to the overlay when it could not
+read the headline back. It is off by default now. Tesseract is built for
+documents and cannot read brush-script lettering, which is what card fronts use
+— it returned an empty read on four covers whose headlines were large, correct
+and plainly legible. So the gate sent every card to the overlay and reported
+that the model had lettered none of them.
 
-Verification matters because diffusion text fails ungracefully — misspelt or
-garbled glyphs look worse than a clean overlay. The fallback also costs one
-extra generation, but successes skip the Fill pass entirely, which was roughly
-half the time spent per image.
+The OCR score is still computed and recorded, as a lower bound on legibility.
+HEADLINE_VERIFY=1 restores the gate and the overlay fallback.
 
 Used by conditions A, B and C alike: card format must not differ between
 conditions, or it confounds the comparison.
@@ -38,6 +40,17 @@ log = get_logger(__name__)
 
 # Share of headline words that must survive OCR for the render to count.
 MATCH_THRESHOLD = 0.8
+
+# Whether that check gates the result. Off: tesseract is built for documents and
+# cannot read the brush-script lettering commercial cards use, so it returned an
+# empty read on four covers whose headline was large, correctly spelled and
+# plainly legible. Every card was then replaced by a typographic overlay in a
+# fixed reserved region — the look integrated lettering exists to avoid — and
+# text_in_image reported 0% for a model that had rendered all four correctly.
+#
+# HEADLINE_VERIFY=1 restores the gate, for a run where garbled text matters more
+# than the overlay's uniform layout.
+VERIFY_HEADLINE = os.environ.get("HEADLINE_VERIFY", "0") == "1"
 
 # How lettering is described, to the image model at generation time and to the
 # LoRA in its training captions. One constant because the two must agree: the
@@ -144,8 +157,20 @@ def render_card(
     seed: int | None,
     negative_prompt: str = "",
     threshold: float = MATCH_THRESHOLD,
+    verify: bool = VERIFY_HEADLINE,
 ) -> RenderedCard:
-    """Generate one card, preferring lettering rendered into the artwork."""
+    """Generate one card, lettering the headline into the artwork.
+
+    `verify` gates that on OCR reading the headline back, falling back to a
+    typographic overlay when it cannot. Off by default: tesseract cannot read
+    the brush-script lettering these cards are made of, so it scored 0.00 on
+    covers whose headline was plainly legible and correct, and every card was
+    replaced by an overlay it did not need.
+
+    The OCR score is still recorded, as a lower bound on legibility rather than
+    a control. Leaving it as a gate meant shipping the reserved-region layout
+    for every card, which is the look the integrated lettering exists to avoid.
+    """
     # Attempt 1: no mask, so no Fill pass — the model letters the card itself.
     images = runner.generate(
         prompt=augment_prompt(visual_prompt, headline),
@@ -157,6 +182,9 @@ def render_card(
     )
     cover = images[0]
     score = verify_headline(cover, headline)
+    if not verify:
+        log.info(f"Headline lettered by the model (ocr match={score:.2f}, unverified)")
+        return RenderedCard(image=cover, text_in_image=True, match_score=score)
     if score >= threshold:
         log.info(f"Headline rendered in image (match={score:.2f})")
         return RenderedCard(image=cover, text_in_image=True, match_score=score)
