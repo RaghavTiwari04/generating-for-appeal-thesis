@@ -22,8 +22,11 @@ conditions, or it confounds the comparison.
 
 from __future__ import annotations
 
+import hashlib
+import os
 import re
 from dataclasses import dataclass
+from pathlib import Path
 
 from PIL import Image
 
@@ -106,6 +109,30 @@ def verify_headline(image: Image.Image, headline: str) -> float:
         return 0.0
 
 
+def _save_rejected(cover: Image.Image, headline: str, score: float) -> None:
+    """Keep the cover that failed verification, when REJECTED_DIR is set.
+
+    Otherwise this image is discarded and only its OCR score survives, which
+    cannot distinguish a card the model left blank from one carrying lettering
+    tesseract could not parse. The overlay pass then replaces it, so the
+    finished card shows overlay text either way and answers nothing.
+
+    Off unless the environment asks for it: a full run generates hundreds of
+    these and they are only wanted while diagnosing.
+    """
+    dest = os.environ.get("REJECTED_DIR")
+    if not dest:
+        return
+    try:
+        out = Path(dest)
+        out.mkdir(parents=True, exist_ok=True)
+        slug = re.sub(r"[^a-z0-9]+", "-", headline.lower()).strip("-")[:40]
+        digest = hashlib.sha256(cover.tobytes()).hexdigest()[:8]
+        cover.save(out / f"{slug}_{score:.2f}_{digest}.png")
+    except Exception as e:
+        log.debug(f"Could not save rejected cover: {e}")
+
+
 def render_card(
     runner,
     *,
@@ -144,6 +171,7 @@ def render_card(
         f"Headline not legible (match={score:.2f}, ocr={_ocr_preview(cover)!r}); "
         "falling back to overlay"
     )
+    _save_rejected(cover, headline, score)
     spec = LayoutMaskSpec(width=runner.cfg.width, height=runner.cfg.height)
     mask, _ = build_headline_mask(spec)
     images = runner.generate(

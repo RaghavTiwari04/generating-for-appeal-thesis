@@ -40,6 +40,9 @@ TONE="${TONE:-warm-sincere}"
 # LORA_SCALE=0 generates from base Flux, which is the control for "is the LoRA
 # the reason the headline is not being lettered".
 export LORA_SCALE="${LORA_SCALE:-0.4}"
+# Keep the covers that failed headline verification. The finished card always
+# carries overlay text, so it cannot show what the model drew on its own.
+export REJECTED_DIR="${REJECTED_DIR:-./artifacts/rejected_covers}"
 
 echo "=== Smoke generation: $OCCASION ($N candidates, lora_scale=$LORA_SCALE) ==="
 echo "GPU: $(nvidia-smi --query-gpu=name,memory.total --format=csv,noheader)"
