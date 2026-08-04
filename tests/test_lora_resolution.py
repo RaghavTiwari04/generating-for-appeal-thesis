@@ -32,30 +32,30 @@ class TestResolveLora:
     def test_group_lora_serves_every_subtype(self, runner, lora_root: Path):
         (lora_root / "birthday").mkdir()
         for subtype in ("birthday/general", "birthday/kids", "birthday/milestone"):
-            assert runner._resolve_lora(subtype) == lora_root / "birthday"
+            assert runner.resolve_lora(subtype) == lora_root / "birthday"
 
     def test_subtype_lora_wins_over_the_group(self, runner, lora_root: Path):
         """Per-subtype training stays supported and takes precedence."""
         (lora_root / "birthday").mkdir()
         (lora_root / "birthday_kids").mkdir()
-        assert runner._resolve_lora("birthday/kids") == lora_root / "birthday_kids"
-        assert runner._resolve_lora("birthday/general") == lora_root / "birthday"
+        assert runner.resolve_lora("birthday/kids") == lora_root / "birthday_kids"
+        assert runner.resolve_lora("birthday/general") == lora_root / "birthday"
 
     def test_no_lora_at_all_resolves_to_none(self, runner, lora_root: Path):
-        assert runner._resolve_lora("birthday/kids") is None
+        assert runner.resolve_lora("birthday/kids") is None
 
     def test_another_group_does_not_match(self, runner, lora_root: Path):
         (lora_root / "birthday").mkdir()
-        assert runner._resolve_lora("christmas/general") is None
+        assert runner.resolve_lora("christmas/general") is None
 
     @pytest.mark.parametrize("occasion", [None, ""])
     def test_missing_occasion_resolves_to_none(self, runner, lora_root: Path, occasion):
-        assert runner._resolve_lora(occasion) is None
+        assert runner.resolve_lora(occasion) is None
 
     def test_ungrouped_occasion_still_resolves(self, runner, lora_root: Path):
         """Not every occasion has a slash — thank_you, easter, new_baby."""
         (lora_root / "thank_you").mkdir()
-        assert runner._resolve_lora("thank_you") == lora_root / "thank_you"
+        assert runner.resolve_lora("thank_you") == lora_root / "thank_you"
 
 
 class TestPipelineReuse:

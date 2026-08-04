@@ -138,7 +138,7 @@ class DiffusionRunner:
         self._fill_pipe = self._init_pipe(pipe)
         return self._fill_pipe
 
-    def _resolve_lora(self, occasion: str | None) -> Path | None:
+    def resolve_lora(self, occasion: str | None) -> Path | None:
         """The LoRA directory serving an occasion, subtype first then group.
 
         `birthday/kids` prefers `loras/birthday_kids` and falls back to
@@ -161,7 +161,7 @@ class DiffusionRunner:
         if self.cfg.lora_scale == 0.0:
             log.info("LORA_SCALE=0, generating from the base model")
             return
-        lora_dir = self._resolve_lora(occasion)
+        lora_dir = self.resolve_lora(occasion)
         if lora_dir is None:
             log.debug(f"No LoRA for occasion={occasion}, skipping")
             return
@@ -188,7 +188,7 @@ class DiffusionRunner:
         `loras/birthday`, and keying on the occasion would rebuild the whole
         Flux pipeline between them to arrive at the same weights.
         """
-        wanted = self._resolve_lora(occasion)
+        wanted = self.resolve_lora(occasion)
         wanted_name = wanted.name if wanted else None
         if self._lora_occasion is not None and wanted_name != self._lora_occasion:
             log.info(

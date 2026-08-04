@@ -232,7 +232,7 @@ class TestOrchestrator:
              patch("pipeline.orchestrator.get_diffusion_runner", return_value=MagicMock(
                  return_value=MagicMock(generate=MagicMock(return_value=[dummy_cover] * 2))
              )), \
-             patch("pipeline.orchestrator.render_card", return_value=rendered_mock), \
+             patch("pipeline.orchestrator.render_card", return_value=rendered_mock) as render, \
              patch("pipeline.orchestrator.generate_message", return_value=InsideMessage(
                  primary="Happy Birthday", alternatives=[]
              )), \
@@ -264,3 +264,10 @@ class TestOrchestrator:
         assert len(result) <= 2
         for c in result:
             assert c.occasion == "birthday/general"
+
+        # The LoRA's trigger token has to reach the prompt. has_lora used to be
+        # decided by rebuilding the directory path here, which looked for
+        # loras/birthday_general and missed the group LoRA at loras/birthday —
+        # so the token was silently dropped while the runner loaded the weights
+        # anyway, and nothing in the logs said so.
+        assert render.call_args.kwargs["visual_prompt"].startswith("TOK ")

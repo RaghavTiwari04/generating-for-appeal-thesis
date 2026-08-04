@@ -77,8 +77,11 @@ def generate(request: dict, cfg: OrchestratorConfig | None = None) -> list[Candi
 
     diffusion = get_diffusion_runner()
     visual_prompt = brief.visual_prompt
-    lora_dir = Path("generation/image/loras") / request["occasion"].replace("/", "_")
-    has_lora = lora_dir.exists()
+    # Asks the runner, rather than rebuilding the path here. Resolving it
+    # separately meant `birthday/general` looked for `loras/birthday_general`
+    # and missed the group LoRA at `loras/birthday`, so the trigger token was
+    # dropped from every prompt while the runner loaded the weights anyway.
+    has_lora = diffusion.resolve_lora(request["occasion"]) is not None
 
     # The brief already specifies an art medium (see the "Vary the art medium"
     # rule in brief_v1.txt). Prepending a second, randomly chosen medium here
