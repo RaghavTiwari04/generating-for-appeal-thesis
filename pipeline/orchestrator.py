@@ -11,6 +11,7 @@ calibrated saleability score.
 from __future__ import annotations
 
 import io
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -66,39 +67,62 @@ def _load_predictor(cfg: OrchestratorConfig, calib: Path | None):
     return RidgePredictor.load(cfg.predictor_ridge, calib)
 
 
+def _candidate_requests(request: dict, n: int) -> list[dict]:
+    """One request per candidate, each anchored on a different bestseller.
+
+    Reranking can only exploit variance that exists. Eight seeds of a single
+    brief are eight renders of one idea — they differ in composition and
+    palette but not in concept — so best-of-N among them picks the nicest
+    rendering rather than the best card. Giving each candidate its own
+    bestseller anchor makes the choice a choice between designs, which is what
+    the recovery metric was measured on and what a designer would actually do.
+    """
+    from generation.brief.market_signals import subject_pool_size
+
+    subjects = subject_pool_size(request["occasion"])
+    base = int(request.get("constraints", {}).get("suggested_subject") or 1)
+    out = []
+    for i in range(n):
+        req = {**request, "constraints": {**request.get("constraints", {})}}
+        req["constraints"]["suggested_subject"] = str((base - 1 + i) % subjects + 1)
+        out.append(req)
+    return out
+
+
+def _generate_briefs(requests: list[dict]) -> list[Brief]:
+    """Brief calls run concurrently — they are independent network round trips."""
+    if len(requests) == 1:
+        return [generate_brief(requests[0])]
+    with ThreadPoolExecutor(max_workers=min(8, len(requests))) as pool:
+        return list(pool.map(generate_brief, requests))
+
+
 def generate(request: dict, cfg: OrchestratorConfig | None = None) -> list[Candidate]:
     cfg = cfg or OrchestratorConfig()
 
-    brief: Brief = generate_brief(request)
+    briefs = _generate_briefs(_candidate_requests(request, cfg.n_candidates))
     log.info(
-        f"Brief generated occasion={request['occasion']} tone={request['tone']}: "
-        f"{brief.headline!r}"
+        f"{len(briefs)} briefs for occasion={request['occasion']} "
+        f"tone={request['tone']}: {[b.headline for b in briefs]}"
     )
 
     diffusion = get_diffusion_runner()
-    visual_prompt = brief.visual_prompt
     # Asks the runner, rather than rebuilding the path here. Resolving it
     # separately meant `birthday/general` looked for `loras/birthday_general`
     # and missed the group LoRA at `loras/birthday`, so the trigger token was
     # dropped from every prompt while the runner loaded the weights anyway.
     has_lora = diffusion.resolve_lora(request["occasion"]) is not None
 
+    # Each candidate is rendered with its headline lettered into the artwork.
     # The brief already specifies an art medium (see the "Vary the art medium"
-    # rule in brief_v1.txt). Prepending a second, randomly chosen medium here
-    # produced contradictory prompts like "oil painting of a papercut collage
-    # of ...". Candidate variation now comes from the seed and from the
-    # per-card bestseller-index rotation in pipeline/conditions.py.
-    prompt = f"TOK {visual_prompt}" if has_lora else visual_prompt
-
-    # Each candidate is rendered with its headline lettered into the artwork
-    # where the model manages it, and composed onto a reserved region where it
-    # does not. See generation/image/headline_text.py.
+    # rule in the brief prompt), so nothing else is prepended beyond the LoRA's
+    # trigger token.
     rendered = []
-    for i in range(cfg.n_candidates):
+    for i, brief in enumerate(briefs):
         rendered.append(
             render_card(
                 diffusion,
-                visual_prompt=prompt,
+                visual_prompt=f"TOK {brief.visual_prompt}" if has_lora else brief.visual_prompt,
                 headline=brief.headline,
                 tone=request["tone"],
                 style_tags=list(brief.style_tags),
@@ -110,27 +134,19 @@ def generate(request: dict, cfg: OrchestratorConfig | None = None) -> list[Candi
     in_image = sum(r.text_in_image for r in rendered)
     log.info(f"Headline rendered into artwork for {in_image}/{len(rendered)} candidates")
 
-    inside = generate_message(
-        occasion=request["occasion"],
-        tone=request["tone"],
-        concept=brief.concept,
-        headline=brief.headline,
-    )
-
-    candidates: list[Candidate] = []
-    for i, card in enumerate(rendered):
-        candidates.append(
-            Candidate(
-                image=card.image,
-                headline=brief.headline,
-                inside_message=inside.primary,
-                brief=brief.model_dump(),
-                occasion=request["occasion"],
-                seed=(cfg.image_seed_base + i) if cfg.image_seed_base is not None else None,
-                text_in_image=card.text_in_image,
-                headline_match=card.match_score,
-            )
+    candidates = [
+        Candidate(
+            image=card.image,
+            headline=brief.headline,
+            inside_message="",
+            brief=brief.model_dump(),
+            occasion=request["occasion"],
+            seed=(cfg.image_seed_base + i) if cfg.image_seed_base is not None else None,
+            text_in_image=card.text_in_image,
+            headline_match=card.match_score,
         )
+        for i, (brief, card) in enumerate(zip(briefs, rendered, strict=True))
+    ]
 
     if cfg.scorer == "llm":
         ranked = rerank_llm(candidates, top_k=cfg.top_k)
@@ -144,8 +160,35 @@ def generate(request: dict, cfg: OrchestratorConfig | None = None) -> list[Candi
             candidates, predictor=predictor, embedder=embedder, top_k=cfg.top_k
         )
 
-    _persist(ranked, request=request, cfg=cfg, brief=brief, inside_alternatives=inside.alternatives)
+    # After reranking, so a message is written only for the cards that survive.
+    # Each candidate now carries its own concept and headline, so messages
+    # cannot be shared; writing one per candidate beforehand would spend
+    # n_candidates calls to discard all but top_k.
+    alternatives = _write_inside_messages(ranked, request)
+
+    _persist(ranked, request=request, cfg=cfg, inside_alternatives=alternatives)
     return ranked
+
+
+def _write_inside_messages(ranked: list[Candidate], request: dict) -> dict[int, list[str]]:
+    """Fill in each surviving candidate's inside message. Returns alternatives."""
+    def _one(cand: Candidate):
+        return generate_message(
+            occasion=request["occasion"],
+            tone=request["tone"],
+            concept=cand.brief.get("concept", ""),
+            headline=cand.headline,
+        )
+
+    if not ranked:
+        return {}
+    with ThreadPoolExecutor(max_workers=min(8, len(ranked))) as pool:
+        messages = list(pool.map(_one, ranked))
+    alternatives: dict[int, list[str]] = {}
+    for i, (cand, msg) in enumerate(zip(ranked, messages, strict=True)):
+        cand.inside_message = msg.primary
+        alternatives[i] = msg.alternatives
+    return alternatives
 
 
 # ---------------------------------------------------------------------------
@@ -168,8 +211,7 @@ def _persist(
     *,
     request: dict,
     cfg: OrchestratorConfig,
-    brief: Brief,
-    inside_alternatives: list[str],
+    inside_alternatives: dict[int, list[str]],
     retries: int = 3,
 ) -> None:
     import time
@@ -201,11 +243,14 @@ def _persist(
                         {
                             "pipeline_version": PIPELINE_VERSION,
                             "condition_tag": cfg.condition_tag,
+                            # Each candidate carries its own brief now, so the
+                            # record has to be per card rather than one shared
+                            # brief repeated across the batch.
                             "brief": Jsonb(
                                 {
                                     "request": request,
-                                    "brief": brief.model_dump(),
-                                    "inside_alternatives": inside_alternatives,
+                                    "brief": cand.brief,
+                                    "inside_alternatives": inside_alternatives.get(rank, []),
                                     "brief_prompt_version": BRIEF_VERSION,
                                 }
                             ),

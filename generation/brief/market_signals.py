@@ -12,12 +12,16 @@ Four signals:
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from functools import lru_cache
 
 import numpy as np
 import pandas as pd
 from sklearn.cluster import KMeans
 
 from common.db import engine
+from common.logging import get_logger
+
+log = get_logger(__name__)
 
 LONGEVITY_CAUTION = (
     "Avoid current-events references, brand mentions, or anything that will "
@@ -124,6 +128,21 @@ FROM (
 ORDER BY score DESC
 LIMIT %(limit)s;
 """
+
+
+@lru_cache(maxsize=32)
+def subject_pool_size(occasion: str, default: int = 15) -> int:
+    """How many distinct bestseller subjects an occasion offers.
+
+    Callers rotate a subject index across candidates and need to know where to
+    wrap. Cached because it is a database round trip that returns the same
+    answer for the whole run, and it sits on the path of every generation.
+    """
+    try:
+        return max(len(bestseller_subjects_for_occasion(occasion, limit=30)), 5)
+    except Exception as e:
+        log.warning(f"Could not size the bestseller pool for {occasion} ({e})")
+        return default
 
 
 def bestseller_subjects_for_occasion(occasion: str, limit: int = 30) -> list[str]:

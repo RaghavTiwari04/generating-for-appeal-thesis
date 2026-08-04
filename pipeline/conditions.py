@@ -23,25 +23,9 @@ from psycopg.types.json import Jsonb
 from common.db import connection
 from common.logging import get_logger
 from common.storage import put_image
-from generation.brief.market_signals import bestseller_subjects_for_occasion
+from generation.brief.market_signals import subject_pool_size
 
 log = get_logger(__name__)
-
-_subject_cache: dict[str, int] = {}
-
-def _get_subject_pool_size(occasion: str) -> int:
-    """Return number of bestseller titles available for this occasion."""
-    if occasion in _subject_cache:
-        return _subject_cache[occasion]
-    try:
-        raw = bestseller_subjects_for_occasion(occasion, limit=30)
-        n = len(raw)
-        log.info(f"Loaded {n} bestseller titles for {occasion}")
-    except Exception as e:
-        log.warning(f"Failed to load bestseller titles for {occasion} ({e}), using default pool size")
-        n = 15
-    _subject_cache[occasion] = max(n, 5)
-    return _subject_cache[occasion]
 
 # Rotated across the k cards of every condition. Fixing tone at warm-sincere
 # left every generated card sincere while the scraped corpus — and therefore
@@ -324,7 +308,7 @@ def generate_eval_set(
         f"n_per={n_per_condition_per_occasion} seed_base={seed_base}"
     )
     for occ_i, occasion in enumerate(occasions):
-        pool_size = _get_subject_pool_size(occasion)
+        pool_size = subject_pool_size(occasion)
         for cond_j, cond in enumerate(conditions):
             for k in range(n_per_condition_per_occasion):
                 seed = seed_base + occ_i * 1000 + cond_j * 100 + k

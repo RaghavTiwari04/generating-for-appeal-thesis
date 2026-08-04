@@ -228,14 +228,15 @@ class TestOrchestrator:
         conn_ctx = MagicMock(__enter__=MagicMock(return_value=conn_inner),
                              __exit__=MagicMock(return_value=False))
 
-        with patch("pipeline.orchestrator.generate_brief", return_value=dummy_brief), \
+        with patch("pipeline.orchestrator.generate_brief", return_value=dummy_brief) as brief_call, \
+             patch("generation.brief.market_signals.subject_pool_size", return_value=12), \
              patch("pipeline.orchestrator.get_diffusion_runner", return_value=MagicMock(
                  return_value=MagicMock(generate=MagicMock(return_value=[dummy_cover] * 2))
              )), \
              patch("pipeline.orchestrator.render_card", return_value=rendered_mock) as render, \
              patch("pipeline.orchestrator.generate_message", return_value=InsideMessage(
                  primary="Happy Birthday", alternatives=[]
-             )), \
+             )) as message_call, \
              patch("models.predictor.infer.PredictorRunner", return_value=MagicMock(
                  score=MagicMock(return_value=[dummy_scores] * 2)
              )), \
@@ -254,12 +255,25 @@ class TestOrchestrator:
             # has to exist even though loading it is patched out.
             ridge_path = tmp_path / "ridge.npz"
             ridge_path.touch()
-            cfg = OrchestratorConfig(n_candidates=2, top_k=2,
+            cfg = OrchestratorConfig(n_candidates=2, top_k=1,
                                      scorer=scorer,
                                      predictor_ckpt=Path("/dev/null"),
                                      predictor_ridge=ridge_path,
                                      predictor_calib=None)
             result = generate({"occasion": "birthday/general", "tone": "warm-humorous"}, cfg)
+
+        # One brief per candidate, each anchored on a different bestseller.
+        # Sharing a brief across candidates made reranking choose between
+        # renders of one idea rather than between designs.
+        assert brief_call.call_count == 2
+        subjects = [
+            c.args[0]["constraints"]["suggested_subject"] for c in brief_call.call_args_list
+        ]
+        assert len(set(subjects)) == 2, subjects
+
+        # Messages are written after reranking, so the discarded candidate
+        # never costs one.
+        assert message_call.call_count == 1
 
         assert len(result) <= 2
         for c in result:
