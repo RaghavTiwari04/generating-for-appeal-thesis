@@ -136,7 +136,7 @@ def _generate_naive(occasion: str, seed: int, tone: str = "warm-sincere") -> Eva
 # Condition B — pipeline, no rerank (N=1)
 # ---------------------------------------------------------------------------
 def _generate_pipeline_no_rerank(
-    occasion: str, seed: int, scorer: str = "predictor", subject: str | None = None,
+    occasion: str, seed: int, scorer: str = "ridge", subject: str | None = None,
     tone: str = "warm-sincere",
 ) -> EvalCard:
     from pipeline.orchestrator import OrchestratorConfig, generate
@@ -169,7 +169,7 @@ def _generate_pipeline_no_rerank(
 # Condition C — pipeline + rerank (N=8)
 # ---------------------------------------------------------------------------
 def _generate_pipeline_rerank(
-    occasion: str, seed: int, scorer: str = "predictor", subject: str | None = None,
+    occasion: str, seed: int, scorer: str = "ridge", subject: str | None = None,
     tone: str = "warm-sincere",
 ) -> EvalCard:
     from pipeline.orchestrator import OrchestratorConfig, generate
@@ -309,7 +309,7 @@ def generate_eval_set(
     n_per_condition_per_occasion: int = 2,
     seed_base: int = 0,
     conditions: tuple[str, ...] = ("A", "B", "C", "D"),
-    scorer: str = "predictor",
+    scorer: str = "ridge",
 ) -> list[EvalCard]:
     cards: list[EvalCard] = []
     log.info(
@@ -360,7 +360,7 @@ if __name__ == "__main__":
         n: int = 2,
         conditions: str = "A,B,C",
         seed: int = 0,
-        scorer: str = "predictor",
+        scorer: str = "ridge",
     ) -> None:
         occ_list = [o.strip() for o in occasions.split(",")]
         cond_tuple = tuple(c.strip() for c in conditions.split(","))
