@@ -36,7 +36,10 @@ source cluster/jobs/_start_services.sh
 
 OCCASION="${OCCASION:-birthday/general}"
 N="${N:-4}"
-TONE="${TONE:-warm-sincere}"
+# Unset by default, so each brief picks its own register from the occasion's
+# bestsellers — the path the evaluation takes. Set TONE to pin one, which is
+# what the website does when a customer chooses.
+TONE="${TONE:-}"
 # LORA_SCALE=0 generates from base Flux, which is the control for "is the LoRA
 # the reason the headline is not being lettered".
 export LORA_SCALE="${LORA_SCALE:-0.4}"
@@ -44,11 +47,13 @@ export LORA_SCALE="${LORA_SCALE:-0.4}"
 # carries overlay text, so it cannot show what the model drew on its own.
 export REJECTED_DIR="${REJECTED_DIR:-./artifacts/rejected_covers}"
 
-echo "=== Smoke generation: $OCCASION ($N candidates, lora_scale=$LORA_SCALE) ==="
+echo "=== Smoke generation: $OCCASION ($N candidates, lora_scale=$LORA_SCALE, tone=${TONE:-brief chooses}) ==="
 echo "GPU: $(nvidia-smi --query-gpu=name,memory.total --format=csv,noheader)"
 echo "Start: $(date)"
 
-python -u -m pipeline.orchestrator "$OCCASION" --tone "$TONE" --n "$N" --top-k "$N"
+TONE_ARG=()
+if [ -n "$TONE" ]; then TONE_ARG=(--tone "$TONE"); fi
+python -u -m pipeline.orchestrator "$OCCASION" "${TONE_ARG[@]}" --n "$N" --top-k "$N"
 
 echo ""
 echo "--- Lettering outcome for the cards just generated ---"
