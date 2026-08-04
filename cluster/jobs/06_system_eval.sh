@@ -25,9 +25,16 @@ echo "Start: $(date)"
 
 OCCASIONS="birthday/general,birthday/milestone,birthday/kids,birthday/relationship"
 
+# The judge that labelled the corpus. The predictor trains on those labels and
+# condition D is sampled by the score they produced, so judging the comparison
+# with a different model would rate cards on one instrument having selected
+# them with another — and agreement between judges measured only rho 0.55-0.65,
+# enough to move a result on its own.
+PROVIDER="${PROVIDER:-gemini}"
+
 python -m eval.llm_system_eval \
     --occasions "$OCCASIONS" \
-    --provider openai \
+    --provider "$PROVIDER" \
     --out-dir ./artifacts/llm_system_eval
 
 echo "=== Done: $(date) ==="
