@@ -64,7 +64,32 @@ class LLMSystemEvalReport:
     n_ratings: int
 
 
-def _load_generated_cards(conditions: list[str]) -> pd.DataFrame:
+def _latest_run_tag() -> str | None:
+    """The most recently generated run's tag, or None if nothing is tagged."""
+    row = pd.read_sql(
+        """
+        SELECT gc.brief->'request'->>'eval_run' AS run_tag
+        FROM generated_cards gc
+        WHERE gc.brief->'request'->>'eval_run' IS NOT NULL
+        ORDER BY gc.generated_at DESC
+        LIMIT 1
+        """,
+        engine(),
+    )
+    return None if row.empty else row.iloc[0]["run_tag"]
+
+
+def _load_generated_cards(conditions: list[str], run_tag: str | None) -> pd.DataFrame:
+    """Cards from one generation run.
+
+    Selecting on condition_tag alone pooled every card ever generated, smoke
+    tests included — cards made under an earlier brief prompt, carrying the
+    typographic overlay, ranked on a different objective. The first full run
+    showed condition C below B for exactly that reason: C's rows were all old
+    while B's were fresh. The table looked plausible.
+
+    run_tag None reads everything, which is only right for inspecting history.
+    """
     sql = """
     SELECT gc.card_id::text AS card_key,
            gc.condition_tag,
@@ -74,8 +99,11 @@ def _load_generated_cards(conditions: list[str]) -> pd.DataFrame:
            COALESCE(gc.brief->'request'->>'occasion', gc.brief->>'occasion') AS occasion
     FROM generated_cards gc
     WHERE gc.condition_tag = ANY(%(conditions)s)
+      AND (%(run_tag)s IS NULL OR gc.brief->'request'->>'eval_run' = %(run_tag)s)
     """
-    return pd.read_sql(sql, engine(), params={"conditions": conditions})
+    return pd.read_sql(
+        sql, engine(), params={"conditions": conditions, "run_tag": run_tag}
+    )
 
 
 def _load_human_bestsellers(
@@ -324,9 +352,11 @@ def run(
     occasions: str = "birthday/general,birthday/milestone,birthday/kids,birthday/relationship",
     human_per_occasion: int = 5,
     out_dir: str = "./artifacts/llm_system_eval",
-    provider: str = "openai",
+    provider: str = "gemini",
     model: str = "",
     analyze_only: bool = False,
+    run_tag: str = "",
+    all_runs: bool = False,
 ) -> LLMSystemEvalReport:
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
@@ -343,7 +373,18 @@ def run(
     else:
         gen_conditions = [c for c in CONDITIONS if c != "D_human_bestseller"]
 
-        cards_gen = _load_generated_cards(gen_conditions)
+        # One run's cards, not every card ever generated. Defaults to the most
+        # recent tagged run; --all-runs is for inspecting history and will mix
+        # cards made under different prompts and reranking objectives.
+        tag = None if all_runs else (run_tag or _latest_run_tag())
+        if tag is None and not all_runs:
+            log.warning(
+                "No tagged generation run found. Scoring every generated card, "
+                "which mixes runs — regenerate with a run_tag for a clean comparison."
+            )
+        log.info(f"Generated cards from run_tag={tag or '(all)'}")
+
+        cards_gen = _load_generated_cards(gen_conditions, tag)
         n_before_filter = len(cards_gen)
         if occ_list:
             cards_gen = cards_gen[cards_gen["occasion"].isin(occ_list)]

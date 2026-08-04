@@ -134,7 +134,7 @@ def _generate_naive(occasion: str, seed: int, tone: str = "warm-sincere") -> Eva
 # ---------------------------------------------------------------------------
 def _generate_pipeline_no_rerank(
     occasion: str, seed: int, scorer: str = "ridge", subject: str | None = None,
-    tone: str | None = None,
+    tone: str | None = None, run_tag: str = "",
 ) -> EvalCard:
     from pipeline.orchestrator import OrchestratorConfig, generate
 
@@ -145,7 +145,7 @@ def _generate_pipeline_no_rerank(
         condition_tag=CONDITION_TAGS["B"],
         scorer=scorer,
     )
-    request: dict = {"occasion": occasion, "tone": tone}  # tone None -> brief chooses
+    request: dict = {"occasion": occasion, "tone": tone, "eval_run": run_tag}
     if subject:
         request["constraints"] = {"suggested_subject": subject}
     ranked = generate(request, cfg)
@@ -167,7 +167,7 @@ def _generate_pipeline_no_rerank(
 # ---------------------------------------------------------------------------
 def _generate_pipeline_rerank(
     occasion: str, seed: int, scorer: str = "ridge", subject: str | None = None,
-    tone: str | None = None,
+    tone: str | None = None, run_tag: str = "",
 ) -> EvalCard:
     from pipeline.orchestrator import OrchestratorConfig, generate
 
@@ -178,7 +178,7 @@ def _generate_pipeline_rerank(
         condition_tag=CONDITION_TAGS["C"],
         scorer=scorer,
     )
-    request: dict = {"occasion": occasion, "tone": tone}  # tone None -> brief chooses
+    request: dict = {"occasion": occasion, "tone": tone, "eval_run": run_tag}
     if subject:
         request["constraints"] = {"suggested_subject": subject}
     ranked = generate(request, cfg)
@@ -271,7 +271,7 @@ INSERT INTO generated_cards (
 """
 
 
-def _persist_eval_card(card: EvalCard, seed: int, retries: int = 3) -> str:
+def _persist_eval_card(card: EvalCard, seed: int, run_tag: str, retries: int = 3) -> str:
     for attempt in range(retries):
         try:
             with connection() as conn, conn.cursor() as cur:
@@ -280,7 +280,13 @@ def _persist_eval_card(card: EvalCard, seed: int, retries: int = 3) -> str:
                     {
                         "pv": f"eval_{card.condition}",
                         "ct": card.condition_tag,
-                        "brief": Jsonb({"request": {"occasion": card.occasion}, "condition": card.condition}),
+                        # eval_run rides in the request, which is where the
+                        # orchestrator puts B and C's too, so one filter covers
+                        # every condition.
+                        "brief": Jsonb({
+                            "request": {"occasion": card.occasion, "eval_run": run_tag},
+                            "condition": card.condition,
+                        }),
                         "cover_path": card.cover_path,
                         "inside_message": card.inside_message,
                         "headline_text": card.headline,
@@ -307,11 +313,21 @@ def generate_eval_set(
     seed_base: int = 0,
     conditions: tuple[str, ...] = ("A", "B", "C", "D"),
     scorer: str = "ridge",
+    run_tag: str = "",
 ) -> list[EvalCard]:
+    """Generate the evaluation set. `run_tag` labels every card it produces.
+
+    Without it the analysis pooled every card ever generated with a matching
+    condition_tag, smoke tests included — cards made under an earlier brief
+    prompt, with the typographic overlay, and ranked on a different objective.
+    That produced a plausible-looking table in which condition C scored below B
+    because C's rows were all old.
+    """
+    run_tag = run_tag or f"run_{seed_base}"
     cards: list[EvalCard] = []
     log.info(
         f"Starting eval set: occasions={occasions} conditions={conditions} "
-        f"n_per={n_per_condition_per_occasion} seed_base={seed_base}"
+        f"n_per={n_per_condition_per_occasion} seed_base={seed_base} run_tag={run_tag}"
     )
     for occ_i, occasion in enumerate(occasions):
         pool_size = subject_pool_size(occasion)
@@ -323,9 +339,9 @@ def generate_eval_set(
                     if cond == "A":
                         card = _generate_naive(occasion, seed, tone=NAIVE_TONE)
                     elif cond == "B":
-                        card = _generate_pipeline_no_rerank(occasion, seed, scorer=scorer, subject=str(bestseller_idx))
+                        card = _generate_pipeline_no_rerank(occasion, seed, scorer=scorer, subject=str(bestseller_idx), run_tag=run_tag)
                     elif cond == "C":
-                        card = _generate_pipeline_rerank(occasion, seed, scorer=scorer, subject=str(bestseller_idx))
+                        card = _generate_pipeline_rerank(occasion, seed, scorer=scorer, subject=str(bestseller_idx), run_tag=run_tag)
                     elif cond == "D":
                         card = _sample_human_bestseller(occasion, seed)
                         if card is None:
@@ -338,7 +354,7 @@ def generate_eval_set(
                         cards.append(card)
                         log.info(f"Generated {cond} {occasion} seed={seed} card_id={card.card_id}")
                     else:
-                        card_id = _persist_eval_card(card, seed)
+                        card_id = _persist_eval_card(card, seed, run_tag)
                         card.card_id = card_id
                         cards.append(card)
                         log.info(f"Generated {cond} {occasion} seed={seed} card_id={card_id}")
@@ -357,6 +373,7 @@ if __name__ == "__main__":
         conditions: str = "A,B,C",
         seed: int = 0,
         scorer: str = "ridge",
+        run_tag: str = "",
     ) -> None:
         occ_list = [o.strip() for o in occasions.split(",")]
         cond_tuple = tuple(c.strip() for c in conditions.split(","))
@@ -366,6 +383,7 @@ if __name__ == "__main__":
             seed_base=seed,
             conditions=cond_tuple,
             scorer=scorer,
+            run_tag=run_tag,
         )
         print(f"Generated {len(cards)} eval cards")
 

@@ -32,9 +32,14 @@ OCCASIONS="birthday/general,birthday/milestone,birthday/kids,birthday/relationsh
 # enough to move a result on its own.
 PROVIDER="${PROVIDER:-gemini}"
 
+# Empty picks the most recently generated run, which is what a chained 05 -> 06
+# wants. Set RUN_TAG to score an older one.
+RUN_TAG="${RUN_TAG:-}"
+
 python -m eval.llm_system_eval \
     --occasions "$OCCASIONS" \
     --provider "$PROVIDER" \
+    --run-tag "$RUN_TAG" \
     --out-dir ./artifacts/llm_system_eval
 
 echo "=== Done: $(date) ==="

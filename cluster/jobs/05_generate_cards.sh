@@ -48,12 +48,18 @@ trap cleanup EXIT
 
 OCCASIONS="birthday/general,birthday/milestone,birthday/kids,birthday/relationship"
 N_PER=5
+# Labels every card this run produces, so the analysis scores one run instead
+# of pooling every card ever generated — including smoke tests made under an
+# earlier prompt and a different reranking objective.
+RUN_TAG="${RUN_TAG:-run_$(date +%Y%m%d_%H%M)}"
+echo "run_tag=$RUN_TAG"
 
 export PYTHONUNBUFFERED=1
 python -u -m pipeline.conditions \
     --occasions "$OCCASIONS" \
     --conditions "A,B,C" \
     --n "$N_PER" \
-    --seed 20000
+    --seed 20000 \
+    --run-tag "$RUN_TAG"
 
 echo "=== Done: $(date) ==="
