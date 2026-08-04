@@ -59,13 +59,17 @@
 
       <!-- Tone -->
       <div>
-        <label class="block text-sm font-medium text-stone-600 mb-1">Tone <span class="text-red-400">*</span></label>
+        <label class="block text-sm font-medium text-stone-600 mb-1">Tone</label>
         <select x-model="form.tone"
                 class="w-full border border-stone-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400">
+          <!-- Empty sends no tone, and the brief picks one to suit the concept
+               it draws from this occasion's bestsellers. -->
+          <option value="">— let the design decide —</option>
           <template x-for="t in tones" :key="t">
             <option :value="t" x-text="t.replace(/-/g,' ')"></option>
           </template>
         </select>
+        <p class="text-xs text-stone-400 mt-1">Leave unset to match what sells in this category</p>
       </div>
 
       <!-- N candidates -->
@@ -90,7 +94,7 @@
     </div>
 
     <button @click="generate()"
-            :disabled="!form.occasion || !form.tone || status === 'running'"
+            :disabled="!form.occasion || status === 'running'"
             class="mt-6 w-full sm:w-auto px-8 py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-stone-300 disabled:cursor-not-allowed text-white font-semibold rounded-xl transition-colors text-sm">
       <span x-show="status !== 'running'">✨ Generate cards</span>
       <span x-show="status === 'running'" class="generating">Generating…</span>
@@ -265,7 +269,7 @@ function app() {
     form: {
       occasion: '',
       relationship: '',
-      tone: 'warm-sincere',
+      tone: '',   // empty = let the brief choose from the bestsellers
       n_candidates: 8,
       top_k: 3,
       constraints: {},
@@ -295,7 +299,6 @@ function app() {
         this.occasions = d.occasions;
         this.relationships = d.relationships;
         this.tones = d.tones;
-        this.form.tone = this.tones[0] || 'warm-sincere';
       } catch (e) {
         console.error('Could not load occasions:', e);
       }
@@ -303,7 +306,7 @@ function app() {
     },
 
     async generate() {
-      if (!this.form.occasion || !this.form.tone) return;
+      if (!this.form.occasion) return;   // tone is optional
       this.status = 'running';
       this.progressLog = [];
       this.results = [];
@@ -314,7 +317,13 @@ function app() {
         const r = await fetch('/api/generate', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(this.form),
+          // Unset selects come through as '', which the API would reject as an
+          // unknown tone. null is what "let the brief decide" means there.
+          body: JSON.stringify({
+            ...this.form,
+            tone: this.form.tone || null,
+            relationship: this.form.relationship || null,
+          }),
         });
         const d = await r.json();
         jobId = d.job_id;

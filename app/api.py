@@ -70,11 +70,14 @@ _JOB_LIMIT = 50  # keep only the last N jobs in memory
 class GenerateRequest(BaseModel):
     occasion: str
     relationship: str | None = None
-    tone: str = "warm-sincere"
+    # Optional, so the picker can offer "surprise me". Left unset, the brief
+    # chooses a register to suit the concept it draws from the occasion's
+    # bestsellers rather than defaulting to one.
+    tone: str | None = None
     n_candidates: int = 8
     top_k: int = 3
     constraints: dict = {}
-    scorer: str = "predictor"  # "predictor" | "llm"
+    scorer: str = "ridge"  # "ridge" | "mlp" | "llm"
 
 
 class GenerateResponse(BaseModel):
@@ -123,7 +126,7 @@ def _run_pipeline(job: Job, request: dict) -> None:
         ranked = generate(
             {
                 "occasion": request["occasion"],
-                "tone": request.get("tone", "warm-sincere"),
+                "tone": request.get("tone"),
                 "relationship": request.get("relationship"),
                 "constraints": request.get("constraints", {}),
             },
@@ -190,7 +193,9 @@ async def list_occasions():
 async def start_generate(req: GenerateRequest, background_tasks: BackgroundTasks):
     if req.occasion not in ACTIVE_OCCASIONS:
         raise HTTPException(400, f"Unknown occasion: {req.occasion!r}")
-    if req.tone not in TONES:
+    # None is allowed and means "let the brief decide"; a named tone still has
+    # to be one the prompt understands.
+    if req.tone is not None and req.tone not in TONES:
         raise HTTPException(400, f"Unknown tone: {req.tone!r}")
 
     job_id = str(uuid.uuid4())

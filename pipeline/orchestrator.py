@@ -103,7 +103,7 @@ def generate(request: dict, cfg: OrchestratorConfig | None = None) -> list[Candi
     briefs = _generate_briefs(_candidate_requests(request, cfg.n_candidates))
     log.info(
         f"{len(briefs)} briefs for occasion={request['occasion']} "
-        f"tone={request['tone']}: {[b.headline for b in briefs]}"
+        f"tones={[b.tone for b in briefs]}: {[b.headline for b in briefs]}"
     )
 
     diffusion = get_diffusion_runner()
@@ -124,7 +124,7 @@ def generate(request: dict, cfg: OrchestratorConfig | None = None) -> list[Candi
                 diffusion,
                 visual_prompt=f"TOK {brief.visual_prompt}" if has_lora else brief.visual_prompt,
                 headline=brief.headline,
-                tone=request["tone"],
+                tone=brief.tone,
                 style_tags=list(brief.style_tags),
                 occasion=request["occasion"],
                 seed=(cfg.image_seed_base + i) if cfg.image_seed_base is not None else None,
@@ -175,7 +175,9 @@ def _write_inside_messages(ranked: list[Candidate], request: dict) -> dict[int, 
     def _one(cand: Candidate):
         return generate_message(
             occasion=request["occasion"],
-            tone=request["tone"],
+            # Read off the brief, not the request: an unpinned request has no
+            # tone, and the cover's register is whatever the brief chose.
+            tone=cand.brief.get("tone") or "warm-sincere",
             concept=cand.brief.get("concept", ""),
             headline=cand.headline,
         )
@@ -292,7 +294,7 @@ if __name__ == "__main__":
 
     def cli(
         occasion: str,
-        tone: str = "warm-sincere",
+        tone: str | None = None,
         relationship: str | None = None,
         n: int = 8,
         top_k: int = 3,

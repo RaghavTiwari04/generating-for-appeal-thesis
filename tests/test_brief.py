@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -11,6 +12,7 @@ from generation.brief.schema import Brief, validate_request
 
 _VALID_BRIEF_JSON = {
     "concept": "Wildflowers and a cup of tea",
+    "tone": "warm-sincere",
     "headline": "Thanks For Everything, Mum",
     "inside_message": "Happy Birthday, Mum. Thank you for everything. Love always.",
     "visual_prompt": "Watercolour wildflowers, uncluttered band across the top",
@@ -61,3 +63,29 @@ def test_validate_request_bad_tone() -> None:
             "occasion": "birthday/general",
             "tone": "not-a-valid-tone",
         })
+
+
+def test_request_without_a_tone_is_valid() -> None:
+    """No tone means the brief picks one, which is the evaluation's path.
+
+    Generated cards then inherit the tone mix of the bestsellers they are drawn
+    from — the same corpus condition D is sampled from — instead of a rotation
+    that had to guess that mix without tone labels to check against.
+    """
+    req = validate_request({"occasion": "birthday/general"})
+    assert req.tone is None
+
+
+def test_a_pinned_tone_overrides_what_the_model_returned() -> None:
+    """The site's tone picker is a promise, not a suggestion."""
+    payload = dict(_VALID_BRIEF_JSON, tone="funny-irreverent")
+    with (
+        patch("common.llm.call_llm", return_value=json.dumps(payload)),
+        patch("generation.brief.market_signals.gather", return_value=MagicMock(
+            top_tropes=[], coverage_gaps=[], longevity_caution=""
+        )),
+    ):
+        from generation.brief.generate import generate_brief
+
+        brief = generate_brief({"occasion": "birthday/general", "tone": "sentimental"})
+    assert brief.tone == "sentimental"

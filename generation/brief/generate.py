@@ -12,6 +12,7 @@ from pathlib import Path
 
 from common.llm import call_llm, extract_json
 from common.logging import get_logger
+from common.occasions import TONES
 from generation.brief.market_signals import gather, render_for_prompt
 from generation.brief.schema import Brief, BriefRequest, validate_request
 
@@ -33,7 +34,10 @@ def _render_template(req: BriefRequest) -> str:
     return (
         template.replace("{{occasion}}", req.occasion)
         .replace("{{relationship}}", req.relationship or "(none)")
-        .replace("{{tone}}", req.tone)
+        # "(choose one)" rather than a default: naming a tone here would pin
+        # every unconstrained brief to it, which is the bias that dropping the
+        # required tone was meant to remove.
+        .replace("{{tone}}", req.tone or "(choose one that suits the card)")
         .replace("{{constraints_json}}", json.dumps(req.constraints, ensure_ascii=False))
         .replace("{{top_tropes}}", signals["top_tropes"])
         .replace("{{bestseller_subjects}}", signals["bestseller_subjects"])
@@ -49,7 +53,17 @@ def generate_brief(request: dict | BriefRequest) -> Brief:
 
     raw = call_llm(prompt)
     payload = extract_json(raw)
-    return Brief.model_validate(payload)
+    brief = Brief.model_validate(payload)
+    # A pinned tone wins over whatever the model echoed back: the site's picker
+    # is a promise to the customer, not a suggestion. Unpinned, an unrecognised
+    # tone falls back rather than propagating a value the font palette and
+    # message generator do not know.
+    if req.tone:
+        brief.tone = req.tone
+    elif brief.tone not in TONES:
+        log.warning(f"Brief returned tone={brief.tone!r}, not in TONES; using {TONES[0]}")
+        brief.tone = TONES[0]
+    return brief
 
 
 if __name__ == "__main__":

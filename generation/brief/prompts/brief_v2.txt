@@ -9,6 +9,7 @@ Respond with **JSON only**, matching this schema (all fields required):
 
 {
   "concept": "<<one sentence describing the cover idea>>",
+  "tone": "<<the card's register: warm-sincere | warm-humorous | funny-irreverent | sentimental | minimalist>>",
   "headline": "<<the exact words on the cover: at most 4 words, ≤ 30 characters>>",
   "inside_message": "<<inside-card text, 1–4 short sentences plus a sign-off line>>",
   "visual_prompt": "<<vivid diffusion-friendly description of the cover artwork; describe medium, subject, composition, light, and say where the headline lettering sits and how it is painted>>",
@@ -39,7 +40,13 @@ Hard rules:
   `inside_message`.
 - Avoid time-bound references (current events, ages of celebrities, brands).
 - Avoid clichés flagged in MARKET_SIGNALS.gaps.
-- Match `tone` strictly: warm-sincere is not interchangeable with warm-humorous.
+- If CONTEXT gives a `tone`, match it strictly and echo it back in `tone`:
+  warm-sincere is not interchangeable with warm-humorous.
+- If CONTEXT gives no tone, choose the one that suits the card you are
+  designing and report it in `tone`. Let BESTSELLER_SUBJECTS guide that choice
+  — they are what actually sells in this category, and their register is part
+  of why. Do not default to warm-sincere out of caution; if the bestsellers for
+  this occasion are mostly funny, a funny card is the honest reading of them.
 - Sympathy / bereavement cards never include humour or bright neon.
 - The `headline` must contain only plain text — NO emoji, NO unicode symbols.
 

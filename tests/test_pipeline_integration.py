@@ -28,6 +28,7 @@ from models.predictor.architecture import HEAD_NAMES
 def dummy_brief() -> Brief:
     return Brief(
         concept="Wildflowers and tea",
+        tone="warm-sincere",
         headline="Thanks For Everything, Mum",
         inside_message="Happy Birthday, Mum.",
         # v2 briefs no longer forbid text: the image model letters the headline

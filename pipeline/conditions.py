@@ -27,18 +27,15 @@ from generation.brief.market_signals import subject_pool_size
 
 log = get_logger(__name__)
 
-# Rotated across the k cards of every condition. Fixing tone at warm-sincere
-# left every generated card sincere while the scraped corpus — and therefore
-# condition D — is humour-heavy, so any measured gap partly reflected tone
-# rather than quality. A/B/C use the same tone for the same k, keeping the
-# conditions matched.
-EVAL_TONES: tuple[str, ...] = (
-    "warm-sincere",
-    "warm-humorous",
-    "funny-irreverent",
-    "sentimental",
-    "minimalist",
-)
+# Condition A has no brief LLM, so it needs a tone named here. B and C do not:
+# their briefs choose one to suit the concept they draw from the occasion's
+# bestsellers, which is the same corpus condition D is sampled from, so their
+# tone mix matches D's by construction rather than by a rotation that had to
+# guess it.
+#
+# A is the naive baseline and gets the most common register; it has no market
+# signals to reason from, which is the point of the condition.
+NAIVE_TONE = "warm-sincere"
 
 CONDITION_TAGS = {
     "A": "A_naive_ai",
@@ -137,7 +134,7 @@ def _generate_naive(occasion: str, seed: int, tone: str = "warm-sincere") -> Eva
 # ---------------------------------------------------------------------------
 def _generate_pipeline_no_rerank(
     occasion: str, seed: int, scorer: str = "ridge", subject: str | None = None,
-    tone: str = "warm-sincere",
+    tone: str | None = None,
 ) -> EvalCard:
     from pipeline.orchestrator import OrchestratorConfig, generate
 
@@ -148,7 +145,7 @@ def _generate_pipeline_no_rerank(
         condition_tag=CONDITION_TAGS["B"],
         scorer=scorer,
     )
-    request: dict = {"occasion": occasion, "tone": tone}
+    request: dict = {"occasion": occasion, "tone": tone}  # tone None -> brief chooses
     if subject:
         request["constraints"] = {"suggested_subject": subject}
     ranked = generate(request, cfg)
@@ -170,7 +167,7 @@ def _generate_pipeline_no_rerank(
 # ---------------------------------------------------------------------------
 def _generate_pipeline_rerank(
     occasion: str, seed: int, scorer: str = "ridge", subject: str | None = None,
-    tone: str = "warm-sincere",
+    tone: str | None = None,
 ) -> EvalCard:
     from pipeline.orchestrator import OrchestratorConfig, generate
 
@@ -181,7 +178,7 @@ def _generate_pipeline_rerank(
         condition_tag=CONDITION_TAGS["C"],
         scorer=scorer,
     )
-    request: dict = {"occasion": occasion, "tone": tone}
+    request: dict = {"occasion": occasion, "tone": tone}  # tone None -> brief chooses
     if subject:
         request["constraints"] = {"suggested_subject": subject}
     ranked = generate(request, cfg)
@@ -322,14 +319,13 @@ def generate_eval_set(
             for k in range(n_per_condition_per_occasion):
                 seed = seed_base + occ_i * 1000 + cond_j * 100 + k
                 bestseller_idx = (k % pool_size) + 1
-                tone = EVAL_TONES[k % len(EVAL_TONES)]
                 try:
                     if cond == "A":
-                        card = _generate_naive(occasion, seed, tone=tone)
+                        card = _generate_naive(occasion, seed, tone=NAIVE_TONE)
                     elif cond == "B":
-                        card = _generate_pipeline_no_rerank(occasion, seed, scorer=scorer, subject=str(bestseller_idx), tone=tone)
+                        card = _generate_pipeline_no_rerank(occasion, seed, scorer=scorer, subject=str(bestseller_idx))
                     elif cond == "C":
-                        card = _generate_pipeline_rerank(occasion, seed, scorer=scorer, subject=str(bestseller_idx), tone=tone)
+                        card = _generate_pipeline_rerank(occasion, seed, scorer=scorer, subject=str(bestseller_idx))
                     elif cond == "D":
                         card = _sample_human_bestseller(occasion, seed)
                         if card is None:
@@ -340,7 +336,7 @@ def generate_eval_set(
 
                     if cond in ("B", "C") and card.card_id:
                         cards.append(card)
-                        log.info(f"Generated {cond} {occasion} tone={tone} seed={seed} card_id={card.card_id}")
+                        log.info(f"Generated {cond} {occasion} seed={seed} card_id={card.card_id}")
                     else:
                         card_id = _persist_eval_card(card, seed)
                         card.card_id = card_id
