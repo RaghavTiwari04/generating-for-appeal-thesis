@@ -232,6 +232,15 @@ LIMIT %(limit)s;
 
 
 def _sample_human_bestseller(occasion: str, seed: int, pool_size: int = 50) -> EvalCard | None:
+    """One human card, drawn at random from the occasion's bestseller band.
+
+    Random within the band rather than the single top-scoring card. Those
+    scores come from the same judge that rates every condition, so taking the
+    maximum selects on the dependent variable and hands D whatever part of its
+    lead is noise. Drawing from the top `pool_size` keeps these the
+    strongest-selling designs while making D's expected score the band's mean.
+    Matches how `eval.llm_system_eval` draws the same condition.
+    """
     with connection() as conn, conn.cursor() as cur:
         cur.execute(_TOP_LISTINGS_SQL, {"occasion": occasion, "limit": pool_size})
         rows = cur.fetchall()

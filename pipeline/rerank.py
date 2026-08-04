@@ -1,12 +1,14 @@
 """Best-of-N reranking.
 
 Given N candidate composed cards, score each via the predictor (or LLM for
-testing) and return sorted by composite saleability = 0.7 * purchase_intent
-+ 0.3 * distinctiveness.
+testing) and return them sorted by predicted purchase intent — the same
+quantity condition D's human cards are selected on, so the two conditions are
+ranked by one objective. See DIST_WEIGHT below for what changed and why.
 """
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -26,8 +28,24 @@ if TYPE_CHECKING:
 
 log = get_logger(__name__)
 
-PI_WEIGHT = 0.7
-DIST_WEIGHT = 0.3
+# What reranking maximises: purchase intent alone.
+#
+# It was 0.7 purchase intent + 0.3 distinctiveness. Condition D's cards are
+# drawn on `saleability_labels.score`, which is purchase intent by itself, so
+# any distinctiveness weight had C and D optimising different objectives — C
+# spending part of its selection budget on a dimension D is not chosen for, and
+# part of any C-versus-D gap reflecting that mismatch rather than card quality.
+# The predictor is also strongest on purchase intent, so weight spent elsewhere
+# is spent on its weaker heads.
+#
+# RERANK_DIST_WEIGHT > 0 restores the blend. The argument for it is that
+# distinctiveness stops best-of-N converging on the safest design, which is a
+# real failure mode for a generator asked to produce a catalogue rather than a
+# card — but that is a property of the output set, not of the comparison this
+# study makes, and it is measurable from the distinctiveness head afterwards
+# rather than something selection has to enforce.
+DIST_WEIGHT = float(os.environ.get("RERANK_DIST_WEIGHT", "0"))
+PI_WEIGHT = 1.0 - DIST_WEIGHT
 
 
 @dataclass

@@ -78,7 +78,26 @@ def _load_generated_cards(conditions: list[str]) -> pd.DataFrame:
     return pd.read_sql(sql, engine(), params={"conditions": conditions})
 
 
-def _load_human_bestsellers(occasions: list[str], per_occasion: int = 5) -> pd.DataFrame:
+def _load_human_bestsellers(
+    occasions: list[str],
+    per_occasion: int = 5,
+    *,
+    pool_size: int = 50,
+    seed: int = 42,
+) -> pd.DataFrame:
+    """Condition D: cards drawn at random from each occasion's bestseller band.
+
+    Random within the band, not the top `per_occasion` by score. Those scores
+    come from the same judge that rates every condition, so taking the maximum
+    of them selects on the dependent variable: D would be handed the cards the
+    judge happens to score highest, including whatever part of that is noise,
+    and the pipeline would be measured against an inflated baseline.
+
+    Drawing from the top `pool_size` keeps "bestseller" meaningful — these are
+    still the strongest-selling designs for the occasion — while making D's
+    expected score the band's mean rather than its maximum. Seeded, so the
+    comparison is reproducible.
+    """
     # Rank WITHIN each occasion. A global ORDER BY score would fill the whole
     # D sample from the highest-scoring occasions and drop others entirely,
     # leaving D with a different occasion mix from the balanced A/B/C sets —
@@ -116,12 +135,22 @@ def _load_human_bestsellers(occasions: list[str], per_occasion: int = 5) -> pd.D
                      l.listing_id
         ) representatives
     ) ranked
-    WHERE rn <= %(per_occasion)s
+    WHERE rn <= %(pool_size)s
     """
-    return pd.read_sql(
+    pool = pd.read_sql(
         sql, engine(),
-        params={"occasions": occasions, "per_occasion": per_occasion},
+        params={"occasions": occasions, "pool_size": pool_size},
     )
+    if pool.empty:
+        return pool
+    # Sampled per occasion so every occasion contributes the same number of
+    # cards, matching the balanced A/B/C sets.
+    rng = np.random.default_rng(seed)
+    picked = [
+        rows.sample(n=min(per_occasion, len(rows)), random_state=rng.integers(2**32))
+        for _, rows in pool.groupby("occasion", sort=True)
+    ]
+    return pd.concat(picked, ignore_index=True)
 
 
 def _load_image(cover_path: str) -> Image.Image | None:
