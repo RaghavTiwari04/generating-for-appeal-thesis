@@ -32,15 +32,32 @@ class MarketSignals:
     longevity_caution: str = LONGEVITY_CAUTION
 
 
+# One listing per duplicate cluster, as everywhere else that ranks by score.
+#
+# It matters more here than most: these rows are k-means clustered into five
+# "tropes" that describe the occasion to the brief. Colourways of one artwork
+# sit on top of each other in embedding space, so without the collapse they
+# form clusters of their own and a single design becomes several of the five
+# themes the market is said to contain.
 _TOP_BY_OCCASION_SQL = """
-SELECT lf.listing_id, lf.clip_embedding, COALESCE(lf.extracted_text, l.title) AS headline_text
-FROM listing_features lf
-JOIN listings l USING (listing_id)
-LEFT JOIN saleability_labels sl
-  ON sl.listing_id = lf.listing_id AND sl.label_source = 'llm_ssr_rubric_v2'
-WHERE lf.occasion = %(occasion)s
-  AND lf.clip_embedding IS NOT NULL
-ORDER BY COALESCE(sl.score, 0) DESC
+SELECT listing_id, clip_embedding, headline_text
+FROM (
+    SELECT DISTINCT ON (COALESCE(lf.duplicate_cluster_id::text, lf.listing_id::text))
+           lf.listing_id,
+           lf.clip_embedding,
+           COALESCE(lf.extracted_text, l.title) AS headline_text,
+           COALESCE(sl.score, 0) AS score
+    FROM listing_features lf
+    JOIN listings l USING (listing_id)
+    LEFT JOIN saleability_labels sl
+      ON sl.listing_id = lf.listing_id AND sl.label_source = 'llm_ssr_rubric_v2'
+    WHERE lf.occasion = %(occasion)s
+      AND lf.clip_embedding IS NOT NULL
+    ORDER BY COALESCE(lf.duplicate_cluster_id::text, lf.listing_id::text),
+             COALESCE(sl.score, 0) DESC,
+             lf.listing_id
+) representatives
+ORDER BY score DESC
 LIMIT %(limit)s;
 """
 
@@ -79,15 +96,32 @@ def top_tropes_for_occasion(occasion: str, *, k_clusters: int = 5, top_n: int = 
     return tropes
 
 
+# One title per duplicate cluster, the cluster's best-scoring member standing
+# for it.
+#
+# This list is the brief's inspiration palette, and the prompt tells the model
+# to draw from all of it rather than the top few. Print-on-demand catalogues
+# carry one artwork in many colourways, which score near-identically because
+# they are the same artwork, so without the collapse the top 30 could be a
+# dozen designs listed twice or three times each — a narrower palette than the
+# count suggests, and one that pushes every candidate toward the same subject.
 _TOP_TITLES_SQL = """
-SELECT l.title, COALESCE(sl.score, 0) AS score
-FROM listings l
-JOIN listing_features lf USING (listing_id)
-LEFT JOIN saleability_labels sl
-  ON sl.listing_id = l.listing_id AND sl.label_source = 'llm_ssr_rubric_v2'
-WHERE lf.occasion = %(occasion)s
-  AND l.title IS NOT NULL
-ORDER BY COALESCE(sl.score, 0) DESC
+SELECT title, score
+FROM (
+    SELECT DISTINCT ON (COALESCE(lf.duplicate_cluster_id::text, l.listing_id::text))
+           l.title,
+           COALESCE(sl.score, 0) AS score
+    FROM listings l
+    JOIN listing_features lf USING (listing_id)
+    LEFT JOIN saleability_labels sl
+      ON sl.listing_id = l.listing_id AND sl.label_source = 'llm_ssr_rubric_v2'
+    WHERE lf.occasion = %(occasion)s
+      AND l.title IS NOT NULL
+    ORDER BY COALESCE(lf.duplicate_cluster_id::text, l.listing_id::text),
+             COALESCE(sl.score, 0) DESC,
+             l.listing_id
+) representatives
+ORDER BY score DESC
 LIMIT %(limit)s;
 """
 

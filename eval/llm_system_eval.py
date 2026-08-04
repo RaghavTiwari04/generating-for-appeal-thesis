@@ -83,25 +83,38 @@ def _load_human_bestsellers(occasions: list[str], per_occasion: int = 5) -> pd.D
     # D sample from the highest-scoring occasions and drop others entirely,
     # leaving D with a different occasion mix from the balanced A/B/C sets —
     # so a C-vs-D difference would partly reflect occasion mix, not quality.
+    # Duplicate clusters collapse before ranking. Print-on-demand catalogues
+    # carry one artwork in many colourways, and copies score near-identically
+    # because they are the same artwork, so the top 5 for an occasion could be
+    # one or two designs repeated. Condition D would then stand for the range of
+    # what human designers sell while showing almost none of it, and it is the
+    # baseline every other condition is compared against.
     sql = """
     SELECT card_key, condition_tag, cover_path, headline_text, inside_message, occasion
     FROM (
-        SELECT li.listing_id::text AS card_key,
-               'D_human_bestseller' AS condition_tag,
-               li.storage_path AS cover_path,
-               l.title AS headline_text,
-               '' AS inside_message,
-               lf.occasion,
+        SELECT *,
                ROW_NUMBER() OVER (
-                   PARTITION BY lf.occasion
-                   ORDER BY COALESCE(sl.score, 0) DESC, l.listing_id
+                   PARTITION BY occasion ORDER BY score DESC, card_key
                ) AS rn
-        FROM listings l
-        JOIN listing_features lf USING (listing_id)
-        JOIN listing_images li ON li.listing_id = l.listing_id AND li.is_primary
-        LEFT JOIN saleability_labels sl
-          ON sl.listing_id = l.listing_id AND sl.label_source = 'llm_ssr_rubric_v2'
-        WHERE lf.occasion = ANY(%(occasions)s)
+        FROM (
+            SELECT DISTINCT ON (COALESCE(lf.duplicate_cluster_id::text, l.listing_id::text))
+                   li.listing_id::text AS card_key,
+                   'D_human_bestseller' AS condition_tag,
+                   li.storage_path AS cover_path,
+                   l.title AS headline_text,
+                   '' AS inside_message,
+                   lf.occasion,
+                   COALESCE(sl.score, 0) AS score
+            FROM listings l
+            JOIN listing_features lf USING (listing_id)
+            JOIN listing_images li ON li.listing_id = l.listing_id AND li.is_primary
+            LEFT JOIN saleability_labels sl
+              ON sl.listing_id = l.listing_id AND sl.label_source = 'llm_ssr_rubric_v2'
+            WHERE lf.occasion = ANY(%(occasions)s)
+            ORDER BY COALESCE(lf.duplicate_cluster_id::text, l.listing_id::text),
+                     COALESCE(sl.score, 0) DESC,
+                     l.listing_id
+        ) representatives
     ) ranked
     WHERE rn <= %(per_occasion)s
     """
