@@ -167,6 +167,67 @@ def fig_distributions(df: pd.DataFrame) -> None:
     plt.close(fig)
 
 
+def fig_delta_sensitivity(df: pd.DataFrame) -> None:
+    """Equivalence verdict as a function of the margin.
+
+    delta = 0.02 is stipulated, not derived, and it decides two of the four
+    findings. Plotting p_TOST across a range of margins shows how much of the
+    conclusion rests on that choice, and where each contrast crosses 0.05.
+    """
+    from scipy.stats import mannwhitneyu
+
+    contrasts = [
+        ("B_pipeline_no_rerank", "D_human_bestseller", "B vs D"),
+        ("B_pipeline_no_rerank", "C_pipeline_rerank", "B vs C"),
+        ("C_pipeline_rerank", "D_human_bestseller", "C vs D"),
+    ]
+    deltas = np.linspace(0.005, 0.06, 60)
+
+    fig, ax = plt.subplots(figsize=(6.2, 3.4))
+    for a, b, label in contrasts:
+        sa = df[df.condition == a].purchase_intent
+        sb = df[df.condition == b].purchase_intent
+        ps = []
+        for d in deltas:
+            _, p_up = mannwhitneyu(sa, sb + d, alternative="less")
+            _, p_lo = mannwhitneyu(sa, sb - d, alternative="greater")
+            ps.append(max(p_lo, p_up))
+        ax.plot(deltas, ps, label=label, linewidth=1.8)
+        # Where this contrast first becomes equivalent.
+        crossed = np.argmax(np.array(ps) < 0.05) if min(ps) < 0.05 else None
+        if crossed:
+            ax.plot(deltas[crossed], ps[crossed], "o", ms=4, color=ax.lines[-1].get_color())
+
+    ax.axhline(0.05, color="0.4", linestyle="--", linewidth=1)
+    ax.axvline(0.02, color="0.4", linestyle=":", linewidth=1)
+    ax.text(0.0205, 0.92, r"stipulated $\delta$", fontsize=7, color="0.35")
+    ax.text(0.0555, 0.068, r"$p=0.05$", fontsize=7, color="0.35", ha="right")
+    ax.set_xlabel(r"Equivalence margin $\delta$")
+    ax.set_ylabel(r"$p_{\mathrm{TOST}}$")
+    ax.set_ylim(0, 1)
+    ax.set_xlim(deltas[0], deltas[-1])
+    ax.legend(fontsize=8, frameon=False)
+    ax.grid(alpha=0.3)
+    ax.set_axisbelow(True)
+    fig.tight_layout()
+    fig.savefig(OUT / "delta_sensitivity.pdf")
+    plt.close(fig)
+
+    # Print the crossing points, which the text quotes.
+    for a, b, label in contrasts:
+        sa = df[df.condition == a].purchase_intent
+        sb = df[df.condition == b].purchase_intent
+        cross = None
+        for d in np.linspace(0.005, 0.12, 400):
+            _, p_up = mannwhitneyu(sa, sb + d, alternative="less")
+            _, p_lo = mannwhitneyu(sa, sb - d, alternative="greater")
+            if max(p_lo, p_up) < 0.05:
+                cross = d
+                break
+        print(f"  {label}: equivalent from delta >= {cross:.4f}" if cross
+              else f"  {label}: never equivalent below delta 0.12")
+
+
 def main() -> None:
     OUT.mkdir(parents=True, exist_ok=True)
     df = load()
@@ -176,7 +237,9 @@ def main() -> None:
     fig_dimension_means(df)
     fig_equivalence(df)
     fig_distributions(df)
-    print(f"wrote 4 figures to {OUT}")
+    print("delta sensitivity crossing points:")
+    fig_delta_sensitivity(df)
+    print(f"wrote 5 figures to {OUT}")
 
 
 if __name__ == "__main__":
