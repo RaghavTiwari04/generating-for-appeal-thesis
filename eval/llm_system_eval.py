@@ -183,6 +183,19 @@ def _load_human_bestsellers(
     return pd.concat(picked, ignore_index=True)
 
 
+# Every card reaches the judge at the same scale.
+#
+# Generated cards are upscaled to print resolution, 1240x1748, while the
+# scraped marketplace images are 736x1030 or 750x1000 — 2.9x the pixels, and
+# after the provider's own downscale to a 1568 long edge still about 2.3x. The
+# first full run had condition D at 0.57 on aesthetic against C's 0.73, which a
+# resolution gap that size could produce on its own.
+#
+# Set to the human corpus's long edge so nothing is upscaled: enlarging D would
+# invent detail and trade one artefact for another.
+JUDGE_LONG_EDGE = 1030
+
+
 def _load_image(cover_path: str) -> Image.Image | None:
     import io
 
@@ -190,7 +203,13 @@ def _load_image(cover_path: str) -> Image.Image | None:
         # get_object handles s3://, file:// and plain filesystem paths, so
         # locally-stored blobs from the MinIO fallback resolve too.
         data = get_object(cover_path)
-        return Image.open(io.BytesIO(data)).convert("RGB")
+        img = Image.open(io.BytesIO(data)).convert("RGB")
+        if max(img.size) > JUDGE_LONG_EDGE:
+            scale = JUDGE_LONG_EDGE / max(img.size)
+            img = img.resize(
+                (round(img.width * scale), round(img.height * scale)), Image.LANCZOS
+            )
+        return img
     except Exception as e:
         short_path = cover_path.rsplit("/", 1)[-1][:20] if "/" in cover_path else cover_path[:20]
         log.warning(f"Image load failed [{type(e).__name__}]: ...{short_path} — {e}")
@@ -219,10 +238,14 @@ def _score_cards(
 
     ratings = []
     response_log = []
+    # Recorded per condition so a resolution gap between conditions is visible
+    # in the log rather than inferred from a suspicious aesthetic score.
+    seen_sizes: dict[str, set[tuple[int, int]]] = {}
     for _, row in cards_df.iterrows():
         img = _load_image(row["cover_path"])
         if img is None:
             continue
+        seen_sizes.setdefault(row["condition_tag"], set()).add(img.size)
 
         # Occasion only. Headline and inside message are withheld from every
         # condition: D has no scraped inside message and only a marketplace
@@ -253,6 +276,13 @@ def _score_cards(
             f"  {row['condition_tag']} card={row['card_key'][:8]}... "
             f"pi={scores.get('purchase_intent', 0):.2f} "
             f"aes={scores.get('aesthetic', 0):.2f}"
+        )
+
+    for tag, sizes in sorted(seen_sizes.items()):
+        px = [w * h / 1e6 for w, h in sizes]
+        log.info(
+            f"  {tag:24s} judged at {sorted(sizes)[:2]} "
+            f"({min(px):.2f}-{max(px):.2f} MP)"
         )
 
     if response_log:
