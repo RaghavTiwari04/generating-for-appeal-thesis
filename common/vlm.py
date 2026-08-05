@@ -316,6 +316,16 @@ def _call_openai_compatible(
     return extra.get("reasoning_content") or extra.get("reasoning") or ""
 
 
+# Newer Anthropic models reject `temperature` outright rather than ignoring it,
+# so a run against one fails every call with a 400 and scores nothing. Recorded
+# per model, and the first occurrence is logged, because dropping the parameter
+# is a real deviation: SSR specifies an elicitation temperature of 0.5 and the
+# rubric judge is meant to be deterministic at 0. A judge run without it is
+# still a judge, but it is not the same instrument, and any writeup using it has
+# to say so.
+_NO_TEMPERATURE: set[str] = set()
+
+
 def _call_anthropic(
     image_b64: str,
     system_prompt: str,
@@ -326,11 +336,42 @@ def _call_anthropic(
     temperature: float,
     max_tokens: int,
 ) -> str:
+    kwargs = {} if model in _NO_TEMPERATURE else {"temperature": temperature}
+    try:
+        return _anthropic_message(
+            image_b64, system_prompt, user_text,
+            api_key=api_key, model=model, max_tokens=max_tokens, **kwargs,
+        )
+    except Exception as e:
+        if "temperature" not in str(e).lower() or model in _NO_TEMPERATURE:
+            raise
+        _NO_TEMPERATURE.add(model)
+        log.warning(
+            f"{model} rejects `temperature`; retrying without it and for the rest "
+            f"of this run. Sampling is at the model default, not the requested "
+            f"{temperature}."
+        )
+        return _anthropic_message(
+            image_b64, system_prompt, user_text,
+            api_key=api_key, model=model, max_tokens=max_tokens,
+        )
+
+
+def _anthropic_message(
+    image_b64: str,
+    system_prompt: str,
+    user_text: str,
+    *,
+    api_key: str | None,
+    model: str,
+    max_tokens: int,
+    **extra,
+) -> str:
     msg = _anthropic_client(api_key).messages.create(
         model=model,
         max_tokens=max_tokens,
-        temperature=temperature,
         system=system_prompt,
+        **extra,
         messages=[
             {
                 "role": "user",
