@@ -99,7 +99,9 @@ def _load_generated_cards(conditions: list[str], run_tag: str | None) -> pd.Data
            COALESCE(gc.brief->'request'->>'occasion', gc.brief->>'occasion') AS occasion
     FROM generated_cards gc
     WHERE gc.condition_tag = ANY(%(conditions)s)
-      AND (%(run_tag)s IS NULL OR gc.brief->'request'->>'eval_run' = %(run_tag)s)
+      -- Cast required: Postgres cannot infer a bare parameter's type from
+      -- `$2 IS NULL` alone and refuses the statement.
+      AND (%(run_tag)s::text IS NULL OR gc.brief->'request'->>'eval_run' = %(run_tag)s::text)
     """
     return pd.read_sql(
         sql, engine(), params={"conditions": conditions, "run_tag": run_tag}
