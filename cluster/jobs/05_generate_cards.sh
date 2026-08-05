@@ -59,16 +59,21 @@ OCCASIONS="birthday/general,birthday/milestone,birthday/kids,birthday/relationsh
 # no-LoRA A cards and the rest of each occasion.
 N_PER="${N_PER:-5}"
 SEED="${SEED:-20000}"
+# Which conditions to generate. Settable so a single condition can be redone
+# without regenerating the rest — the seeds are derived from the condition
+# index, so re-running one reproduces the same seeds it had before.
+CONDITIONS="${CONDITIONS:-A,B,C}"
 # Labels every card this run produces, so the analysis scores one run instead
 # of pooling every card ever generated — including smoke tests made under an
 # earlier prompt and a different reranking objective.
 RUN_TAG="${RUN_TAG:-run_$(date +%Y%m%d_%H%M)}"
-echo "run_tag=$RUN_TAG n_per=$N_PER seed=$SEED (expect $((4 * N_PER * 3)) cards)"
+N_COND=$(( $(echo "$CONDITIONS" | tr -cd ',' | wc -c) + 1 ))
+echo "run_tag=$RUN_TAG n_per=$N_PER seed=$SEED conditions=$CONDITIONS (expect $((4 * N_PER * N_COND)) cards)"
 
 export PYTHONUNBUFFERED=1
 python -u -m pipeline.conditions \
     --occasions "$OCCASIONS" \
-    --conditions "A,B,C" \
+    --conditions "$CONDITIONS" \
     --n "$N_PER" \
     --seed "$SEED" \
     --run-tag "$RUN_TAG"
