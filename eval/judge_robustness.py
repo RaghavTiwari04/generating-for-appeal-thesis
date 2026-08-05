@@ -27,6 +27,7 @@ Reads cards from an exported gallery, so it needs no database.
 from __future__ import annotations
 
 import json
+import re
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -54,6 +55,11 @@ CONTRASTS = [
 ]
 
 
+def _slug(provider: str, model: str | None) -> str:
+    """Stable filename fragment identifying one judge."""
+    return re.sub(r"[^a-z0-9]+", "_", f"{provider}_{model}".lower()).strip("_") if model else provider
+
+
 def _load_image(path: str) -> Image.Image:
     """Same normalisation the reported run used, so resolution is not a variable."""
     img = Image.open(path).convert("RGB")
@@ -67,7 +73,11 @@ def rescore(gallery: Path, provider: str, model: str | None, workers: int) -> pd
     from scoring import CardScorer
 
     cards = load_gallery(gallery)
-    out_path = OUT_DIR / f"ratings_{provider}.csv"
+    # Keyed on the model, not the provider. Two OpenAI judges are two judges:
+    # keying on "openai" alone meant a second model resumed from the first
+    # model's completed rows, scored nothing, and wrote out the first model's
+    # ratings under a name implying they were the second's.
+    out_path = OUT_DIR / f"ratings_{_slug(provider, model)}.csv"
     OUT_DIR.mkdir(parents=True, exist_ok=True)
 
     # Resume rather than restart: a run is thousands of paid calls and a
@@ -163,8 +173,9 @@ def run(
     if gallery is None:
         raise SystemExit("--gallery is required unless --compare is passed")
     df = rescore(gallery, provider, model, workers)
-    summary = analyse(df, provider)
-    (OUT_DIR / f"summary_{provider}.json").write_text(json.dumps(summary, indent=2))
+    label = _slug(provider, model)
+    summary = analyse(df, label)
+    (OUT_DIR / f"summary_{label}.json").write_text(json.dumps(summary, indent=2))
     print(json.dumps(summary, indent=2))
 
 
