@@ -449,8 +449,31 @@ def run(
         if all_cards.empty:
             raise SystemExit("No cards found. Generate cards under conditions A/B/C first.")
 
-        ratings_df = _score_cards(all_cards, out_dir=out, provider=provider, model=model or None)
-        ratings_df.to_csv(out / "raw_ratings.csv", index=False)
+        # Judge only what has not been judged. Scoring is deterministic for the
+        # rubric dimensions and costs ten VLM calls a card, so re-rating an
+        # unchanged card buys nothing. Before this the cache was all-or-nothing:
+        # adding twenty condition D cards meant re-judging the hundred and
+        # nineteen generated ones that had not changed.
+        csv_path = out / "raw_ratings.csv"
+        cached = pd.read_csv(csv_path) if csv_path.exists() else None
+        if cached is not None and "card_key" in cached:
+            known = set(cached["card_key"].astype(str))
+            todo = all_cards[~all_cards["card_key"].astype(str).isin(known)]
+            log.info(f"{len(cached)} cards already rated; judging {len(todo)} new")
+        else:
+            known, todo = set(), all_cards
+
+        fresh = (
+            _score_cards(todo, out_dir=out, provider=provider, model=model or None)
+            if len(todo)
+            else pd.DataFrame()
+        )
+        ratings_df = pd.concat([cached, fresh], ignore_index=True) if cached is not None else fresh
+        # Cards no longer in the comparison stay out of the analysis but remain
+        # in the cache, so re-running an older run_tag does not re-judge them.
+        ratings_df.to_csv(csv_path, index=False)
+        wanted = set(all_cards["card_key"].astype(str))
+        ratings_df = ratings_df[ratings_df["card_key"].astype(str).isin(wanted)]
 
     cond_means = ratings_df.groupby("condition")["purchase_intent"].mean().to_dict()
     cond_stderr = (
