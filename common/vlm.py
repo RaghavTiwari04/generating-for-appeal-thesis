@@ -274,10 +274,19 @@ def _call_openai_compatible(
     max_tokens: int,
     route: dict | None,
 ) -> str:
+    # Newer OpenAI models reject `max_tokens` for `max_completion_tokens`, and
+    # some reject `temperature` as well, both with a 400 rather than by ignoring
+    # the parameter. Learned per model on first use, the same way the Anthropic
+    # path handles it. Dropping temperature is a real deviation from the SSR and
+    # MT-Bench settings, so it is logged rather than absorbed.
+    kwargs: dict = {}
+    kwargs["max_completion_tokens" if model in _MAX_COMPLETION_TOKENS else "max_tokens"] = max_tokens
+    if model not in _NO_TEMPERATURE:
+        kwargs["temperature"] = temperature
+
     resp = openai_client(api_key, base_url).chat.completions.create(
         model=model,
-        max_tokens=max_tokens,
-        temperature=temperature,
+        **kwargs,
         messages=[
             {"role": "system", "content": system_prompt},
             {
@@ -324,6 +333,32 @@ def _call_openai_compatible(
 # still a judge, but it is not the same instrument, and any writeup using it has
 # to say so.
 _NO_TEMPERATURE: set[str] = set()
+_MAX_COMPLETION_TOKENS: set[str] = set()
+
+
+def _learn_openai_dialect(model: str, err: Exception) -> bool:
+    """Record a model's parameter quirks from a 400. True if worth retrying.
+
+    Returns False for anything else, including quota and rate-limit errors,
+    which the normal backoff handles.
+    """
+    msg = str(err).lower()
+    if "max_completion_tokens" in msg and model not in _MAX_COMPLETION_TOKENS:
+        _MAX_COMPLETION_TOKENS.add(model)
+        log.warning(f"{model} wants `max_completion_tokens`; switching for this run")
+        return True
+    rejects_temp = "temperature" in msg and (
+        "unsupported" in msg or "not supported" in msg or "deprecated" in msg
+    )
+    if rejects_temp and model not in _NO_TEMPERATURE:
+        _NO_TEMPERATURE.add(model)
+        log.warning(
+            f"{model} rejects `temperature`; dropping it for this run. Sampling "
+            f"is at the model default, so the SSR elicitation temperature and "
+            f"the rubric judge's determinism no longer hold."
+        )
+        return True
+    return False
 
 
 def _call_anthropic(
@@ -437,6 +472,12 @@ def call_vlm(
                 route=route,
             )
         except Exception as e:
+            # An unsupported-parameter 400 is deterministic: retrying the same
+            # request just burns the budget and returns "", which the caller
+            # records as a card that failed to score. Learn the model's dialect
+            # and retry immediately instead of counting it as an attempt.
+            if _learn_openai_dialect(chosen, e):
+                continue
             USAGE.record_failure()
             log.warning(f"{provider} call failed (attempt {attempt + 1}/{retries}): {e}")
             if attempt < retries - 1:
