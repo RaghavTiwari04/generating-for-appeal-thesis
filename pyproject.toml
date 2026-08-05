@@ -29,7 +29,6 @@ dependencies = [
     # OCR
     "pytesseract>=0.3.10",
     # Classical ML / stats
-    "lightgbm>=4.3",
     "numpy>=1.26",
     "pandas>=2.2",
     "scipy>=1.12",
@@ -48,10 +47,6 @@ dependencies = [
     "selectolax>=0.3",
     "tenacity>=8.2",
     "playwright>=1.43",
-    # Google Forms / Sheets (survey)
-    "google-api-python-client>=2.120",
-    "google-auth>=2.29",
-    "google-auth-httplib2>=0.2",
     # LLM clients
     "anthropic>=0.25",
     "openai>=1.20",

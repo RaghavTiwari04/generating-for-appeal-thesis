@@ -88,9 +88,6 @@ train-predictor:
 eval-predictor:
 	python -m eval.predictor_eval_standalone
 
-train-pricing:
-	python -m models.pricing.train_pricing
-
 pseudo-labels:
 	python -m data.labels.pseudo_labels --label-source llm_pseudo_v1
 

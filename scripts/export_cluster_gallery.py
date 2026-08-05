@@ -71,7 +71,7 @@ def export(out_dir: Path, clusters: int, per_cluster: int) -> None:
     rows: list[str] = []
     exported = failed = 0
 
-    for cluster_id, group in df.groupby("cluster_id", sort=False):
+    for _cluster_id, group in df.groupby("cluster_id", sort=False):
         size = int(group["cluster_size"].iloc[0])
         occasion = group["occasion"].iloc[0] or "unlabelled"
         cards = []

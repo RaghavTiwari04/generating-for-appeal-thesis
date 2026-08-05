@@ -133,7 +133,7 @@ def classify(
     changed = 0
     dist: dict[str, int] = {}
     to_write = []
-    for row, res in zip(todo, results):
+    for row, res in zip(todo, results, strict=True):
         top_label = label_of[res["labels"][0]]
         top_score = float(res["scores"][0])
 
@@ -159,7 +159,7 @@ def classify(
             changed += 1
         multilabel = {
             label_of[lbl]: float(sc)
-            for lbl, sc in zip(res["labels"], res["scores"])
+            for lbl, sc in zip(res["labels"], res["scores"], strict=True)
             if label_of[lbl] != NOT_BIRTHDAY
         }
         to_write.append(
@@ -173,13 +173,13 @@ def classify(
             }
         )
 
-    log.info(f"NLI assigned: " + ", ".join(f"{k}={v}" for k, v in sorted(dist.items())))
+    log.info("NLI assigned: " + ", ".join(f"{k}={v}" for k, v in sorted(dist.items())))
     log.info(f"{changed} of {len(todo)} would change from their current label")
 
     if dry_run:
         log.info("Dry run — nothing written")
-        for row, rec in list(zip(todo, to_write))[:25]:
-            print(f"  {str(rec['occasion']):24s} {rec['confidence']:.2f}  {row['title'][:64]}")
+        for row, rec in list(zip(todo, to_write, strict=True))[:25]:
+            print(f"  {rec['occasion']!s:24s} {rec['confidence']:.2f}  {row['title'][:64]}")
         return
 
     with connection() as conn, conn.cursor() as cur:

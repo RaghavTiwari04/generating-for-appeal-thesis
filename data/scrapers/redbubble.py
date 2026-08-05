@@ -25,7 +25,6 @@ from data.scrapers.parsing import (
     _to_int,
 )
 
-
 log = get_logger(__name__)
 
 

@@ -320,7 +320,7 @@ if __name__ == "__main__":
             )
         except Exception as e:
             print(f"ERROR: {type(e).__name__}: {e}", file=sys.stderr)
-            raise SystemExit(1)
+            raise SystemExit(1) from None
         for i, c in enumerate(ranked):
             sale = (c.scores or {}).get("saleability_calibrated", float("nan"))
             print(f"#{i+1} sale={sale:.3f} headline={c.headline!r}")

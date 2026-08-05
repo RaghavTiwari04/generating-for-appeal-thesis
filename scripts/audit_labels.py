@@ -97,7 +97,7 @@ def main(examples: int = 8) -> None:
 
     dist: Counter = Counter(occ or "(none)" for occ in labels)
     flagged: dict[str, list[str]] = defaultdict(list)
-    for title, occ in zip(df["title"], labels):
+    for title, occ in zip(df["title"], labels, strict=True):
         for v in _violations(occ, _signals(title)):
             flagged[v].append(title)
 
