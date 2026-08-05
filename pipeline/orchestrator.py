@@ -173,6 +173,18 @@ def generate(request: dict, cfg: OrchestratorConfig | None = None) -> list[Candi
 def _write_inside_messages(ranked: list[Candidate], request: dict) -> dict[int, list[str]]:
     """Fill in each surviving candidate's inside message. Returns alternatives."""
     def _one(cand: Candidate):
+        # A failure here must not discard the card. The cover is already
+        # rendered — for condition C that is eight renders of GPU time — and the
+        # judge is shown the image and occasion only, so a missing inside
+        # message costs nothing in the evaluation. Losing the card costs a
+        # sample from the condition.
+        try:
+            return _write_one(cand)
+        except Exception as e:
+            log.warning(f"Inside message failed for {cand.headline!r} ({e}); leaving it empty")
+            return None
+
+    def _write_one(cand: Candidate):
         return generate_message(
             occasion=request["occasion"],
             # Read off the brief, not the request: an unpinned request has no
@@ -188,8 +200,8 @@ def _write_inside_messages(ranked: list[Candidate], request: dict) -> dict[int, 
         messages = list(pool.map(_one, ranked))
     alternatives: dict[int, list[str]] = {}
     for i, (cand, msg) in enumerate(zip(ranked, messages, strict=True)):
-        cand.inside_message = msg.primary
-        alternatives[i] = msg.alternatives
+        cand.inside_message = msg.primary if msg else ""
+        alternatives[i] = msg.alternatives if msg else []
     return alternatives
 
 

@@ -50,9 +50,18 @@ def _render(occasion: str, tone: str, concept: str, headline: str) -> str:
     )
 
 
+# A primary message of up to four sentences plus a sign-off, and up to three
+# alternatives of the same length, is roughly 240 words before JSON overhead.
+# 512 tokens left no margin: two evaluation runs each lost a card when the model
+# wrote at the wordier end and the response was cut mid-string, which is invalid
+# JSON and takes the whole card down. The cost of the headroom is nothing —
+# billing is on tokens produced, not on the ceiling.
+MESSAGE_MAX_TOKENS = 1536
+
+
 def generate_message(*, occasion: str, tone: str, concept: str, headline: str) -> InsideMessage:
     prompt = _render(occasion, tone, concept, headline)
-    raw = call_llm(prompt, max_tokens=512, temperature=0.8)
+    raw = call_llm(prompt, max_tokens=MESSAGE_MAX_TOKENS, temperature=0.8)
     payload = extract_json(raw)
     primary = payload.get("primary")
     if not primary:
