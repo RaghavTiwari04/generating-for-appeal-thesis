@@ -196,9 +196,12 @@ def _grid(
     import matplotlib.pyplot as plt
 
     n_rows, n_cols = len(panels), len(panels[0])
+    # 1.32 is the card aspect plus the per-panel caption. At 1.4 the four-row
+    # grid rendered 26.0 cm tall against a 25.7 cm text block, so the bottom row
+    # ran under the footer rule.
     fig, axes = plt.subplots(
         n_rows, n_cols,
-        figsize=(panel_w * n_cols + 1.1, panel_w * 1.4 * n_rows + 0.5),
+        figsize=(panel_w * n_cols + 1.0, panel_w * 1.32 * n_rows + 0.35),
         squeeze=False,
     )
     for r in range(n_rows):
