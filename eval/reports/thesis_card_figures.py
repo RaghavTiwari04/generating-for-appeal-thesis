@@ -49,9 +49,12 @@ ROW_ORDER = [
 ]
 COL_OCCASIONS = ["birthday/general", "birthday/kids", "birthday/relationship"]
 
-# The two cards named in the failure analysis, identified by the text the model
-# rendered rather than by key, so the figure survives a regenerated run.
-FAILURE_HEADLINES = ["HAPTHCAY MUPPET", "ALL ABARDS"]
+# The two cards named in the failure analysis. Matched on the headline the brief
+# REQUESTED, not on what the model rendered: the mangled strings ("HAPTHCAY
+# MUPPET", "ALL ABARDS") exist only as pixels, while headline_text holds the
+# request. Matching on the render found nothing, which is the whole point of the
+# failure.
+FAILURE_HEADLINES = ["Muppet", "Aboard"]
 
 _COVERS_SQL = """
 SELECT gc.card_id::text AS card_key,
@@ -147,14 +150,41 @@ def _conditions_figure(df: pd.DataFrame, out: Path) -> None:
     for tag, _label in ROW_ORDER:
         row = []
         for occ in COL_OCCASIONS:
-            pick = _median_card(df[(df.condition == tag) & (df.occasion == occ)])
-            if pick is None or not pick.get("cover_path"):
+            cell = df[(df.condition == tag) & (df.occasion == occ)]
+            # Say which cell failed and at which step, otherwise a blank panel
+            # is indistinguishable from a card that genuinely scored nothing.
+            if cell.empty:
+                log.warning(f"empty cell {tag} / {occ}: no scored cards")
                 row.append((None, ""))
                 missing += 1
                 continue
+            with_cover = cell[cell["cover_path"].notna()]
+            if with_cover.empty:
+                log.warning(
+                    f"empty cell {tag} / {occ}: {len(cell)} scored cards, "
+                    f"none resolved to a cover_path"
+                )
+                row.append((None, ""))
+                missing += 1
+                continue
+            # Prefer a card whose image actually loads over the strict median,
+            # so one unreadable blob does not blank an otherwise full cell.
+            pick = _median_card(with_cover)
             img = _fetch(pick["cover_path"])
-            missing += img is None
-            row.append((img, f"PI {pick['purchase_intent']:.2f}"))
+            if img is None:
+                for _, alt in with_cover.iterrows():
+                    if alt["cover_path"] != pick["cover_path"]:
+                        img = _fetch(alt["cover_path"])
+                        if img is not None:
+                            pick = alt
+                            break
+            if img is None:
+                log.warning(
+                    f"empty cell {tag} / {occ}: {len(with_cover)} cover paths, "
+                    f"none could be fetched"
+                )
+                missing += 1
+            row.append((img, f"PI {pick['purchase_intent']:.2f}" if img is not None else ""))
         panels.append(row)
 
     occ_label = {"birthday/general": "General", "birthday/kids": "Kids",
@@ -212,6 +242,17 @@ def run(
     df = scores.merge(covers, on="card_key", how="left", suffixes=("", "_db"))
     matched = df["cover_path"].notna().sum()
     log.info(f"{matched} of {len(df)} scored cards resolved to a cover image")
+
+    # Per-condition, so a shortfall is attributable rather than just a total.
+    # An entire condition missing points at the run tag or at condition D rows
+    # living outside generated_cards; a scattering points at individual blobs.
+    for tag, _ in ROW_ORDER:
+        sub = df[df.condition == tag]
+        if len(sub) and sub["cover_path"].notna().sum() < len(sub):
+            log.warning(
+                f"  {tag}: {sub['cover_path'].notna().sum()}/{len(sub)} resolved"
+            )
+
     if matched == 0:
         raise SystemExit(
             "no scored card matched a cover_path; check --run-tag against the "
