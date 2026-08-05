@@ -5,7 +5,8 @@
         test test-fast coverage lint fmt typecheck \
         scrape download-images embed-features occasions dedup vlm-labels \
         pipeline train-predictor train-ridge eval-predictor sweep \
-        run-card run-card-llm train-loras system-eval figures serve serve-docker
+        run-card run-card-llm train-loras system-eval figures card-figures \
+        overleaf serve serve-docker
 
 # ── Infrastructure ────────────────────────────────────────────────────────────
 up:
@@ -127,6 +128,17 @@ system-eval:
 
 figures:
 	python -m eval.reports.thesis_figures
+
+# Card images for Chapter 4. Needs Postgres and the image store, so run it on a
+# compute node, not locally.
+card-figures:
+	python -m eval.reports.thesis_card_figures
+
+# ── Thesis ────────────────────────────────────────────────────────────────────
+# Zips report/ with main.tex at the archive root, which is what Overleaf's
+# "Upload Project" expects.
+overleaf:
+	python -c "import pathlib,zipfile; r=pathlib.Path('report'); o=pathlib.Path('artifacts/overleaf_thesis.zip'); o.parent.mkdir(parents=True,exist_ok=True); f=[p for p in r.rglob('*') if p.is_file() and p.suffix in {'.tex','.bib','.pdf'}]; z=zipfile.ZipFile(o,'w',zipfile.ZIP_DEFLATED); [z.write(p, p.relative_to(r).as_posix()) for p in sorted(f)]; z.close(); print(f'{o} ({o.stat().st_size/1024:.0f} KB, {len(f)} files)')"
 
 # ── Web app ───────────────────────────────────────────────────────────────────
 serve:
