@@ -382,7 +382,9 @@ def per_occasion_pairwise(df: pd.DataFrame, metric: str = "purchase_intent") -> 
 
 def run(
     occasions: str = "birthday/general,birthday/milestone,birthday/kids,birthday/relationship",
-    human_per_occasion: int = 5,
+    # 0 matches condition D to whatever the generation run produced per
+    # occasion. A fixed number pins it regardless.
+    human_per_occasion: int = 0,
     out_dir: str = "./artifacts/llm_system_eval",
     provider: str = "gemini",
     model: str = "",
@@ -424,7 +426,17 @@ def run(
             dropped = n_before_filter - len(cards_gen)
             log.warning(f"Occasion filter dropped {dropped}/{n_before_filter} generated cards (NULL/mismatched occasion)")
 
-        cards_human = _load_human_bestsellers(occ_list, per_occasion=human_per_occasion)
+        # Matched to what the generation run actually produced, per occasion.
+        # Fixed at 5, D stayed at 20 cards while N_PER=10 took A/B/C to 40 —
+        # half the sample on the baseline every equivalence test is against,
+        # which widens D's interval and makes equivalence harder to show for no
+        # reason. An explicit --human-per-occasion still wins.
+        per_occ = human_per_occasion
+        if not per_occ and not cards_gen.empty and occ_list:
+            per_cond_occ = cards_gen.groupby(["condition_tag", "occasion"]).size()
+            per_occ = round(per_cond_occ.mean()) if len(per_cond_occ) else 5
+            log.info(f"Condition D matched to generated conditions: {per_occ} per occasion")
+        cards_human = _load_human_bestsellers(occ_list, per_occasion=per_occ or 5)
 
         all_cards = pd.concat([cards_gen, cards_human], ignore_index=True)
         per_cond = cards_gen.groupby("condition_tag").size().to_dict()
