@@ -31,6 +31,18 @@ from common.logging import get_logger
 log = get_logger(__name__)
 
 RATINGS_DIR = Path("artifacts/judge_robustness")
+# The two judges the thesis reports in the main text. All runs are analysed and
+# printed; only these are plotted, because the figure is a comparison and four
+# lines of which two disagree with each other is a different, busier claim. The
+# full set is tabulated in the appendix.
+# gpt-5.6-terra is excluded here and tabulated in the appendix instead: it
+# rejects the temperature parameter, so it did not run at the SSR elicitation
+# temperature or the rubric judge's determinism, and it is not comparable to the
+# other three on sampling settings.
+REPORTED = ("original", "openai_gpt_4o", "anthropic_claude_sonnet_4_6")
+PLOT_LABEL = {"original": "Original judge (reported run)",
+              "openai_gpt_4o": "gpt-4o",
+              "anthropic_claude_sonnet_4_6": "claude-sonnet-4.6"}
 ORIGINAL = Path("artifacts/llm_system_eval/raw_ratings.csv")
 OUT = Path("report/figures")
 ORDER = ["A_naive_ai", "B_pipeline_no_rerank", "C_pipeline_rerank", "D_human_reference"]
@@ -115,11 +127,12 @@ def main() -> None:
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
-    fig, ax = plt.subplots(figsize=(6.4, 3.6))
+    fig, ax = plt.subplots(figsize=(6.2, 3.4))
     x = np.arange(4)
-    for judge in means.index:
+    for judge in [j for j in REPORTED if j in means.index]:
         ax.plot(x, means.loc[judge, ["A", "B", "C", "D"]].astype(float),
-                marker="o", ms=5, linewidth=1.7, label=judge)
+                marker="o", ms=5, linewidth=1.8,
+                label=PLOT_LABEL.get(judge, judge))
     ax.set_xticks(x)
     ax.set_xticklabels(["A: naive", "B: pipeline", "C: +rerank", "D: human"], fontsize=9)
     ax.set_ylabel("Mean purchase intent")
