@@ -85,10 +85,26 @@ class TestLayoutCompose:
         assert 0 <= x0 < x1 <= 1024
         assert 0 <= y0 < y1 <= 1024
 
-    def test_compose_raises_without_fonts(self, dummy_cover: Image.Image) -> None:
+    def test_compose_letters_the_headline(self, dummy_cover: Image.Image) -> None:
+        # This asserted a FileNotFoundError back when the fonts were downloaded
+        # rather than committed. They ship in generation/layout/fonts/ now, so
+        # the invariant worth holding is that the overlay path works.
         from generation.layout.compose import compose
-        with pytest.raises((FileNotFoundError, RuntimeError)):
-            compose(dummy_cover, headline="Happy Birthday!", tone="warm-humorous", style_tags=["watercolour"])
+        out = compose(
+            dummy_cover, headline="Happy Birthday!", tone="warm-humorous",
+            style_tags=["watercolour"],
+        )
+        assert out.image.size == dummy_cover.size
+        assert out.image.tobytes() != dummy_cover.tobytes()
+
+    def test_compose_raises_when_no_font_matches(self, dummy_cover: Image.Image) -> None:
+        from generation.layout import compose as compose_mod
+        with patch.object(compose_mod, "select_fonts", return_value=()):
+            with pytest.raises(RuntimeError):
+                compose_mod.compose(
+                    dummy_cover, headline="Happy Birthday!", tone="warm-humorous",
+                    style_tags=["watercolour"],
+                )
 
 
 # ---------------------------------------------------------------------------

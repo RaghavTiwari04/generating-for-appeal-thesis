@@ -58,18 +58,22 @@ else:
 try:
     from common.db import engine
 
-    df_survey = pd.read_sql("""
-        SELECT sr.listing_id, sr.occasion_shown,
-               AVG(sr.purchase_intent) AS purchase_intent,
-               AVG(sr.aesthetic) AS aesthetic,
-               AVG(sr.emotional_resonance) AS emotional_resonance,
-               AVG(sr.distinctiveness) AS distinctiveness,
-               AVG(sr.occasion_fit) AS occasion_fit
-        FROM survey_ratings sr
-        WHERE sr.study_id IN ('pilot_v1','main_v1')
-        GROUP BY sr.listing_id, sr.occasion_shown
+    # Labels come from the vision-language judge. The survey_ratings table this
+    # once read is dropped by migration 0005; the study was never run.
+    # `score` is only the sortable summary, so the dimensions are read out of
+    # `raw`, the same way models/predictor/dataset.py does it.
+    df_labels = pd.read_sql("""
+        SELECT sl.listing_id, lf.occasion,
+               (sl.raw->>'purchase_intent')::float      AS purchase_intent,
+               (sl.raw->>'aesthetic')::float            AS aesthetic,
+               (sl.raw->>'emotional_resonance')::float  AS emotional_resonance,
+               (sl.raw->>'distinctiveness')::float      AS distinctiveness,
+               (sl.raw->>'occasion_fit')::float         AS occasion_fit
+        FROM saleability_labels sl
+        JOIN listing_features lf USING (listing_id)
+        WHERE sl.label_source = 'llm_ssr_rubric_v2'
     """, engine())
-    print(f"Survey cards: {len(df_survey)}")
-    print(df_survey.groupby("occasion_shown").size().sort_values(ascending=False).head(10))
+    print(f"Labelled cards: {len(df_labels)}")
+    print(df_labels.groupby("occasion").size().sort_values(ascending=False).head(10))
 except Exception as e:
     print(f"DB not available: {e}")

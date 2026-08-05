@@ -241,14 +241,11 @@ def run(
         f"  Random baseline rho         : {report.baselines.get('random_spearman', float('nan')):.3f}"
     )
 
-    # Generate reliability plot if matplotlib available
-    try:
-        from eval.reports.figures import fig4_reliability
-        cal = json.loads((out_dir / "calibration.json").read_text())
-        fig4_reliability(cal, out_dir / "reliability.png")
-        log.info("Reliability plot saved")
-    except Exception as e:
-        log.debug(f"Skipped reliability plot: {e}")
+    # A reliability diagram used to be plotted here from eval.reports.figures.
+    # Nothing consumed it: calibration is not reported in the writeup, and the
+    # call sat inside a bare `except Exception` that logged at debug level, so
+    # it had been failing silently rather than producing anything. The ECE above
+    # is the calibration number that is actually looked at.
 
 
 if __name__ == "__main__":
