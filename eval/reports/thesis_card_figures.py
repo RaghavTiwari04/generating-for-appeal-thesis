@@ -1,8 +1,18 @@
 """Export the card images the thesis figures include.
 
-Runs on the cluster, where Postgres and the image store are reachable. The
-generated covers are not in the repo and are not recoverable from
-raw_ratings.csv, which carries only card_key.
+Two sources, same output:
+
+  --gallery DIR   read an exported eval gallery (the folder written by
+                  eval.export_gallery: one directory per condition plus
+                  gallery.html). Needs no database and no image store, so this
+                  runs anywhere the gallery has been copied to.
+
+  (default)       query Postgres and the image store directly. Runs on the
+                  cluster only.
+
+Prefer the gallery when you have one. It carries the scores alongside the
+images, so the figures and their captions come from a single artefact that was
+written by the evaluation itself.
 
 Produces, into report/figures/:
 
@@ -25,6 +35,7 @@ Usage, on a compute node with the services up:
 from __future__ import annotations
 
 import io
+import re
 from pathlib import Path
 
 import pandas as pd
@@ -49,12 +60,24 @@ ROW_ORDER = [
 ]
 COL_OCCASIONS = ["birthday/general", "birthday/kids", "birthday/relationship"]
 
-# The two cards named in the failure analysis. Matched on the headline the brief
-# REQUESTED, not on what the model rendered: the mangled strings ("HAPTHCAY
-# MUPPET", "ALL ABARDS") exist only as pixels, while headline_text holds the
-# request. Matching on the render found nothing, which is the whole point of the
-# failure.
-FAILURE_HEADLINES = ["Muppet", "Aboard"]
+# The two cards named in the failure analysis, as (headline substring,
+# condition). Matched on the headline the brief REQUESTED, not on what the model
+# rendered: the mangled strings ("HAPTHCAY MUPPET", "ALL ABARDS") exist only as
+# pixels, while headline_text holds the request. Matching on the render found
+# nothing, which is the whole point of the failure.
+#
+# The condition is part of the key because "Muppet" also matches a condition C
+# card that came out clean, at 0.78 aesthetic against the B card's 0.22. The
+# results chapter describes the B card, so picking by substring alone would
+# illustrate the failure with a card that did not fail.
+# A "file:" key matches the cover filename instead of the headline. Condition A
+# needs it: every naive card requested the same "Happy Birthday", so the headline
+# cannot distinguish them and only the rendered pixels differ.
+FAILURE_CARDS = [
+    ("Muppet", "B_pipeline_no_rerank"),                       # mangled headline + IP
+    ("Nice Work", "B_pipeline_no_rerank"),                    # mangled second line
+    ("file:birthday_milestone_4dfc9d14", "A_naive_ai"),       # "Happy Birthday Dairy"
+]
 
 _COVERS_SQL = """
 SELECT gc.card_id::text AS card_key,
@@ -66,6 +89,63 @@ FROM generated_cards gc
 WHERE (%(run_tag)s::text IS NULL
        OR gc.brief->'request'->>'eval_run' = %(run_tag)s::text)
 """
+
+
+# Galleries exported before condition D was renamed carry the old tag.
+_TAG_ALIASES = {"D_human_bestseller": "D_human_reference"}
+
+_GALLERY_CARD = re.compile(
+    r'<img src="(?P<path>[^"]+\.png)"[^>]*>'
+    r'<br><small[^>]*>(?P<occasion>[^<]*)<br>(?P<headline>[^<]*)</small>'
+    r'(?P<scores>.*?)(?=<div style="text-align:center;border:|$)',
+    re.S,
+)
+_GALLERY_DIM = re.compile(
+    r'<span style="width:20px">(\w+)</span>.*?'
+    r'<span style="width:28px;text-align:right">([\d.]+)</span>',
+    re.S,
+)
+_DIM_NAMES = {
+    "PI": "purchase_intent", "OF": "occasion_fit", "AE": "aesthetic",
+    "ER": "emotional_resonance", "DI": "distinctiveness",
+}
+
+
+def load_gallery(gallery: Path) -> pd.DataFrame:
+    """Parse an exported gallery into the frame the figure builders expect.
+
+    The gallery is self-contained: gallery.html carries each card's condition,
+    occasion, headline and five scores, and the PNGs sit beside it. Nothing is
+    recomputed here, so the numbers in the captions are the ones the evaluation
+    recorded.
+    """
+    html_path = gallery / "gallery.html"
+    if not html_path.exists():
+        raise SystemExit(f"no gallery.html in {gallery}")
+    html = html_path.read_text(encoding="utf-8", errors="replace")
+
+    rows = []
+    for m in _GALLERY_CARD.finditer(html):
+        rel = m["path"]
+        tag = rel.split("/")[0]
+        rec = {
+            "cover_path": str(gallery / rel),
+            "condition": _TAG_ALIASES.get(tag, tag),
+            "occasion": m["occasion"].strip(),
+            "headline_text": m["headline"].strip(),
+        }
+        for short, val in _GALLERY_DIM.findall(m["scores"]):
+            if short in _DIM_NAMES:
+                rec[_DIM_NAMES[short]] = float(val)
+        rows.append(rec)
+
+    df = pd.DataFrame(rows)
+    if df.empty:
+        raise SystemExit(f"parsed no cards from {html_path}")
+    log.info(f"parsed {len(df)} cards from {html_path}")
+    for cond, n in df.groupby("condition").size().items():
+        log.info(f"  {cond}: {n}")
+    return df
 
 
 def _load_covers(run_tag: str | None) -> pd.DataFrame:
@@ -85,6 +165,10 @@ def _load_covers(run_tag: str | None) -> pd.DataFrame:
 
 def _fetch(cover_path: str) -> Image.Image | None:
     try:
+        # Gallery mode hands over ordinary filesystem paths; the object store is
+        # only consulted for the keys that are not already local files.
+        if Path(cover_path).exists():
+            return Image.open(cover_path).convert("RGB")
         return Image.open(io.BytesIO(get_object(cover_path))).convert("RGB")
     except Exception as e:
         log.warning(f"could not load {cover_path}: {e}")
@@ -197,13 +281,26 @@ def _conditions_figure(df: pd.DataFrame, out: Path) -> None:
 
 def _failures_figure(df: pd.DataFrame, out: Path) -> None:
     hits = []
-    for needle in FAILURE_HEADLINES:
-        match = df[df["headline_text"].fillna("").str.contains(needle, case=False, na=False)]
+    for needle, cond in FAILURE_CARDS:
+        in_cond = df[df.condition == cond]
+        if needle.startswith("file:"):
+            stem = needle[len("file:"):]
+            match = in_cond[in_cond["cover_path"].fillna("").str.contains(stem, regex=False)]
+        else:
+            match = in_cond[
+                in_cond["headline_text"].fillna("").str.contains(needle, case=False, na=False)
+            ]
         if match.empty:
-            log.warning(f"no card found with headline containing {needle!r}")
+            log.warning(f"no {cond} card matched {needle!r}")
             hits.append((None, ""))
             continue
-        pick = match.iloc[0]
+        # Lowest aesthetic among the matches: broken lettering is what that head
+        # penalises, so this resolves ties toward the card being illustrated.
+        pick = match.sort_values("aesthetic").iloc[0]
+        log.info(
+            f"failure card {needle!r} -> {pick['headline_text']!r} "
+            f"(PI {pick['purchase_intent']:.2f}, aesthetic {pick['aesthetic']:.2f})"
+        )
         img = _fetch(pick["cover_path"]) if pick.get("cover_path") else None
         pi = pick.get("purchase_intent")
         ae = pick.get("aesthetic")
@@ -216,10 +313,19 @@ def _failures_figure(df: pd.DataFrame, out: Path) -> None:
 
 
 def run(
+    gallery: Path | None = typer.Option(
+        None, help="exported eval gallery directory; skips the database entirely"
+    ),
     run_tag: str | None = typer.Option(None, help="eval_run tag; defaults to the latest"),
     ratings: Path = typer.Option(RATINGS, help="raw_ratings.csv from the scored run"),
     out: Path = typer.Option(OUT_DEFAULT, help="directory to write the PDFs into"),
 ) -> None:
+    if gallery is not None:
+        df = load_gallery(gallery)
+        _conditions_figure(df, out)
+        _failures_figure(df, out)
+        return
+
     if not ratings.exists():
         raise SystemExit(f"ratings not found: {ratings}")
 
