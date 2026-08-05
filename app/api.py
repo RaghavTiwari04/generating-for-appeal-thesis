@@ -105,7 +105,7 @@ def _run_pipeline(job: Job, request: dict) -> None:
         cfg = OrchestratorConfig(
             n_candidates=request.get("n_candidates", 8),
             top_k=request.get("top_k", 3),
-            scorer=request.get("scorer", "predictor"),
+            scorer=request.get("scorer", "ridge"),
         )
 
         # Monkey-patch orchestrator's generate_brief to emit progress
