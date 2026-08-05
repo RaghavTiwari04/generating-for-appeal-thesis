@@ -47,19 +47,30 @@ cleanup() {
 trap cleanup EXIT
 
 OCCASIONS="birthday/general,birthday/milestone,birthday/kids,birthday/relationship"
-N_PER=5
+# Cards per condition per occasion, so 4 occasions x N_PER x 3 conditions.
+#
+# At N_PER=5 the TOST equivalence test between B and human bestsellers came out
+# at p=0.054 with the means 0.0006 apart — the point estimate could hardly be
+# closer, and 20 cards a condition still cannot squeeze the interval inside the
+# 0.02 margin. Raising this is the only thing that resolves it.
+#
+# Condition C renders 8 candidates per card, so cost is roughly
+# 4 x N_PER x 10 renders at ~13s each, plus a pipeline reload between the
+# no-LoRA A cards and the rest of each occasion.
+N_PER="${N_PER:-5}"
+SEED="${SEED:-20000}"
 # Labels every card this run produces, so the analysis scores one run instead
 # of pooling every card ever generated — including smoke tests made under an
 # earlier prompt and a different reranking objective.
 RUN_TAG="${RUN_TAG:-run_$(date +%Y%m%d_%H%M)}"
-echo "run_tag=$RUN_TAG"
+echo "run_tag=$RUN_TAG n_per=$N_PER seed=$SEED (expect $((4 * N_PER * 3)) cards)"
 
 export PYTHONUNBUFFERED=1
 python -u -m pipeline.conditions \
     --occasions "$OCCASIONS" \
     --conditions "A,B,C" \
     --n "$N_PER" \
-    --seed 20000 \
+    --seed "$SEED" \
     --run-tag "$RUN_TAG"
 
 echo "=== Done: $(date) ==="
