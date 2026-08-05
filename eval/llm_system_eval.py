@@ -318,18 +318,41 @@ def _bootstrap_ci(
 def _tost_equivalence(
     sa: pd.Series, sb: pd.Series, delta: float = 0.02,
 ) -> dict:
-    """Two One-Sided Tests for equivalence within ±delta."""
+    """Two One-Sided Tests for equivalence within ±delta.
+
+    Rank-based, on delta-shifted samples, matching the Mann-Whitney tests and
+    rank-biserial effect sizes used elsewhere. It therefore tests stochastic
+    equivalence — whether one condition is shifted past the margin relative to
+    the other — not equality of means.
+
+    Which is why the Hodges-Lehmann estimate is reported alongside. It is the
+    location shift this test is actually about; the difference in means is a
+    different estimator and can sit outside the margin while the rank test
+    still concludes equivalence, which reads as a contradiction. Both are
+    given, and the writeup should quote the Hodges-Lehmann figure next to
+    p_tost.
+    """
     from scipy.stats import mannwhitneyu
-    diff = sa.mean() - sb.mean()
+
     _, p_upper = mannwhitneyu(sa, sb + delta, alternative="less")
     _, p_lower = mannwhitneyu(sa, sb - delta, alternative="greater")
     p_tost = max(p_lower, p_upper)
     return {
-        "mean_diff": float(diff),
+        "mean_diff": float(sa.mean() - sb.mean()),
+        "hodges_lehmann": _hodges_lehmann(sa, sb),
         "delta": delta,
         "p_tost": float(p_tost),
         "equivalent": bool(p_tost < 0.05),
     }
+
+
+def _hodges_lehmann(sa: pd.Series, sb: pd.Series) -> float:
+    """Median of all pairwise differences — the shift Mann-Whitney estimates."""
+    a = np.asarray(sa, dtype=float)
+    b = np.asarray(sb, dtype=float)
+    if not len(a) or not len(b):
+        return float("nan")
+    return float(np.median(a[:, None] - b[None, :]))
 
 
 def pairwise_holm(df: pd.DataFrame, metric: str = "purchase_intent") -> tuple[dict[str, float], dict[str, float]]:
@@ -567,7 +590,14 @@ def run(
     log.info("\nTOST equivalence tests (δ=0.02):")
     for pair, res in report.tost_equivalence.items():
         eq = "EQUIVALENT" if res["equivalent"] else "inconclusive"
-        log.info(f"  {pair:50s}  Δ={res['mean_diff']:+.4f} p_tost={res['p_tost']:.4f} {eq}")
+        # Hodges-Lehmann leads: it is the shift the rank-based test estimates,
+        # so it is the figure that can be read against delta. The mean
+        # difference follows for reference and may fall the other side of the
+        # margin without contradicting the verdict.
+        log.info(
+            f"  {pair:50s}  HL={res['hodges_lehmann']:+.4f} "
+            f"(mean {res['mean_diff']:+.4f}) p_tost={res['p_tost']:.4f} {eq}"
+        )
     log.info("\nPer-occasion pairwise (exploratory, uncorrected):")
     for occ, pairs in report.per_occasion_pairwise.items():
         sig_pairs = [f"{p.split('_vs_')[0][:5]}v{p.split('_vs_')[1][:5]}={v:.3f}" for p, v in pairs.items() if v < 0.05]
