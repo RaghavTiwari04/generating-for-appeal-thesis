@@ -107,6 +107,19 @@ QUERIES: dict[str, str] = {
     """,
 }
 
+PER_SOURCE_SQL = f"""
+SELECT l.source,
+       COUNT(*)                                                     AS listings,
+       COUNT(*) FILTER (WHERE lf.occasion IS NOT NULL)              AS classified,
+       COUNT(DISTINCT {DESIGN_KEY})                                 AS distinct_designs,
+       COUNT(DISTINCT CASE WHEN lf.occasion IS NOT NULL
+                           THEN {DESIGN_KEY} END)                   AS classified_designs
+FROM listings l
+LEFT JOIN listing_features lf USING (listing_id)
+GROUP BY l.source
+ORDER BY listings DESC
+"""
+
 PER_SUBTYPE_SQL = f"""
 SELECT lf.occasion,
        COUNT(*)                                   AS listings,
@@ -130,6 +143,12 @@ def main() -> None:
     for name, sql in QUERIES.items():
         scalars[name] = int(pd.read_sql(sql, eng).iloc[0]["n"])
         print(f"{name:34s} {scalars[name]:>7,}")
+
+    print("\n=== per source ===")
+    src = pd.read_sql(PER_SOURCE_SQL, eng)
+    print(src.to_string(index=False))
+    print(f"sums: listings={src.listings.sum():,} classified={src.classified.sum():,} "
+          f"designs={src.distinct_designs.sum():,}")
 
     print("\n=== per subtype ===")
     per = pd.read_sql(PER_SUBTYPE_SQL, eng, params={"src": LABEL_SOURCE})
@@ -161,12 +180,48 @@ def main() -> None:
         print("  listings that are not the representative selected now, so occasions or")
         print("  clusters changed after labelling ran.")
 
+    emit_latex(src, per, scalars)
+
     print("\n=== LoRA training set, as the code computes it ===")
     n_images = 150
     subtypes = len(per)
     per_subtype = max(1, n_images // subtypes)
     print(f"n_images={n_images}, subtypes={subtypes} -> "
           f"{per_subtype} per subtype, {per_subtype * subtypes} total")
+
+
+def emit_latex(src: pd.DataFrame, per: pd.DataFrame, scalars: dict[str, int]) -> None:
+    """Print both corpus tables with the measured numbers, ready to paste."""
+    print("\n=== LaTeX: Table 3.1 ===")
+    print(r"\begin{tabular}{lrrr}")
+    print(r"\toprule")
+    print(r"Source & Scraped & With subtype & Distinct designs \\")
+    print(r"\midrule")
+    for r in src.itertuples():
+        print(f"{r.source} & {r.listings:,} & {r.classified:,} & {r.distinct_designs:,} " + r"\\")
+    print(r"\midrule")
+    print(f"Total & {scalars['total_listings']:,} & {scalars['listings_with_occasion']:,} "
+          f"& {scalars['distinct_designs_total']:,} " + r"\\")
+    print(r"\bottomrule")
+    print(r"\end{tabular}")
+
+    print("\n=== LaTeX: Table 3.2 ===")
+    print(r"\begin{tabular}{lrrrr}")
+    print(r"\toprule")
+    print(r"Subtype & Listings & Distinct designs & Labelled & Labelled designs \\")
+    print(r"\midrule")
+    for r in per.itertuples():
+        name = r.occasion.replace("_", r"\_")
+        print(f"\\texttt{{{name}}} & {r.listings:,} & {r.distinct_designs:,} "
+              f"& {r.labelled:,} & {r.labelled_designs:,} " + r"\\")
+    print(r"\midrule")
+    print(f"Total & {per.listings.sum():,} & {per.distinct_designs.sum():,} "
+          f"& {per.labelled.sum():,} & {per.labelled_designs.sum():,} " + r"\\")
+    print(r"\bottomrule")
+    print(r"\end{tabular}")
+    print(f"\n(distinct designs across the classified corpus as a whole: "
+          f"{scalars['distinct_designs_with_occasion']:,}; the per-subtype column "
+          f"sums higher because a cluster can span subtypes)")
 
 
 if __name__ == "__main__":
