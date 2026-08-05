@@ -12,7 +12,22 @@ Four conditions (same as system_eval.py):
     A_naive_ai          — raw diffusion, no pipeline
     B_pipeline_no_rerank — full pipeline, random top-k (no predictor)
     C_pipeline_rerank   — full pipeline + predictor reranking
-    D_human_bestseller  — top-selling scraped marketplace cards
+    D_human_reference   — human-designed marketplace cards, judge-selected
+
+LIMITATION, condition D. These are not bestsellers and the name no longer says
+so. The scrape captured no commercial signal at all: review_count,
+favourite_count, review_avg and is_bestseller are empty for all 3,491 birthday
+listings from both sources, so no ordering by sales, reviews or favourites is
+available. D is therefore ranked by `saleability_labels.score`, which is this
+same judge's own purchase-intent estimate.
+
+So the judge selects which human cards are eligible and then scores them, and
+the comparison is "the pipeline against the human cards this judge rates most
+highly", not against cards known to sell. Sampling at random within a top-50
+band keeps the selection off the maximum, but does not make it independent.
+Removing the circularity entirely would mean sampling D uniformly from all
+human cards, which measures something different — a typical marketplace card
+rather than a strong one.
 
 Each card scored by LLM on 5 dimensions:
     occasion_fit, aesthetic, emotional_resonance, distinctiveness, purchase_intent
@@ -45,7 +60,7 @@ from scoring.card_scorer import CONSUMER_PROFILES
 
 log = get_logger(__name__)
 
-CONDITIONS = ("A_naive_ai", "B_pipeline_no_rerank", "C_pipeline_rerank", "D_human_bestseller")
+CONDITIONS = ("A_naive_ai", "B_pipeline_no_rerank", "C_pipeline_rerank", "D_human_reference")
 
 
 
@@ -108,25 +123,27 @@ def _load_generated_cards(conditions: list[str], run_tag: str | None) -> pd.Data
     )
 
 
-def _load_human_bestsellers(
+def _load_human_reference(
     occasions: list[str],
     per_occasion: int = 5,
     *,
     pool_size: int = 50,
     seed: int = 42,
 ) -> pd.DataFrame:
-    """Condition D: cards drawn at random from each occasion's bestseller band.
+    """Condition D: human cards drawn at random from a judge-ranked top band.
 
-    Random within the band, not the top `per_occasion` by score. Those scores
-    come from the same judge that rates every condition, so taking the maximum
-    of them selects on the dependent variable: D would be handed the cards the
-    judge happens to score highest, including whatever part of that is noise,
-    and the pipeline would be measured against an inflated baseline.
+    Not bestsellers — see the module docstring. The scrape holds no sales,
+    review or favourite data, so `saleability_labels.score` is the only
+    available ordering and it is this judge's own purchase-intent estimate.
 
-    Drawing from the top `pool_size` keeps "bestseller" meaningful — these are
-    still the strongest-selling designs for the occasion — while making D's
-    expected score the band's mean rather than its maximum. Seeded, so the
-    comparison is reproducible.
+    Random within the band rather than the top `per_occasion` by score. Taking
+    the maximum would select on the dependent variable: D would be handed the
+    cards the judge happens to score highest, noise included, and the pipeline
+    measured against an inflated baseline. Sampling within the band makes D's
+    expected score the band's mean instead — which reduces the problem without
+    removing it, since the judge still decides who is in the band.
+
+    Seeded, so the comparison is reproducible.
     """
     # Rank WITHIN each occasion. A global ORDER BY score would fill the whole
     # D sample from the highest-scoring occasions and drop others entirely,
@@ -148,7 +165,7 @@ def _load_human_bestsellers(
         FROM (
             SELECT DISTINCT ON (COALESCE(lf.duplicate_cluster_id::text, l.listing_id::text))
                    li.listing_id::text AS card_key,
-                   'D_human_bestseller' AS condition_tag,
+                   'D_human_reference' AS condition_tag,
                    li.storage_path AS cover_path,
                    l.title AS headline_text,
                    '' AS inside_message,
@@ -428,7 +445,7 @@ def run(
         all_cards = ratings_df
         log.info(f"Loaded {len(ratings_df)} existing ratings from {csv_path}")
     else:
-        gen_conditions = [c for c in CONDITIONS if c != "D_human_bestseller"]
+        gen_conditions = [c for c in CONDITIONS if c != "D_human_reference"]
 
         # One run's cards, not every card ever generated. Defaults to the most
         # recent tagged run; --all-runs is for inspecting history and will mix
@@ -459,13 +476,13 @@ def run(
             per_cond_occ = cards_gen.groupby(["condition_tag", "occasion"]).size()
             per_occ = round(per_cond_occ.mean()) if len(per_cond_occ) else 5
             log.info(f"Condition D matched to generated conditions: {per_occ} per occasion")
-        cards_human = _load_human_bestsellers(occ_list, per_occasion=per_occ or 5)
+        cards_human = _load_human_reference(occ_list, per_occasion=per_occ or 5)
 
         all_cards = pd.concat([cards_gen, cards_human], ignore_index=True)
         per_cond = cards_gen.groupby("condition_tag").size().to_dict()
         log.info(
             f"Cards to evaluate: {len(all_cards)} "
-            f"({len(cards_gen)} generated + {len(cards_human)} human bestsellers)"
+            f"({len(cards_gen)} generated + {len(cards_human)} human reference)"
         )
         log.info(f"Per-condition breakdown: {per_cond}")
 

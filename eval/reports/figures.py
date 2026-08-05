@@ -47,13 +47,13 @@ CONDITION_LABELS = {
     "A_naive_ai":             "A: Naive AI",
     "B_pipeline_no_rerank":   "B: Pipeline",
     "C_pipeline_rerank":      "C: Pipeline+Rerank",
-    "D_human_bestseller":     "D: Human bestsellers",
+    "D_human_reference":      "D: Human reference",
 }
 CONDITION_COLOURS = {
     "A_naive_ai":             "#9ca3af",
     "B_pipeline_no_rerank":   "#60a5fa",
     "C_pipeline_rerank":      "#2563eb",
-    "D_human_bestseller":     "#16a34a",
+    "D_human_reference":      "#16a34a",
 }
 CONDITIONS_ORDER = list(CONDITION_LABELS.keys())
 

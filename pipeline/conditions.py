@@ -4,11 +4,14 @@ Conditions:
   A  Naive AI        — Flux + naive occasion prompt, no LoRA, no brief LLM
   B  Pipeline no-rerank — full pipeline (LoRA + brief LLM + LLM message), N=1
   C  Pipeline + rerank  — full pipeline, predictor best-of-N (N=8)
-  D  Human bestsellers  — pulled from `listings` table (no generation)
+  D  Human reference   — scraped marketplace cards (no generation). Not
+                         bestsellers: the scrape captured no sales, review or
+                         favourite data, so they are ranked by the judge's own
+                         score. See eval.llm_system_eval for the limitation.
 
 `generate_eval_set(occasions, n_per_condition_per_occasion)` produces a list of
 `EvalCard`s that are persisted to `generated_cards` with the correct
-`condition_tag`. The human bestsellers (D) are sampled directly from the DB.
+`condition_tag`. The human reference cards (D) are sampled directly from the DB.
 """
 
 from __future__ import annotations
@@ -41,7 +44,7 @@ CONDITION_TAGS = {
     "A": "A_naive_ai",
     "B": "B_pipeline_no_rerank",
     "C": "C_pipeline_rerank",
-    "D": "D_human_bestseller",
+    "D": "D_human_reference",
 }
 
 

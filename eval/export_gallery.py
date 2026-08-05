@@ -94,10 +94,10 @@ def export(
     # N at random from the top 50 band, so the two showed overlapping but
     # different sets of D cards — and the ones the gallery added had no ratings
     # to display, because they were never scored.
-    from eval.llm_system_eval import _load_human_bestsellers
+    from eval.llm_system_eval import _load_human_reference
 
-    human_df = _load_human_bestsellers(occasions, per_occasion=d_per_occasion)
-    log.info(f"Loaded {len(human_df)} human bestseller cards (D)")
+    human_df = _load_human_reference(occasions, per_occasion=d_per_occasion)
+    log.info(f"Loaded {len(human_df)} human reference cards (D)")
 
     all_cards = pd.concat([gen_df, human_df], ignore_index=True)
 
@@ -176,7 +176,7 @@ def export(
         "A_naive_ai": "A — Naive AI (no LoRA, no pipeline)",
         "B_pipeline_no_rerank": "B — Pipeline, no rerank (N=1)",
         "C_pipeline_rerank": "C — Pipeline + rerank (N=8)",
-        "D_human_bestseller": "D — Human Bestsellers",
+        "D_human_reference": "D — Human reference (marketplace cards, judge-ranked)",
     }
 
     html = (
@@ -191,7 +191,7 @@ def export(
     if ratings_df is not None:
         html += "<p>PI=Purchase Intent, OF=Occasion Fit, AE=Aesthetic, ER=Emotional Resonance, DI=Distinctiveness</p>"
 
-    for cond in ["A_naive_ai", "B_pipeline_no_rerank", "C_pipeline_rerank", "D_human_bestseller"]:
+    for cond in ["A_naive_ai", "B_pipeline_no_rerank", "C_pipeline_rerank", "D_human_reference"]:
         if cond not in html_sections:
             continue
         label = cond_labels.get(cond, cond)
