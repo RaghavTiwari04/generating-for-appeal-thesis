@@ -25,6 +25,9 @@ SELECT gc.card_id::text AS card_key,
        COALESCE(gc.brief->'request'->>'occasion', gc.brief->>'occasion') AS occasion
 FROM generated_cards gc
 WHERE gc.condition_tag = ANY(%(conditions)s)
+  -- One run, matching how llm_system_eval selects. Without it the gallery
+  -- mixes smoke tests and superseded runs with the cards actually evaluated.
+  AND (%(run_tag)s::text IS NULL OR gc.brief->'request'->>'eval_run' = %(run_tag)s::text)
 """
 
 # Rank WITHIN each occasion — a global ORDER BY score fills the sample from
@@ -86,16 +89,38 @@ def _score_bar(val: float) -> str:
     )
 
 
+def _latest_run_tag() -> str | None:
+    row = pd.read_sql(
+        """
+        SELECT gc.brief->'request'->>'eval_run' AS run_tag
+        FROM generated_cards gc
+        WHERE gc.brief->'request'->>'eval_run' IS NOT NULL
+        ORDER BY gc.generated_at DESC
+        LIMIT 1
+        """,
+        engine(),
+    )
+    return None if row.empty else row.iloc[0]["run_tag"]
+
+
 def export(
     out_dir: Path,
     occasions: list[str],
     d_per_occasion: int = 5,
     ratings_path: str | None = None,
+    run_tag: str | None = None,
 ) -> None:
     out_dir = Path(out_dir)
 
+    # Defaults to the most recent run, as the analysis does, so the gallery
+    # shows the cards the reported numbers came from.
+    tag = run_tag if run_tag is not None else _latest_run_tag()
+    log.info(f"Gallery for run_tag={tag or '(all runs)'}")
+
     gen_conditions = ["A_naive_ai", "B_pipeline_no_rerank", "C_pipeline_rerank"]
-    gen_df = pd.read_sql(_GEN_SQL, engine(), params={"conditions": gen_conditions})
+    gen_df = pd.read_sql(
+        _GEN_SQL, engine(), params={"conditions": gen_conditions, "run_tag": tag}
+    )
     log.info(f"Loaded {len(gen_df)} generated cards (A/B/C)")
 
     human_df = pd.read_sql(
@@ -212,10 +237,14 @@ if __name__ == "__main__":
     def cli(
         out: str = "./card_gallery",
         occasions: str = "birthday/general,birthday/milestone,birthday/kids,birthday/relationship",
-        d_per_occasion: int = 5,
+        d_per_occasion: int = 10,
         ratings: str = "./artifacts/llm_system_eval/raw_ratings.csv",
+        run_tag: str = "",
     ) -> None:
         occ_list = [o.strip() for o in occasions.split(",")]
-        export(Path(out), occ_list, d_per_occasion=d_per_occasion, ratings_path=ratings)
+        export(
+            Path(out), occ_list, d_per_occasion=d_per_occasion,
+            ratings_path=ratings, run_tag=run_tag or None,
+        )
 
     typer.run(cli)
