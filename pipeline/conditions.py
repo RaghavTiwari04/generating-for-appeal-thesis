@@ -61,6 +61,36 @@ class EvalCard:
 # ---------------------------------------------------------------------------
 # Condition A — naive AI
 # ---------------------------------------------------------------------------
+def _naive_headline(occasion: str) -> str:
+    """The greeting an untutored user would type for this occasion.
+
+    Formatting the whole occasion path produced "Happy Birthday General",
+    "Happy Birthday Kids" and "Happy Birthday Relationship" — the subtype is a
+    taxonomy label, not something anyone writes on a card. Condition A is meant
+    to be a naive baseline, not a broken one, and a nonsense headline penalises
+    it for a string bug on top of the missing LoRA and brief it is supposed to
+    lack.
+
+    The occasion group carries the greeting; the subtype does not change it.
+    """
+    group = occasion.split("/")[0]
+    return {
+        "birthday": "Happy Birthday",
+        "christmas": "Merry Christmas",
+        "mothers_day": "Happy Mother's Day",
+        "fathers_day": "Happy Father's Day",
+        "valentines_day": "Happy Valentine's Day",
+        "easter": "Happy Easter",
+        "anniversary": "Happy Anniversary",
+        "new_baby": "Congratulations",
+        "wedding": "Congratulations",
+        "congratulations": "Congratulations",
+        "thank_you": "Thank You",
+        "sympathy": "With Sympathy",
+        "leaving": "Good Luck",
+    }.get(group, group.replace("_", " ").title())
+
+
 def _generate_naive(occasion: str, seed: int, tone: str = "warm-sincere") -> EvalCard:
     """Naive prompt, no LoRA, no brief LLM.
 
@@ -71,7 +101,7 @@ def _generate_naive(occasion: str, seed: int, tone: str = "warm-sincere") -> Eva
     from generation.image.headline_text import render_card
 
     naive_prompt = f"a greeting card for {occasion.replace('/', ' ').replace('_', ' ')}, digital art"
-    headline = f"Happy {occasion.replace('_', ' ').replace('/', ' ').title()}"
+    headline = _naive_headline(occasion)
 
     # Share the process-wide runner. A private DiffusionRunner would hold a
     # second copy of Flux + Flux-Fill (~48GB) alongside the shared one and OOM
