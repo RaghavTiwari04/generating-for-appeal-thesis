@@ -30,40 +30,6 @@ WHERE gc.condition_tag = ANY(%(conditions)s)
   AND (%(run_tag)s::text IS NULL OR gc.brief->'request'->>'eval_run' = %(run_tag)s::text)
 """
 
-# Rank WITHIN each occasion — a global ORDER BY score fills the sample from
-# the highest-scoring occasions and drops the rest, so the gallery would not
-# show the same occasion mix as the balanced A/B/C conditions.
-_HUMAN_SQL = """
-SELECT card_key, condition_tag, cover_path, headline_text, occasion
-FROM (
-    SELECT *,
-           ROW_NUMBER() OVER (
-               PARTITION BY occasion ORDER BY score DESC, card_key
-           ) AS rn
-    FROM (
-        -- Collapsed to one listing per duplicate cluster, matching how
-        -- llm_system_eval draws condition D. A gallery of the same design in
-        -- four colourways misrepresents what the comparison actually saw.
-        SELECT DISTINCT ON (COALESCE(lf.duplicate_cluster_id::text, l.listing_id::text))
-               li.listing_id::text AS card_key,
-               'D_human_bestseller' AS condition_tag,
-               li.storage_path AS cover_path,
-               l.title AS headline_text,
-               lf.occasion,
-               COALESCE(sl.score, 0) AS score
-        FROM listings l
-        JOIN listing_features lf USING (listing_id)
-        JOIN listing_images li ON li.listing_id = l.listing_id AND li.is_primary
-        LEFT JOIN saleability_labels sl
-          ON sl.listing_id = l.listing_id AND sl.label_source = 'llm_ssr_rubric_v2'
-        WHERE lf.occasion = ANY(%(occasions)s)
-        ORDER BY COALESCE(lf.duplicate_cluster_id::text, l.listing_id::text),
-                 COALESCE(sl.score, 0) DESC,
-                 l.listing_id
-    ) representatives
-) ranked
-WHERE rn <= %(per_occasion)s
-"""
 
 DIMS = ["purchase_intent", "occasion_fit", "aesthetic", "emotional_resonance", "distinctiveness"]
 DIM_SHORT = {"purchase_intent": "PI", "occasion_fit": "OF", "aesthetic": "AE",
@@ -123,10 +89,14 @@ def export(
     )
     log.info(f"Loaded {len(gen_df)} generated cards (A/B/C)")
 
-    human_df = pd.read_sql(
-        _HUMAN_SQL, engine(),
-        params={"occasions": occasions, "per_occasion": d_per_occasion},
-    )
+    # The evaluation's own selection, not a second implementation of it. The
+    # gallery used to take the top N per occasion while llm_system_eval samples
+    # N at random from the top 50 band, so the two showed overlapping but
+    # different sets of D cards — and the ones the gallery added had no ratings
+    # to display, because they were never scored.
+    from eval.llm_system_eval import _load_human_bestsellers
+
+    human_df = _load_human_bestsellers(occasions, per_occasion=d_per_occasion)
     log.info(f"Loaded {len(human_df)} human bestseller cards (D)")
 
     all_cards = pd.concat([gen_df, human_df], ignore_index=True)
@@ -141,6 +111,7 @@ def export(
             log.warning(f"Ratings file not found: {rp}")
 
     exported = 0
+    unrated: dict[str, int] = {}
     html_sections: dict[str, list[str]] = {}
 
     for _, row in all_cards.iterrows():
@@ -185,6 +156,11 @@ def export(
                             f'<span style="width:28px;text-align:right">{val:.2f}</span></div>'
                         )
                 scores_html += "</div>"
+            else:
+                # A card in the gallery but not in the ratings means the two
+                # selected different cards — the failure this used to have for
+                # condition D. Counted rather than left as a blank space.
+                unrated[cond] = unrated.get(cond, 0) + 1
 
         if cond not in html_sections:
             html_sections[cond] = []
@@ -229,6 +205,11 @@ def export(
     (out_dir / "gallery.html").write_text(html)
 
     log.info(f"Exported {exported} cards to {out_dir}")
+    if unrated:
+        log.warning(
+            f"No rating found for {sum(unrated.values())} cards {unrated} — "
+            "the gallery and the analysis are not showing the same set"
+        )
 
 
 if __name__ == "__main__":
