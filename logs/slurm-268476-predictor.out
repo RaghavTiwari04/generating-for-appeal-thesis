@@ -1,0 +1,97 @@
+waiting for server to start.... done
+server started
+Postgres ready after 0s
+Services: Postgres :5433, MinIO :9002
+=== Predictor training ===
+GPU: NVIDIA A16
+Start: Fri 31 Jul 01:30:45 BST 2026
+seeds=5 trunk=512 head=128 dropout=0.1 wd=0.01
+epochs=1500 lr=1e-2 patience=150 standardise=--no-standardise
+[01:31:08] INFO    Seller split: 1388/2468 listings have a seller_id; the rest are split individually and are not protected against style leakage.
+[01:32:49] INFO    Loading embedder(s): google/siglip-base-patch16-384 on cuda
+[01:32:52] INFO    Text embedder wired: SigLIP text tower (extracted_text -> text_emb)
+[01:32:52] INFO    [train] label coverage: occasion_fit=1727/1727, aesthetic=1727/1727, emotional_resonance=1727/1727, distinctiveness=1727/1727, purchase_intent=1727/1727
+[01:32:52] INFO    [val] label coverage: occasion_fit=370/370, aesthetic=370/370, emotional_resonance=370/370, distinctiveness=370/370, purchase_intent=370/370
+[01:32:53] INFO    --- seed 42 (1/5) ---
+[01:32:54] INFO      seed=42 epoch=0000 train_loss=0.0347 val_pi_rho=0.421
+[01:33:13] INFO      seed=42 epoch=0050 train_loss=0.0013 val_pi_rho=0.556
+[01:33:32] INFO      seed=42 epoch=0100 train_loss=0.0006 val_pi_rho=0.546
+[01:33:51] INFO      seed=42 epoch=0150 train_loss=0.0035 val_pi_rho=0.598
+[01:34:10] INFO      seed=42 epoch=0200 train_loss=0.0017 val_pi_rho=0.592
+[01:34:29] INFO      seed=42 epoch=0250 train_loss=0.0021 val_pi_rho=0.589
+[01:34:48] INFO      seed=42 epoch=0300 train_loss=0.0008 val_pi_rho=0.582
+[01:34:52] INFO      seed=42 early stop at epoch 310 (best val_pi_rho=0.620)
+[01:34:52] INFO    --- seed 43 (2/5) ---
+[01:34:53] INFO      seed=43 epoch=0000 train_loss=0.0380 val_pi_rho=0.423
+[01:35:12] INFO      seed=43 epoch=0050 train_loss=0.0007 val_pi_rho=0.564
+[01:35:31] INFO      seed=43 epoch=0100 train_loss=0.0006 val_pi_rho=0.588
+[01:35:50] INFO      seed=43 epoch=0150 train_loss=0.0017 val_pi_rho=0.605
+[01:36:09] INFO      seed=43 epoch=0200 train_loss=0.0011 val_pi_rho=0.591
+[01:36:28] INFO      seed=43 epoch=0250 train_loss=0.0047 val_pi_rho=0.591
+[01:36:47] INFO      seed=43 epoch=0300 train_loss=0.0019 val_pi_rho=0.597
+[01:37:06] INFO      seed=43 epoch=0350 train_loss=0.0017 val_pi_rho=0.580
+[01:37:17] INFO      seed=43 early stop at epoch 380 (best val_pi_rho=0.618)
+[01:37:17] INFO    --- seed 44 (3/5) ---
+[01:37:18] INFO      seed=44 epoch=0000 train_loss=0.0358 val_pi_rho=0.414
+[01:37:37] INFO      seed=44 epoch=0050 train_loss=0.0007 val_pi_rho=0.573
+[01:37:56] INFO      seed=44 epoch=0100 train_loss=0.0005 val_pi_rho=0.595
+[01:38:15] INFO      seed=44 epoch=0150 train_loss=0.0028 val_pi_rho=0.606
+[01:38:34] INFO      seed=44 epoch=0200 train_loss=0.0016 val_pi_rho=0.592
+[01:38:53] INFO      seed=44 epoch=0250 train_loss=0.0102 val_pi_rho=0.509
+[01:39:07] INFO      seed=44 early stop at epoch 286 (best val_pi_rho=0.623)
+[01:39:07] INFO    --- seed 45 (4/5) ---
+[01:39:07] INFO      seed=45 epoch=0000 train_loss=0.0371 val_pi_rho=0.356
+[01:39:27] INFO      seed=45 epoch=0050 train_loss=0.0007 val_pi_rho=0.571
+[01:39:46] INFO      seed=45 epoch=0100 train_loss=0.0008 val_pi_rho=0.576
+[01:40:05] INFO      seed=45 epoch=0150 train_loss=0.0015 val_pi_rho=0.588
+[01:40:24] INFO      seed=45 epoch=0200 train_loss=0.0014 val_pi_rho=0.587
+[01:40:43] INFO      seed=45 epoch=0250 train_loss=0.0017 val_pi_rho=0.607
+[01:41:03] INFO      seed=45 epoch=0300 train_loss=0.0070 val_pi_rho=0.572
+[01:41:22] INFO      seed=45 epoch=0350 train_loss=0.0017 val_pi_rho=0.582
+[01:41:41] INFO      seed=45 epoch=0400 train_loss=0.0023 val_pi_rho=0.569
+[01:41:44] INFO      seed=45 early stop at epoch 406 (best val_pi_rho=0.608)
+[01:41:44] INFO    --- seed 46 (5/5) ---
+[01:41:44] INFO      seed=46 epoch=0000 train_loss=0.0501 val_pi_rho=0.236
+[01:42:04] INFO      seed=46 epoch=0050 train_loss=0.0008 val_pi_rho=0.590
+[01:42:23] INFO      seed=46 epoch=0100 train_loss=0.0005 val_pi_rho=0.580
+[01:42:42] INFO      seed=46 epoch=0150 train_loss=0.0005 val_pi_rho=0.595
+[01:43:01] INFO      seed=46 epoch=0200 train_loss=0.0009 val_pi_rho=0.626
+[01:43:20] INFO      seed=46 epoch=0250 train_loss=0.0013 val_pi_rho=0.645
+[01:43:39] INFO      seed=46 epoch=0300 train_loss=0.0012 val_pi_rho=0.604
+[01:43:58] INFO      seed=46 epoch=0350 train_loss=0.0017 val_pi_rho=0.583
+[01:44:17] INFO      seed=46 early stop at epoch 397 (best val_pi_rho=0.646)
+[01:44:17] INFO    Test metrics over 5 seeds (best val: seed 46):
+[01:44:17] INFO      occasion_fit           0.572 +/- 0.018
+[01:44:17] INFO      aesthetic              0.806 +/- 0.006
+[01:44:17] INFO      emotional_resonance    0.539 +/- 0.017
+[01:44:17] INFO      distinctiveness        0.592 +/- 0.022
+[01:44:17] INFO      purchase_intent        0.621 +/- 0.017
+[01:44:33] INFO    Seller split: 1388/2468 listings have a seller_id; the rest are split individually and are not protected against style leakage.
+[01:44:33] INFO    Fitting on 1727 cards, 768-d features
+[01:44:34] INFO      occasion_fit           rho=0.645  alpha=1  n=1727
+[01:44:34] INFO      aesthetic              rho=0.844  alpha=1  n=1727
+[01:44:35] INFO      emotional_resonance    rho=0.584  alpha=1  n=1727
+[01:44:36] INFO      distinctiveness        rho=0.675  alpha=1  n=1727
+[01:44:36] INFO      purchase_intent        rho=0.624  alpha=1  n=1727
+[01:44:36] INFO    Saved artifacts/predictor/ridge.npz and artifacts/predictor/ridge.json
+[01:46:05] INFO    Loading training frame (test split)...
+[01:46:06] INFO    Seller split: 1388/2468 listings have a seller_id; the rest are split individually and are not protected against style leakage.
+[01:46:06] INFO    Test set: 371 listings
+[01:46:06] INFO    Loading embedder(s): google/siglip-base-patch16-384 on cuda
+[01:46:10] INFO    Extracting features...
+[01:46:10] INFO    Cards with a purchase-intent label: 371 / 371
+[01:46:21] INFO    Best-of-8: picked 0.692 vs random 0.597 vs oracle 0.723 — recovers 75.4% of the achievable gain
+[01:46:22] INFO    Best-of-8 (ridge): picked 0.692 — recovers 75.5%
+[01:46:22] INFO    Best-of-8 recovery over 5 seeds: 74.1% +/- 3.6% (range 67.8%-76.5%) vs ridge 75.5%
+[01:46:23] INFO    
+Results:
+  Spearman vs purchase intent : 0.606
+  AUC top-quartile            : 0.770
+  ECE                         : 0.025
+  Random baseline rho         : -0.018
+[01:46:23] INFO    Reliability plot saved
+[01:47:56] INFO    Loading embedder(s): google/siglip-base-patch16-384 on cuda
+[01:47:59] INFO    No listings missing predictor scores.
+=== Done: Fri 31 Jul 01:48:00 BST 2026 ===
+waiting for server to shut down.... done
+server stopped
