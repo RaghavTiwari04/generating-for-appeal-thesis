@@ -1,23 +1,29 @@
 """Recompute every corpus number the writeup quotes, and reconcile them.
 
-Three inconsistencies were found in the reported tables and none of them can be
-settled without the database:
+Written to settle three inconsistencies in an earlier draft of the tables, all
+since corrected: a distinct-design count that disagreed with the dedup
+paragraph, per-subtype listings that did not sum to the corpus total, and more
+labelled cards than distinct designs in two subtypes. The last of these is real
+and survives: labelling ran before the final subtype pass and the final dedup,
+so some labels now sit on listings that are not the representative the current
+queries select. That is measured here rather than assumed.
 
-  1. Table 3.1 gives 2,463 distinct designs, but the dedup paragraph's
-     "3,491 listings, 1,111 redundant copies" implies 2,380. An 83-design gap.
-  2. Table 3.2's per-subtype listings sum to 3,484 against Table 3.1's 3,491.
-  3. Table 3.2 reports more labelled cards than distinct designs for
-     `general` (2,020 vs 2,011) and `milestone` (137 vs 133), which one
-     representative per cluster makes impossible.
+Three counts must not be confused, and the reported tables have done so before:
 
-Note the shape of (3): the per-subtype differences are +9, -2, +4, -6, summing
-to +5, and the totals differ by exactly 5 (2,468 against 2,463). That is what
-cross-subtype migration looks like, and the likely cause is that occasions were
-reassigned by the NLI pass, or clusters recomputed, after labelling ran. This
-script tests that directly by counting labels against the occasion recorded now
-and against cluster representative status.
+  distinct designs over all listings   -- ignores whether a listing was ever
+      classified into a subtype, so it can exceed the classified count for a
+      source and makes a source row read as a funnel that goes up.
+  distinct designs among classified listings -- the population Table 3.1 is
+      about. This is what `classified_designs` gives, per source.
+  the per-subtype sum of distinct designs -- higher than the corpus-wide
+      figure, because a duplicate cluster can span two subtypes and is then
+      counted in each.
 
-Run on the cluster with the services up:
+Per-source rows can also double-count a design listed on both marketplaces, so
+they are not guaranteed to sum to the corpus total; `designs_on_both_sources`
+measures whether that is happening at all.
+
+Read-only. Run on the cluster with the services up:
 
     source cluster/jobs/_start_services.sh
     python -m scripts.verify_corpus_numbers
@@ -105,6 +111,27 @@ QUERIES: dict[str, str] = {
         LEFT JOIN listing_features lf ON lf.listing_id = l.listing_id
         WHERE sl.label_source = '{LABEL_SOURCE}'
     """,
+
+    # Whether a per-source table can sum to the corpus total, or whether the
+    # same artwork appears on both marketplaces and is counted in both rows.
+    "designs_on_both_sources": f"""
+        SELECT COUNT(*) AS n FROM (
+            SELECT {DESIGN_KEY} AS design
+            FROM listings l LEFT JOIN listing_features lf USING (listing_id)
+            GROUP BY 1
+            HAVING COUNT(DISTINCT l.source) > 1
+        ) t
+    """,
+
+    "classified_designs_on_both_sources": f"""
+        SELECT COUNT(*) AS n FROM (
+            SELECT {DESIGN_KEY} AS design
+            FROM listings l JOIN listing_features lf USING (listing_id)
+            WHERE lf.occasion IS NOT NULL
+            GROUP BY 1
+            HAVING COUNT(DISTINCT l.source) > 1
+        ) t
+    """,
 }
 
 PER_SOURCE_SQL = f"""
@@ -175,6 +202,16 @@ def main() -> None:
     print(f"\nlabels on non-representatives      {scalars['labels_on_non_representatives']:>7,}")
     print(f"labelled rows                      {scalars['labelled_total']:>7,}")
     print(f"distinct designs labelled          {scalars['distinct_designs_labelled']:>7,}")
+    print(f"per-subtype labelled-design sum    {int(per.labelled_designs.sum()):>7,}")
+    print(f"  labels - corpus-wide distinct    "
+          f"{scalars['labelled_total'] - scalars['distinct_designs_labelled']:>7,}")
+    print(f"  labels - per-subtype sum         "
+          f"{scalars['labelled_total'] - int(per.labelled_designs.sum()):>7,}")
+    print(f"  subtype sum - corpus-wide        "
+          f"{int(per.labelled_designs.sum()) - scalars['distinct_designs_labelled']:>7,}"
+          "   (designs whose cluster spans two subtypes)")
+    print("These three gaps have different causes and the writeup must not quote")
+    print("one as the explanation for another.")
     if scalars["labels_on_non_representatives"]:
         print("  This is why labelled can exceed distinct designs: some labels sit on")
         print("  listings that are not the representative selected now, so occasions or")
@@ -198,12 +235,24 @@ def emit_latex(src: pd.DataFrame, per: pd.DataFrame, scalars: dict[str, int]) ->
     print(r"Source & Scraped & With subtype & Distinct designs \\")
     print(r"\midrule")
     for r in src.itertuples():
-        print(f"{r.source} & {r.listings:,} & {r.classified:,} & {r.distinct_designs:,} " + r"\\")
+        # classified_designs, not distinct_designs: the column has to be drawn
+        # from the same population as the one beside it, or a row reads as a
+        # funnel whose last step goes up.
+        print(f"{r.source} & {r.listings:,} & {r.classified:,} "
+              f"& {r.classified_designs:,} " + r"\\")
     print(r"\midrule")
     print(f"Total & {scalars['total_listings']:,} & {scalars['listings_with_occasion']:,} "
-          f"& {scalars['distinct_designs_total']:,} " + r"\\")
+          f"& {scalars['distinct_designs_with_occasion']:,} " + r"\\")
     print(r"\bottomrule")
     print(r"\end{tabular}")
+    row_sum = int(src.classified_designs.sum())
+    corpus = scalars["distinct_designs_with_occasion"]
+    print(f"\n(design column: rows sum to {row_sum:,}, corpus-wide distinct is "
+          f"{corpus:,}, difference {row_sum - corpus:,}; "
+          f"{scalars['classified_designs_on_both_sources']:,} classified designs "
+          f"appear on both marketplaces)")
+    if row_sum != corpus and scalars["classified_designs_on_both_sources"] == 0:
+        print("  UNEXPLAINED: rows disagree with the total but no design spans sources")
 
     print("\n=== LaTeX: Table 3.2 ===")
     print(r"\begin{tabular}{lrrrr}")
