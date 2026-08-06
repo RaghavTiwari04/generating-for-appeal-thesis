@@ -37,14 +37,13 @@ COND_LABEL = {
     "B_pipeline_no_rerank": "B: pipeline",
     "C_pipeline_rerank": "C: pipeline + rerank",
     "D_human_reference": "D: human reference",
-    "D_human_bestseller": "D: human reference",
 }
-ORDER = ["A_naive_ai", "B_pipeline_no_rerank", "C_pipeline_rerank", "D_human_bestseller"]
+ORDER = ["A_naive_ai", "B_pipeline_no_rerank", "C_pipeline_rerank", "D_human_reference"]
 COLOUR = {
     "A_naive_ai": "#9ca3af",
     "B_pipeline_no_rerank": "#60a5fa",
     "C_pipeline_rerank": "#2563eb",
-    "D_human_bestseller": "#16a34a",
+    "D_human_reference": "#16a34a",
 }
 DELTA = 0.02
 
@@ -53,6 +52,11 @@ OUT = Path("report/figures")
 
 def load(path: str = "artifacts/llm_system_eval/raw_ratings.csv") -> pd.DataFrame:
     df = pd.read_csv(path)
+    # Condition D was renamed once it was clear the corpus holds no sales data.
+    # Rows written before that keep the old tag, so normalise here rather than
+    # carrying an alias through every lookup: a stale tag silently empties the
+    # condition and the figures come out with a missing series.
+    df["condition"] = df["condition"].replace({"D_human_reference": "D_human_reference"})
     a = df[df.condition == "A_naive_ai"]
     if len(a) > 40:
         superseded, current = a.head(len(a) - 40), a.tail(40)
@@ -116,12 +120,12 @@ def fig_dimension_means(df: pd.DataFrame) -> None:
 def fig_equivalence(df: pd.DataFrame) -> None:
     """Hodges-Lehmann shift per contrast against the equivalence margin."""
     pairs = [
-        ("B_pipeline_no_rerank", "D_human_bestseller", "B vs D"),
+        ("B_pipeline_no_rerank", "D_human_reference", "B vs D"),
         ("B_pipeline_no_rerank", "C_pipeline_rerank", "B vs C"),
-        ("C_pipeline_rerank", "D_human_bestseller", "C vs D"),
+        ("C_pipeline_rerank", "D_human_reference", "C vs D"),
         ("A_naive_ai", "B_pipeline_no_rerank", "A vs B"),
         ("A_naive_ai", "C_pipeline_rerank", "A vs C"),
-        ("A_naive_ai", "D_human_bestseller", "A vs D"),
+        ("A_naive_ai", "D_human_reference", "A vs D"),
     ]
     fig, ax = plt.subplots(figsize=(6.2, 3.4))
     ax.axvspan(-DELTA, DELTA, color="#16a34a", alpha=0.12, zorder=0)
@@ -177,9 +181,9 @@ def fig_delta_sensitivity(df: pd.DataFrame) -> None:
     from scipy.stats import mannwhitneyu
 
     contrasts = [
-        ("B_pipeline_no_rerank", "D_human_bestseller", "B vs D"),
+        ("B_pipeline_no_rerank", "D_human_reference", "B vs D"),
         ("B_pipeline_no_rerank", "C_pipeline_rerank", "B vs C"),
-        ("C_pipeline_rerank", "D_human_bestseller", "C vs D"),
+        ("C_pipeline_rerank", "D_human_reference", "C vs D"),
     ]
     deltas = np.linspace(0.005, 0.06, 60)
 
