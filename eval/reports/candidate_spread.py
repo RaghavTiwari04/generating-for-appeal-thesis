@@ -110,6 +110,12 @@ def run(
     cfg = OrchestratorConfig()
     cfg.n_candidates = n
     cfg.top_k = n  # keep them all
+    # `generate` persists everything it returns, so with top_k = n this writes
+    # n cards per batch into generated_cards. Tag them distinctly: under the
+    # default they would land as C_pipeline_rerank and sit alongside the
+    # evaluated set, and anything that queried by condition_tag without also
+    # filtering on eval_run would silently pick up probe cards.
+    cfg.condition_tag = "probe_candidate_spread"
 
     scraped = _scraped_scores(cfg)
     log.info(f"scraped: n={len(scraped)} sd={scraped.std():.4f}")
