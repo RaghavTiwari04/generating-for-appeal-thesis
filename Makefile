@@ -91,8 +91,11 @@ pipeline-from-%:
 train-ridge:
 	python -m models.predictor.ridge
 
+# Matches cluster/jobs/03_train_predictor.sh and the protocol reported in the
+# methods chapter. The previous --epochs 30 here trained a different model from
+# the one described, and left a stale checkpoint in artifacts/.
 train-predictor:
-	python -m models.predictor.train --epochs 30 --batch-size 64
+	python -m models.predictor.train --batch-size 64 --epochs 1500 --lr 1e-2 --early-stop-patience 150
 
 eval-predictor:
 	python -m eval.predictor_eval_standalone
