@@ -70,7 +70,8 @@ def plot(runs: dict[int, list[tuple[int, float, float]]]) -> None:
         ax1.legend(fontsize=7, frameon=False, ncol=2)
 
     ax2.set_xlabel("Epoch")
-    ax2.set_ylabel(r"Validation Spearman $\rho$ (purchase intent)")
+    # Short: the long form clips at this figure width.
+    ax2.set_ylabel(r"Validation Spearman $\rho$")
     ax2.grid(alpha=0.3)
     ax2.set_axisbelow(True)
 
