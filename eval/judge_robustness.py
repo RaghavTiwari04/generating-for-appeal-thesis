@@ -82,14 +82,24 @@ def rescore(gallery: Path, provider: str, model: str | None, workers: int) -> pd
 
     # Resume rather than restart: a run is thousands of paid calls and a
     # transient failure partway through should not repeat the ones that worked.
+    # Resume on condition plus filename, not the absolute cover_path. The path
+    # is machine-specific: a CSV written against one export directory matched
+    # nothing when the same judge was re-run against a gallery exported
+    # elsewhere, so a run intended to score one new card silently re-scored all
+    # 160 and paid for it.
+    def _key(condition: str, cover_path: str) -> str:
+        return f"{condition}/{Path(str(cover_path)).name}"
+
     done: dict[str, dict] = {}
     if out_path.exists():
         prev = pd.read_csv(out_path)
-        done = {r["cover_path"]: r.to_dict() for _, r in prev.iterrows()}
+        done = {_key(r["condition"], r["cover_path"]): r.to_dict()
+                for _, r in prev.iterrows()}
         log.info(f"resuming: {len(done)} cards already scored in {out_path}")
 
     scorer = CardScorer(provider=provider, model=model)
-    todo = [r for r in cards.itertuples() if r.cover_path not in done]
+    todo = [r for r in cards.itertuples()
+            if _key(r.condition, r.cover_path) not in done]
     log.info(f"scoring {len(todo)} cards with provider={provider} model={model or 'default'}")
 
     def one(row) -> dict | None:
