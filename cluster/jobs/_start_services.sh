@@ -69,11 +69,23 @@ pg_start
 # several minutes, far longer than pg_ctl's own start timeout, so a fixed
 # sleep here silently hands a not-yet-ready DB to the pipeline.
 PG_WAIT_START=$SECONDS
+# pg_isready only probes the socket, which is not enough here. $PG_DIR is on
+# NFS and reachable from more than one host, and Postgres resolves that conflict
+# by shutting BOTH servers down. Seen on job 270747: the compute node's server
+# reported ready in 1s, the cloud VM's server noticed postmaster.pid had changed
+# owner and shut down, its shutdown removed the file, and the node's server then
+# stopped too. pg_isready answered the whole time, and the pipeline got
+# "connection refused" half a minute later with nothing in its own logs to
+# explain it. Readiness is therefore a real query.
+pg_query_ok() {
+    psql -h localhost -p 5433 -d greeting_cards -tAc 'SELECT 1' >/dev/null 2>&1
+}
+
 pg_wait() {
     local deadline=$((SECONDS + ${1:-600}))
     local last=0
     while [ $SECONDS -lt $deadline ]; do
-        if pg_isready -h localhost -p 5433 -d greeting_cards -q 2>/dev/null; then
+        if pg_query_ok; then
             return 0
         fi
         # Report progress — recovery is silent and multi-minute, and without
@@ -98,7 +110,20 @@ if ! pg_wait 600; then
         return 1 2>/dev/null || exit 1
     fi
 fi
-echo "Postgres ready after $((SECONDS - PG_WAIT_START))s"
+# Settle check. If another host holds the same data directory, one of the two
+# servers loses its lock file within about half a minute and both stop.
+sleep 20
+if ! pg_query_ok; then
+    echo "FATAL: Postgres answered and then stopped." >&2
+    echo "Almost always this means another postmaster is running against" >&2
+    echo "$PG_DIR from a different host, typically an interactive session on a" >&2
+    echo "login or cloud VM. Only one may run at a time. Stop the other with" >&2
+    echo "  pg_ctl -D $PG_DIR stop -m fast -w" >&2
+    echo "and resubmit. Last lines of the server log:" >&2
+    tail -15 "$PG_DIR/postgres.log" >&2 || true
+    return 1 2>/dev/null || exit 1
+fi
+echo "Postgres ready after $((SECONDS - PG_WAIT_START))s and holding"
 
 # Sourced, so this trap installs in the job script's own shell.
 if [ "$PG_STARTED_HERE" = "1" ]; then
