@@ -509,11 +509,40 @@ def run(
             else pd.DataFrame()
         )
         ratings_df = pd.concat([cached, fresh], ignore_index=True) if cached is not None else fresh
+        # Condition D was renamed from D_human_bestseller once it was clear the
+        # corpus carries no sales data and the sample is not of bestsellers.
+        # Cached rows predating that keep the old tag, and because the cache
+        # matches on card_key they are correctly not re-judged, so the old label
+        # survives into the analysis. Everything downstream keys on CONDITIONS
+        # and silently found no condition D: means came out NaN and every
+        # contrast involving D vanished from the pairwise and TOST tables while
+        # the run still reported success.
+        ratings_df["condition"] = ratings_df["condition"].replace(
+            {"D_human_bestseller": "D_human_reference"}
+        )
         # Cards no longer in the comparison stay out of the analysis but remain
         # in the cache, so re-running an older run_tag does not re-judge them.
         ratings_df.to_csv(csv_path, index=False)
         wanted = set(all_cards["card_key"].astype(str))
         ratings_df = ratings_df[ratings_df["card_key"].astype(str).isin(wanted)]
+
+    # A condition that is present in the cards but absent from the ratings is a
+    # labelling fault, not an empty result, and it produces a report that looks
+    # complete while quietly dropping every contrast that condition takes part
+    # in. Fail here instead.
+    present = set(ratings_df["condition"].unique())
+    missing = [c for c in CONDITIONS if c not in present]
+    if missing:
+        raise SystemExit(
+            f"no ratings for {missing}; found conditions {sorted(present)}. "
+            f"Every contrast involving them would be silently omitted."
+        )
+    empty = [
+        c for c in CONDITIONS
+        if ratings_df.loc[ratings_df.condition == c, "purchase_intent"].notna().sum() == 0
+    ]
+    if empty:
+        raise SystemExit(f"conditions {empty} have no usable purchase_intent values")
 
     cond_means = ratings_df.groupby("condition")["purchase_intent"].mean().to_dict()
     cond_stderr = (
