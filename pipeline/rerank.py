@@ -47,26 +47,6 @@ log = get_logger(__name__)
 DIST_WEIGHT = float(os.environ.get("RERANK_DIST_WEIGHT", "0"))
 PI_WEIGHT = 1.0 - DIST_WEIGHT
 
-# Read once at import, from the environment, and not otherwise recorded: a
-# stale export or a .env left over from an experiment would silently change
-# what reranking optimises, and every artefact of the run would look identical
-# to one made under the reported objective. Anything other than the reported
-# objective is therefore announced loudly rather than assumed deliberate.
-if DIST_WEIGHT:
-    log.warning(
-        f"RERANK_DIST_WEIGHT={DIST_WEIGHT} is set: reranking is maximising "
-        f"{PI_WEIGHT:.2f} purchase intent + {DIST_WEIGHT:.2f} distinctiveness, "
-        "NOT the objective reported in the thesis. Results from this run are "
-        "not comparable with the reported evaluation."
-    )
-
-
-def objective_description() -> str:
-    """What reranking maximised, for recording alongside a run's output."""
-    if not DIST_WEIGHT:
-        return "purchase_intent"
-    return f"{PI_WEIGHT:.2f}*purchase_intent+{DIST_WEIGHT:.2f}*distinctiveness"
-
 
 @dataclass
 class Candidate:

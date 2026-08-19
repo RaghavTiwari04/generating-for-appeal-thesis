@@ -40,9 +40,6 @@ class Brief(BaseModel):
     headline: str = Field(max_length=30)
     inside_message: str
     visual_prompt: str
-    # Inert on the default backend. FLUX is guidance-distilled and takes no
-    # negative prompt; only the SDXL path forwards this. Kept because the
-    # schema is backend-independent, not because it is currently doing work.
     negative_prompt: str
     style_tags: list[str] = Field(max_length=4)
     target_price_band: Literal["budget", "standard", "premium", "luxury"]

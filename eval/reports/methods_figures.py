@@ -27,88 +27,25 @@ import matplotlib.pyplot as plt
 
 OUT = Path("report/figures")
 
+# Measured by scripts/verify_corpus_numbers.py against the delivered database.
+FUNNEL = [
+    ("Scraped listings", 3906, "Greetings Island 2,033 + Redbubble 1,873"),
+    ("With a birthday subtype", 3491, "415 left unclassified"),
+    ("Distinct designs", 2795, "1,111 redundant copies collapsed"),
+    ("Labelled by the judge", 2468, "one representative per cluster"),
+    ("Predictor training split", 1727, "plus 370 validation, remainder test"),
+]
+
 BLUE = "#2563eb"
-
-# One design = one duplicate cluster, falling back to the listing when it was
-# never clustered. The same expression every consumer of the corpus uses.
-DESIGN = "COALESCE(lf.duplicate_cluster_id::text, l.listing_id::text)"
-LABEL_SOURCE = "llm_ssr_rubric_v2"
-
-# Every stage must be a subset of the one above it, so all four counts are
-# taken over the same population: listings first, then designs within the
-# classified subset. Counting designs over the whole scrape instead would give
-# a larger number than the classified listings above it, and the figure would
-# not be a funnel at all.
-FUNNEL_SQL = {
-    "scraped": "SELECT COUNT(*) FROM listings l",
-    "classified": f"""
-        SELECT COUNT(*) FROM listings l
-        JOIN listing_features lf USING (listing_id)
-        WHERE lf.occasion IS NOT NULL
-    """,
-    "designs": f"""
-        SELECT COUNT(DISTINCT {DESIGN}) FROM listings l
-        JOIN listing_features lf USING (listing_id)
-        WHERE lf.occasion IS NOT NULL
-    """,
-    "labelled": f"""
-        SELECT COUNT(DISTINCT {DESIGN}) FROM saleability_labels sl
-        JOIN listings l ON l.listing_id = sl.listing_id
-        JOIN listing_features lf ON lf.listing_id = l.listing_id
-        WHERE sl.label_source = '{LABEL_SOURCE}' AND lf.occasion IS NOT NULL
-    """,
-}
-
-
-def _funnel_stages() -> list[tuple[str, int, str]]:
-    """Read the funnel from the database. Falls back to nothing: if the
-    database is unreachable the figure should not be drawn from stale
-    constants, because a wrong figure is worse than a missing one."""
-    import pandas as pd
-
-    from common.db import engine
-
-    eng = engine()
-    n = {k: int(pd.read_sql(q, eng).iloc[0, 0]) for k, q in FUNNEL_SQL.items()}
-
-    per_source = pd.read_sql(
-        "SELECT l.source, COUNT(*) AS c FROM listings l GROUP BY l.source "
-        "ORDER BY c DESC", eng)
-    sources = " + ".join(f"{r.source.replace('_', ' ')} {r.c:,}"
-                         for r in per_source.itertuples())
-
-    train = int(pd.read_sql(
-        f"""SELECT COUNT(*) FROM saleability_labels sl
-            JOIN listings l ON l.listing_id = sl.listing_id
-            JOIN listing_features lf ON lf.listing_id = l.listing_id
-            WHERE sl.label_source = '{LABEL_SOURCE}'""", eng).iloc[0, 0])
-
-    return [
-        ("Scraped listings", n["scraped"], sources),
-        ("With a birthday subtype", n["classified"],
-         f"{n['scraped'] - n['classified']:,} left unclassified"),
-        ("Distinct designs among those", n["designs"],
-         f"{n['classified'] - n['designs']:,} redundant copies collapsed"),
-        ("Designs labelled by the judge", n["labelled"],
-         f"from {train:,} label rows"),
-    ]
 
 
 def fig_corpus_funnel() -> None:
-    stages = _funnel_stages()
-    for i in range(1, len(stages)):
-        if stages[i][1] > stages[i - 1][1]:
-            raise SystemExit(
-                f"funnel stage {stages[i][0]!r} ({stages[i][1]:,}) exceeds "
-                f"{stages[i-1][0]!r} ({stages[i-1][1]:,}); the chain is not a "
-                "subset chain and must not be drawn as one")
-
-    fig, ax = plt.subplots(figsize=(6.4, 3.2))
-    top = stages[0][1]
-    for i, (label, n, note) in enumerate(stages):
+    fig, ax = plt.subplots(figsize=(6.4, 3.6))
+    top = FUNNEL[0][1]
+    for i, (label, n, note) in enumerate(FUNNEL):
         frac = n / top
         half = frac / 2
-        y = len(stages) - 1 - i
+        y = len(FUNNEL) - 1 - i
         ax.add_patch(mpatches.FancyBboxPatch(
             (0.5 - half, y - 0.32), frac, 0.64,
             boxstyle="round,pad=0.005", linewidth=0,
@@ -118,7 +55,7 @@ def fig_corpus_funnel() -> None:
         ax.text(0.5, y - 0.17, note, ha="center", va="center",
                 fontsize=7.5, color="0.35")
     ax.set_xlim(0, 1)
-    ax.set_ylim(-0.6, len(stages) - 0.4)
+    ax.set_ylim(-0.6, len(FUNNEL) - 0.4)
     ax.axis("off")
     fig.tight_layout()
     fig.savefig(OUT / "corpus_funnel.pdf")

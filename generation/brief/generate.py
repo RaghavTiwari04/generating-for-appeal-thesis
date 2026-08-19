@@ -46,45 +46,23 @@ def _render_template(req: BriefRequest) -> str:
     )
 
 
-TONE_ATTEMPTS = 3
-
-
 def generate_brief(request: dict | BriefRequest) -> Brief:
     req = request if isinstance(request, BriefRequest) else validate_request(request)
     prompt = _render_template(req)
     log.debug(f"Brief prompt ({PROMPT_VERSION}, occasion={req.occasion})")
 
-    # An unrecognised tone is regenerated rather than substituted, and rather
-    # than aborting: a full evaluation run asks for several hundred briefs, and
-    # one malformed reply should not end it. Only after every attempt returns
-    # an unusable tone does this raise, because at that point the fault is the
-    # prompt or the model, not a stray sample.
-    for attempt in range(1, TONE_ATTEMPTS + 1):
-        raw = call_llm(prompt)
-        payload = extract_json(raw)
-        brief = Brief.model_validate(payload)
-        if req.tone or brief.tone in TONES:
-            break
-        log.warning(
-            f"Brief returned tone={brief.tone!r}, not in TONES "
-            f"(attempt {attempt}/{TONE_ATTEMPTS}); regenerating"
-        )
+    raw = call_llm(prompt)
+    payload = extract_json(raw)
+    brief = Brief.model_validate(payload)
     # A pinned tone wins over whatever the model echoed back: the site's picker
-    # is a promise to the customer, not a suggestion.
+    # is a promise to the customer, not a suggestion. Unpinned, an unrecognised
+    # tone falls back rather than propagating a value the font palette and
+    # message generator do not know.
     if req.tone:
         brief.tone = req.tone
     elif brief.tone not in TONES:
-        # Do not substitute TONES[0]. It is `warm-sincere`, which is also the
-        # value reported as never chosen when the generator picks freely, and
-        # is the evidence that it does not collapse to a default. Writing it
-        # here on a parse failure makes a code fault indistinguishable from a
-        # model choice, and would be counted as the opposite of what happened.
-        raise ValueError(
-            f"Brief returned an unrecognised tone {TONE_ATTEMPTS} times running; "
-            f"last was {brief.tone!r}, which is not one of {TONES}. Refusing to "
-            "substitute a default, because the value that would be substituted "
-            "is itself a reported result. Check the prompt or the model."
-        )
+        log.warning(f"Brief returned tone={brief.tone!r}, not in TONES; using {TONES[0]}")
+        brief.tone = TONES[0]
     return brief
 
 

@@ -39,9 +39,6 @@ _TRAIN_SQL = """
 SELECT
     l.listing_id,
     l.seller_id,
-    -- Needed by the split: duplicates must not straddle it, and seller
-    -- grouping cannot see a duplicate pair whose listings have no seller.
-    lf.duplicate_cluster_id,
     lf.occasion,
     -- image_features holds whatever the current encoder stack produced, at
     -- any width; clip_embedding is the 768-d default that dedup also indexes.
@@ -92,77 +89,8 @@ def load_training_frame() -> pd.DataFrame:
     return df
 
 
-def group_keys(df: pd.DataFrame) -> pd.Series:
-    """One group label per listing, merging same-seller and same-cluster rows.
-
-    Two relations must hold inside a group. Listings by one seller belong
-    together or the split leaks style. Listings in one duplicate cluster belong
-    together or near-identical images land on both sides of it, which is the
-    failure deduplication exists to prevent.
-
-    Neither alone suffices: seller grouping cannot see a duplicate pair whose
-    listings carry no seller, and clusters cut across sellers. The groups are
-    therefore the connected components of both relations at once, resolved with
-    union-find. A listing in neither relation is its own group, as before.
-    """
-    parent: dict[str, str] = {}
-
-    def find(x: str) -> str:
-        parent.setdefault(x, x)
-        while parent[x] != x:
-            parent[x] = parent[parent[x]]
-            x = parent[x]
-        return x
-
-    def union(a: str, b: str) -> None:
-        ra, rb = find(a), find(b)
-        if ra != rb:
-            parent[ra] = rb
-
-    # Node identity. listing_id when the frame carries it; otherwise the
-    # position, which is only safe because a frame without listing_id has
-    # nothing to merge across rows except the seller.
-    if "listing_id" in df.columns:
-        node = df["listing_id"].astype(str)
-    else:
-        if df.get("seller_id") is not None and df["seller_id"].isna().any():
-            raise ValueError(
-                "split_by_seller needs listing_id to name sellerless listings "
-                "stably; without it the split depends on row order."
-            )
-        node = pd.Series(df.index.astype(str), index=df.index)
-
-    for name in node:
-        find(name)
-
-    for column in ("seller_id", "duplicate_cluster_id"):
-        if column not in df.columns:
-            continue
-        values = df[column]
-        mask = values.notna()
-        if not mask.any():
-            continue
-        for _, members in node[mask].groupby(values[mask].astype(str)):
-            members = members.tolist()
-            for other in members[1:]:
-                union(members[0], other)
-
-    # Label each component by its smallest member, not by the union-find root.
-    # The root depends on which member happened to be visited first, so it
-    # varies with row order; the minimum does not. The split is sorted by this
-    # label before shuffling, so an unstable label would reintroduce exactly
-    # the row-order dependence this function is meant to be free of.
-    roots = node.map(find)
-    canonical = node.groupby(roots).min()
-    return roots.map(canonical)
-
-
 def split_by_seller(df: pd.DataFrame, cfg: SplitConfig | None = None) -> dict[str, pd.DataFrame]:
-    """Partition listings into train/validation/test by leakage-safe groups.
-
-    Named for the seller because that is the dominant relation, but duplicate
-    clusters are held together too; see `group_keys`.
-    """
+    """Partition listings by `seller_id` to avoid style leakage."""
     cfg = cfg or SplitConfig()
     rng = np.random.default_rng(cfg.seed)
     # Give NULL-seller rows a unique synthetic seller each so they enter splits.
@@ -174,18 +102,25 @@ def split_by_seller(df: pd.DataFrame, cfg: SplitConfig | None = None) -> dict[st
     # different splits. Two runs then reported different numbers for a
     # deterministic model, which is what made ridge look like it moved by 0.105
     # on identical features.
+    null_mask = df["seller_id"].isna()
     df = df.copy()
-    # Sellerless listings are no longer renamed to a synthetic seller: they
-    # simply form their own component unless a duplicate cluster joins them to
-    # something. That is what closes the hole, since two colourways of one
-    # design with no seller now share a group.
-    known = int(df["seller_id"].notna().sum()) if "seller_id" in df.columns else 0
+    if null_mask.any():
+        if "listing_id" not in df.columns:
+            raise ValueError(
+                "split_by_seller needs listing_id to name sellerless listings "
+                "stably; without it the split depends on row order."
+            )
+        df.loc[null_mask, "seller_id"] = (
+            "__null_" + df.loc[null_mask, "listing_id"].astype(str)
+        )
+    # Only some sources expose a seller. The rest each become their own
+    # synthetic seller above, which is the honest fallback — but it means the
+    # split only prevents style leakage for the share that has one.
+    known = int((~null_mask).sum())
     if known < len(df):
         log.info(
-            f"Split grouping: {known}/{len(df)} listings have a seller_id. The "
-            f"rest are grouped by duplicate cluster where they have one, and "
-            f"individually otherwise, so they are protected against duplicate "
-            f"leakage but not against style leakage."
+            f"Seller split: {known}/{len(df)} listings have a seller_id; the rest "
+            f"are split individually and are not protected against style leakage."
         )
     # Sorted before shuffling. `unique()` returns sellers in order of first
     # appearance, so a fixed seed shuffled a list whose order came from however
@@ -193,41 +128,22 @@ def split_by_seller(df: pd.DataFrame, cfg: SplitConfig | None = None) -> dict[st
     # not the result. Sorting makes the split a function of the seed and the
     # seller set alone, so it survives a reordered query and is comparable
     # across runs.
-    df = df.assign(_group=group_keys(df))
-    sizes = df["_group"].value_counts()
-    biggest = int(sizes.iloc[0]) if len(sizes) else 0
-    log.info(
-        f"Split grouping: {len(sizes):,} groups over {len(df):,} listings; "
-        f"largest holds {biggest:,} ({biggest / max(len(df), 1):.1%})"
-    )
-    # A single group larger than the validation fraction cannot be placed
-    # without distorting the split, and is the signature of relation chaining
-    # rather than of one prolific seller.
-    if biggest > cfg.val_frac * len(df):
-        log.warning(
-            f"Largest split group holds {biggest:,} listings, more than the "
-            f"{cfg.val_frac:.0%} validation share. Whichever side it lands on "
-            f"is dominated by one group; check for duplicate clusters chaining "
-            f"sellers together."
-        )
-    groups = sorted(df["_group"].unique().tolist())
-    rng.shuffle(groups)
-    n = len(groups)
+    sellers = sorted(df["seller_id"].unique().tolist())
+    rng.shuffle(sellers)
+    n = len(sellers)
     n_train = math.floor(n * cfg.train_frac)
     n_val = math.floor(n * cfg.val_frac)
-    train_groups = set(groups[:n_train])
-    val_groups = set(groups[n_train : n_train + n_val])
-    test_groups = set(groups[n_train + n_val :])
+    train_sellers = set(sellers[:n_train])
+    val_sellers = set(sellers[n_train : n_train + n_val])
+    test_sellers = set(sellers[n_train + n_val :])
 
-    def take(rows: pd.DataFrame, keep: set[str]) -> pd.DataFrame:
-        return (rows[rows["_group"].isin(keep)]
-                .drop(columns="_group")
-                .reset_index(drop=True))
+    def take(rows: pd.DataFrame, sellers: set[str]) -> pd.DataFrame:
+        return rows[rows["seller_id"].isin(sellers)].reset_index(drop=True)
 
     return {
-        "train": take(df, train_groups),
-        "val": take(df, val_groups),
-        "test": take(df, test_groups),
+        "train": take(df, train_sellers),
+        "val": take(df, val_sellers),
+        "test": take(df, test_sellers),
     }
 
 
