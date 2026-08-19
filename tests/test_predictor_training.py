@@ -23,6 +23,7 @@ from models.predictor.dataset import (
     PredictorDataset,
     SplitConfig,
     _build_targets,
+    group_keys,
     split_by_seller,
 )
 from models.predictor.infer import PredictorRunner
@@ -206,6 +207,47 @@ class TestSellerSplit:
 
         for name in ("train", "val", "test"):
             assert set(a[name]["listing_id"]) == set(b[name]["listing_id"]), name
+
+    def test_duplicate_cluster_never_straddles_the_split(self):
+        """Near-duplicates must land on one side, even with no seller.
+
+        Deduplication exists partly to stop near-identical images appearing on
+        both sides of the split. Seller grouping cannot enforce that for the
+        44% of listings with no seller_id: each was its own group, so two
+        colourways of one design were free to separate. The group key now
+        merges duplicate clusters as well as sellers.
+        """
+        df = pd.DataFrame(
+            {
+                "listing_id": [f"l{i}" for i in range(120)],
+                # No seller anywhere: the case seller grouping cannot cover.
+                "seller_id": [None] * 120,
+                # Pairs of colourways, 60 clusters of two.
+                "duplicate_cluster_id": [f"c{i // 2}" for i in range(120)],
+            }
+        )
+        splits = split_by_seller(df, SplitConfig(seed=11))
+
+        where = {}
+        for name, rows in splits.items():
+            for cluster in rows["duplicate_cluster_id"]:
+                where.setdefault(cluster, set()).add(name)
+        straddling = {c: s for c, s in where.items() if len(s) > 1}
+        assert not straddling, f"clusters split across sides: {straddling}"
+        assert sum(len(s) for s in splits.values()) == 120
+
+    def test_cluster_grouping_merges_across_sellers(self):
+        """A cluster spanning two sellers pulls both into one group."""
+        df = pd.DataFrame(
+            {
+                "listing_id": ["a", "b", "c", "d"],
+                "seller_id": ["s1", "s2", "s3", "s4"],
+                "duplicate_cluster_id": ["k", "k", None, None],
+            }
+        )
+        keys = group_keys(df)
+        assert keys.iloc[0] == keys.iloc[1]
+        assert len({keys.iloc[0], keys.iloc[2], keys.iloc[3]}) == 3
 
     def test_sellerless_listing_keeps_its_split_when_the_pool_grows(self):
         """Adding cards must not reshuffle the ones already assigned.
