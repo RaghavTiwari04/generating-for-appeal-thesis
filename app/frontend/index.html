@@ -4,6 +4,36 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Greeting Card Generator</title>
+<script>
+  // Where the API lives, and how to get in.
+  //
+  // Same-origin when the API serves this page itself, which is the SSH-tunnel
+  // workflow. For split hosting the page is static and the backend is a rented
+  // GPU on another origin, so both are overridable without a rebuild:
+  //
+  //   ?api=https://host:8000&token=...   pinned in the link you hand someone
+  //   window.GC_API_BASE                 baked in at deploy time
+  //
+  // The token is a demo credential, deliberately low-value: it caps spend and
+  // keeps the generator off the open internet. It is not a login.
+  (function () {
+    const q = new URLSearchParams(location.search);
+    window.GC_API = (q.get('api') || window.GC_API_BASE || '').replace(/\/$/, '');
+    window.GC_TOKEN = q.get('token') || localStorage.getItem('gc_token') || '';
+    if (q.get('token')) localStorage.setItem('gc_token', q.get('token'));
+    window.gcUrl = (path) => `${window.GC_API}${path}`;
+    window.gcHeaders = (extra) => Object.assign(
+      {}, extra || {}, window.GC_TOKEN ? { 'X-Access-Token': window.GC_TOKEN } : {});
+    // EventSource cannot set headers, so the stream carries its token in the
+    // query string. See app/auth.py for why that is scoped to this one route.
+    window.gcStreamUrl = (path) => {
+      const u = window.gcUrl(path);
+      return window.GC_TOKEN
+        ? `${u}${u.includes('?') ? '&' : '?'}token=${encodeURIComponent(window.GC_TOKEN)}`
+        : u;
+    };
+  })();
+</script>
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.1/dist/cdn.min.js" defer></script>
 <style>
@@ -27,6 +57,24 @@
 </header>
 
 <main class="max-w-5xl mx-auto px-4 py-8 space-y-8">
+
+  <!-- The GPU host is rented by the hour and is normally off. Say so up front
+       rather than letting the form look ready and fail on submit. -->
+  <div x-show="backendUp === false" x-cloak
+       class="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+    <p class="font-semibold">The generator is offline.</p>
+    <p class="mt-1">
+      Each card is a language-model call for the brief plus up to eight
+      diffusion passes, so the GPU host is not left running. The demo is
+      available by arrangement; the thesis and the evaluated cards do not
+      depend on it.
+    </p>
+    <button type="button" @click="checkBackend().then(up => up && init())"
+            class="mt-2 underline underline-offset-2 hover:no-underline">
+      Check again
+    </button>
+  </div>
+
 
   <!-- ── Generation form ──────────────────────────────────────────────── -->
   <section class="bg-white rounded-2xl shadow-sm border border-stone-200 p-6">
@@ -292,9 +340,24 @@ function app() {
       ['Distinctive',   'distinctiveness'],
     ],
 
-    async init() {
+    backendUp: null,   // null = not yet checked, false = offline
+
+    async checkBackend() {
+      // The GPU host costs money by the hour and will usually be off. Saying so
+      // is more useful than a form that appears to work and then fails.
       try {
-        const r = await fetch('/api/occasions');
+        const r = await fetch(gcUrl('/api/health'), { cache: 'no-store' });
+        this.backendUp = r.ok;
+      } catch (e) {
+        this.backendUp = false;
+      }
+      return this.backendUp;
+    },
+
+    async init() {
+      if (!(await this.checkBackend())) return;
+      try {
+        const r = await fetch(gcUrl('/api/occasions'), { headers: gcHeaders() });
         const d = await r.json();
         this.occasions = d.occasions;
         this.relationships = d.relationships;
@@ -314,9 +377,9 @@ function app() {
 
       let jobId;
       try {
-        const r = await fetch('/api/generate', {
+        const r = await fetch(gcUrl('/api/generate'), {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: gcHeaders({ 'Content-Type': 'application/json' }),
           // Unset selects come through as '', which the API would reject as an
           // unknown tone. null is what "let the brief decide" means there.
           body: JSON.stringify({
@@ -329,11 +392,14 @@ function app() {
         jobId = d.job_id;
       } catch (e) {
         this.status = 'error';
-        this.errorMsg = String(e);
+        this.errorMsg = (await this.checkBackend())
+          ? String(e)
+          : 'The generator is offline. It runs on a rented GPU that is not ' +
+            'left running, so the demo is available by arrangement.';
         return;
       }
 
-      const es = new EventSource(`/api/generate/${jobId}`);
+      const es = new EventSource(gcStreamUrl(`/api/generate/${jobId}`));
       es.onmessage = (ev) => {
         const data = JSON.parse(ev.data);
         if (data.type === 'progress') {
@@ -360,7 +426,7 @@ function app() {
 
     async loadHistory() {
       try {
-        const r = await fetch('/api/history?limit=12');
+        const r = await fetch(gcUrl('/api/history?limit=12'), { headers: gcHeaders() });
         const d = await r.json();
         this.history = d.cards;
       } catch (_) {}

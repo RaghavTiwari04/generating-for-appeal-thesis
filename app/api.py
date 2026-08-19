@@ -26,20 +26,33 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 
-from fastapi import BackgroundTasks, FastAPI, HTTPException
+from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+from app.auth import (
+    allowed_origins,
+    check_rate_limit,
+    check_token,
+    check_token_query,
+    gate_enabled,
+)
 from common.logging import get_logger
 from common.occasions import ACTIVE_OCCASIONS, RELATIONSHIPS, TONES
 
 log = get_logger(__name__)
 
 app = FastAPI(title="Greeting Card Generator", version="1.0")
+# Split deployment serves the page from one origin and this API from another,
+# so the allowed origin is configuration rather than a constant. A wildcard is
+# the development default and is withdrawn once a token is in play.
 app.add_middleware(
-    CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"]
+    CORSMiddleware,
+    allow_origins=allowed_origins(),
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 FRONTEND_DIR = Path(__file__).parent / "frontend"
@@ -180,8 +193,16 @@ async def index():
     return Response(index_file.read_text(encoding="utf-8"), media_type="text/html")
 
 
+@app.get("/api/health")
+async def health():
+    """Unauthenticated: the frontend polls this to show whether the GPU host
+    is up, which it often will not be, since running one costs money by the
+    hour."""
+    return {"status": "ok", "gated": gate_enabled()}
+
+
 @app.get("/api/occasions")
-async def list_occasions():
+async def list_occasions(token: str = Depends(check_token)):
     return {
         "occasions": list(ACTIVE_OCCASIONS),
         "relationships": list(RELATIONSHIPS),
@@ -190,13 +211,26 @@ async def list_occasions():
 
 
 @app.post("/api/generate", response_model=GenerateResponse)
-async def start_generate(req: GenerateRequest, background_tasks: BackgroundTasks):
+async def start_generate(
+    req: GenerateRequest,
+    background_tasks: BackgroundTasks,
+    token: str = Depends(check_token),
+):
+    # Generation is the endpoint that spends money: one LLM call for the brief
+    # and n_candidates diffusion passes. It is the only one rate limited.
+    check_rate_limit(token)
     if req.occasion not in ACTIVE_OCCASIONS:
         raise HTTPException(400, f"Unknown occasion: {req.occasion!r}")
     # None is allowed and means "let the brief decide"; a named tone still has
     # to be one the prompt understands.
     if req.tone is not None and req.tone not in TONES:
         raise HTTPException(400, f"Unknown tone: {req.tone!r}")
+    # A visitor cannot ask for an unbounded batch: each candidate is a full
+    # diffusion pass, and the reported evaluation used eight.
+    if not 1 <= req.n_candidates <= 8:
+        raise HTTPException(400, "n_candidates must be between 1 and 8.")
+    if not 1 <= req.top_k <= req.n_candidates:
+        raise HTTPException(400, "top_k must be between 1 and n_candidates.")
 
     job_id = str(uuid.uuid4())
     job = Job(
@@ -216,8 +250,12 @@ async def start_generate(req: GenerateRequest, background_tasks: BackgroundTasks
 
 
 @app.get("/api/generate/{job_id}")
-async def stream_job(job_id: str):
-    """Server-Sent Events stream for generation progress + final results."""
+async def stream_job(job_id: str, token: str = Depends(check_token_query)):
+    """Server-Sent Events stream for generation progress + final results.
+
+    Takes its token from the query string because EventSource cannot set
+    headers. See `app.auth` for why that is acceptable here and nowhere else.
+    """
     if job_id not in _JOBS:
         raise HTTPException(404, "Job not found")
 
@@ -247,7 +285,7 @@ async def stream_job(job_id: str):
 
 
 @app.get("/api/history")
-async def get_history(limit: int = 12):
+async def get_history(limit: int = 12, token: str = Depends(check_token)):
     recent = sorted(_JOBS.values(), key=lambda j: j.created_at, reverse=True)
     done = [j for j in recent if j.status == "done"][:limit]
     return {
