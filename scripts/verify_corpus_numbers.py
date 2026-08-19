@@ -8,16 +8,23 @@ and survives: labelling ran before the final subtype pass and the final dedup,
 so some labels now sit on listings that are not the representative the current
 queries select. That is measured here rather than assumed.
 
-Three counts must not be confused, and the reported tables have done so before:
+Four counting bases run through this corpus, and quoting one without saying
+which produces the appearance of drift between numbers that are all correct:
 
-  distinct designs over all listings   -- ignores whether a listing was ever
-      classified into a subtype, so it can exceed the classified count for a
-      source and makes a source row read as a funnel that goes up.
-  distinct designs among classified listings -- the population Table 3.1 is
-      about. This is what `classified_designs` gives, per source.
-  the per-subtype sum of distinct designs -- higher than the corpus-wide
-      figure, because a duplicate cluster can span two subtypes and is then
-      counted in each.
+  listings              -- rows as scraped.
+  designs, all listings -- one per duplicate cluster over the whole scrape.
+      Deduplication runs there, not on the classified subset, so this is the
+      figure the dedup paragraph needs and it exceeds the classified count.
+  designs, classified   -- one per cluster among listings with a subtype. This
+      is the population the corpus table and the funnel are about.
+  label rows            -- one per labelled listing. Equal to designs when
+      labelling runs against a settled corpus, and larger when it does not.
+
+Per-subtype design counts use the representative's subtype, matching every
+consumer of the corpus (label pool, LoRA stratification, the human reference
+condition, both market-signal queries). Counting a design in every subtype its
+listings fall into instead inflates the per-subtype sum above the group total;
+both are reported so the difference is visible rather than surprising.
 
 Per-source rows can also double-count a design listed on both marketplaces, so
 they are not guaranteed to sum to the corpus total; `designs_on_both_sources`
@@ -148,19 +155,41 @@ ORDER BY listings DESC
 """
 
 PER_SUBTYPE_SQL = f"""
-SELECT lf.occasion,
-       COUNT(*)                                   AS listings,
-       COUNT(DISTINCT {DESIGN_KEY})               AS distinct_designs,
-       COUNT(sl.listing_id)                       AS labelled,
-       COUNT(DISTINCT CASE WHEN sl.listing_id IS NOT NULL
-                           THEN {DESIGN_KEY} END) AS labelled_designs
-FROM listings l
-JOIN listing_features lf USING (listing_id)
-LEFT JOIN saleability_labels sl
-       ON sl.listing_id = l.listing_id AND sl.label_source = %(src)s
-WHERE lf.occasion IS NOT NULL
-GROUP BY lf.occasion
-ORDER BY listings DESC
+WITH rep AS (
+    -- One row per design: the representative, and the subtype it carries.
+    -- This is the convention every consumer of the corpus uses.
+    SELECT DISTINCT ON ({DESIGN_KEY})
+           {DESIGN_KEY} AS design, l.listing_id, lf.occasion
+    FROM listings l
+    JOIN listing_features lf USING (listing_id)
+    WHERE lf.occasion IS NOT NULL
+    ORDER BY {DESIGN_KEY}, l.listing_id
+),
+per_listing AS (
+    SELECT lf.occasion,
+           COUNT(*)                                   AS listings,
+           COUNT(DISTINCT {DESIGN_KEY})               AS designs_any_subtype,
+           COUNT(sl.listing_id)                       AS labelled,
+           COUNT(DISTINCT CASE WHEN sl.listing_id IS NOT NULL
+                               THEN {DESIGN_KEY} END) AS labelled_designs
+    FROM listings l
+    JOIN listing_features lf USING (listing_id)
+    LEFT JOIN saleability_labels sl
+           ON sl.listing_id = l.listing_id AND sl.label_source = %(src)s
+    WHERE lf.occasion IS NOT NULL
+    GROUP BY lf.occasion
+)
+SELECT p.occasion,
+       p.listings,
+       COUNT(rep.design)      AS distinct_designs,
+       p.designs_any_subtype,
+       p.labelled,
+       p.labelled_designs
+FROM per_listing p
+LEFT JOIN rep ON rep.occasion = p.occasion
+GROUP BY p.occasion, p.listings, p.designs_any_subtype, p.labelled,
+         p.labelled_designs
+ORDER BY p.listings DESC
 """
 
 
@@ -182,7 +211,14 @@ def main() -> None:
     per["labelled_minus_designs"] = per.labelled - per.distinct_designs
     print(per.to_string(index=False))
     print(f"\ncolumn sums: listings={per.listings.sum():,} "
-          f"distinct={per.distinct_designs.sum():,} labelled={per.labelled.sum():,}")
+          f"distinct={per.distinct_designs.sum():,} "
+          f"(any-subtype convention {per.designs_any_subtype.sum():,}) "
+          f"labelled={per.labelled.sum():,}")
+    phantom = int(per.designs_any_subtype.sum() - per.distinct_designs.sum())
+    print(f"designs counted in more than one subtype: {phantom:,}")
+    if int(per.distinct_designs.sum()) != scalars["distinct_designs_with_occasion"]:
+        print("  NOTE: representative-convention sum should equal the "
+              "corpus-wide classified design count")
 
     print("\n=== reconciliation ===")
     clustered = scalars["clustered_listings"]
@@ -268,9 +304,23 @@ def emit_latex(src: pd.DataFrame, per: pd.DataFrame, scalars: dict[str, int]) ->
           f"& {per.labelled.sum():,} & {per.labelled_designs.sum():,} " + r"\\")
     print(r"\bottomrule")
     print(r"\end{tabular}")
-    print(f"\n(distinct designs across the classified corpus as a whole: "
-          f"{scalars['distinct_designs_with_occasion']:,}; the per-subtype column "
-          f"sums higher because a cluster can span subtypes)")
+    print(f"\n(per-subtype designs use the representative's subtype and sum to "
+          f"{int(per.distinct_designs.sum()):,}, matching the classified corpus "
+          f"as a whole)")
+
+    print("\n=== LaTeX: the four counting bases ===")
+    print(r"\begin{tabular}{lrrrr}")
+    print(r"\toprule")
+    print(r"Stage & Listings & Designs (all) & Designs (classified) & Label rows \\")
+    print(r"\midrule")
+    print(f"Scraped & {scalars['total_listings']:,} & "
+          f"{scalars['distinct_designs_total']:,} & --- & --- " + r"\\")
+    print(f"With a birthday subtype & {scalars['listings_with_occasion']:,} & --- & "
+          f"{scalars['distinct_designs_with_occasion']:,} & --- " + r"\\")
+    print(f"Labelled & --- & --- & {scalars['distinct_designs_labelled']:,} & "
+          f"{scalars['labelled_total']:,} " + r"\\")
+    print(r"\bottomrule")
+    print(r"\end{tabular}")
 
 
 if __name__ == "__main__":
