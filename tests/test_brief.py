@@ -89,3 +89,36 @@ def test_a_pinned_tone_overrides_what_the_model_returned() -> None:
 
         brief = generate_brief({"occasion": "birthday/general", "tone": "sentimental"})
     assert brief.tone == "sentimental"
+
+def test_unrecognised_tone_raises_rather_than_defaulting() -> None:
+    """An unparseable tone must not silently become `warm-sincere`.
+
+    `warm-sincere` is TONES[0] and was the old fallback. It is also the value
+    Section 4.4 reports as never chosen when the generator picks freely, which
+    is the evidence that it does not collapse to a default. Writing it on a
+    parse failure makes a code fault indistinguishable from a model choice,
+    and inverts the reported result.
+    """
+    from generation.brief.generate import generate_brief
+
+    payload = dict(_VALID_BRIEF_JSON)
+    payload["tone"] = "whimsical-nonsense"
+    with patch("generation.brief.generate.call_llm",
+               return_value=json.dumps(payload)), \
+         patch("generation.brief.generate._render_template", return_value="x"):
+        with pytest.raises(ValueError, match="not one of"):
+            generate_brief({"occasion": "birthday/general"})
+
+
+def test_a_pinned_tone_still_overrides_the_model() -> None:
+    """Pinning bypasses the check: the picker is a promise to the customer."""
+    from generation.brief.generate import generate_brief
+
+    payload = dict(_VALID_BRIEF_JSON)
+    payload["tone"] = "whimsical-nonsense"
+    with patch("generation.brief.generate.call_llm",
+               return_value=json.dumps(payload)), \
+         patch("generation.brief.generate._render_template", return_value="x"):
+        brief = generate_brief(
+            {"occasion": "birthday/general", "tone": "warm-humorous"})
+    assert brief.tone == "warm-humorous"

@@ -292,6 +292,11 @@ class DiffusionRunner:
             "num_images_per_prompt": n,
             "generator": generator,
         }
+        # FLUX.1-dev is guidance-distilled and exposes no negative prompt, so
+        # the field is passed only to SDXL. Briefs still populate it: the
+        # schema is backend-independent and the value is meaningful if the
+        # backend changes. On the default backend it does nothing, and a reader
+        # finding it filled should not infer that it shaped the image.
         if self.cfg.backend == "sdxl" and negative_prompt:
             call_kwargs["negative_prompt"] = negative_prompt
         call_kwargs.update(kwargs)

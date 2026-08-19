@@ -182,6 +182,13 @@ def render_card(
     )
     cover = images[0]
     score = verify_headline(cover, headline)
+    # `score` gates nothing unless `verify` is set, which it is not by default
+    # (HEADLINE_VERIFY). Tesseract's page segmentation discards brush-script
+    # lettering before recognition, so the score reads zero on correctly
+    # lettered cards and gating on it substituted the overlay for good output.
+    # It is carried on RenderedCard.match_score as a recorded lower bound, and
+    # the line below is its only consumer. Do not add a second: any new
+    # pass/fail read of this value reproduces the defect.
     if not verify:
         log.info(f"Headline lettered by the model (ocr match={score:.2f}, unverified)")
         return RenderedCard(image=cover, text_in_image=True, match_score=score)

@@ -61,8 +61,16 @@ def generate_brief(request: dict | BriefRequest) -> Brief:
     if req.tone:
         brief.tone = req.tone
     elif brief.tone not in TONES:
-        log.warning(f"Brief returned tone={brief.tone!r}, not in TONES; using {TONES[0]}")
-        brief.tone = TONES[0]
+        # Do not substitute TONES[0]. It is `warm-sincere`, which is also the
+        # value reported as never chosen when the generator picks freely, and
+        # is the evidence that it does not collapse to a default. Writing it
+        # here on a parse failure makes a code fault indistinguishable from a
+        # model choice, and would be counted as the opposite of what happened.
+        raise ValueError(
+            f"Brief returned tone={brief.tone!r}, which is not one of {TONES}. "
+            "Refusing to substitute a default: the substituted value is itself "
+            "a reported result. Regenerate the brief instead."
+        )
     return brief
 
 
