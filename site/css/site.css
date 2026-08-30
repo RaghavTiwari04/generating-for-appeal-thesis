@@ -790,6 +790,48 @@ img { max-width: 100%; display: block; }
 
 .table-scroll { overflow-x: auto; }
 
+/* -------------------------------------------------------------- failures */
+
+.failures { display: grid; gap: clamp(2rem, 5vw, 3.2rem); margin-top: 2.6rem; }
+
+.failure {
+  display: grid;
+  gap: clamp(1rem, 3vw, 2rem);
+  align-items: start;
+}
+
+@media (min-width: 46rem) {
+  .failure { grid-template-columns: minmax(0, 15rem) minmax(0, 1fr); }
+}
+
+.failure .card { max-width: 15rem; }
+
+.failure__title {
+  font-size: var(--step-1);
+  margin-bottom: 0.55rem;
+}
+
+/* ---------------------------------------------------------------- footer */
+
+.footer__grid { display: grid; gap: clamp(2rem, 5vw, 4rem); }
+
+@media (min-width: 48rem) {
+  .footer__grid { grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); }
+}
+
+.footer__head {
+  font-family: var(--sans);
+  font-size: var(--step--2);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  font-weight: 600;
+  margin-bottom: 0.7rem;
+}
+
+.footer__links { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.4rem; }
+.footer__links a { font-size: var(--step--1); }
+
 /* --------------------------------------------------------------- utility */
 
 .stack > * + * { margin-top: var(--stack-gap, 1.2rem); }
