@@ -1,0 +1,225 @@
+{
+  "_note": "Written by scripts/prepare_site_assets.py from an exported gallery. Every row records which card the image is and what it scored, so any card on the site can be traced back.",
+  "cards": [
+    {
+      "section": "hero",
+      "stem": "assets/cards/hero/hero-01",
+      "condition": "pipeline_reranked",
+      "occasion": "birthday/general",
+      "headline": "Rexcellent Birthday",
+      "purchase_intent": 0.74,
+      "source_file": "C_pipeline_rerank/birthday_general_a1295605.png",
+      "cropped": false,
+      "framing_checked": false,
+      "width": 1240,
+      "height": 1748,
+      "files": [
+        "hero-01-640.jpg",
+        "hero-01-640.webp",
+        "hero-01-1240.jpg",
+        "hero-01-1240.webp"
+      ]
+    },
+    {
+      "section": "examples",
+      "stem": "assets/cards/examples/examples-01",
+      "condition": "naive",
+      "occasion": "birthday/general",
+      "headline": "Happy Birthday",
+      "purchase_intent": 0.7,
+      "source_file": "A_naive_ai/birthday_general_88efd125.png",
+      "cropped": false,
+      "framing_checked": false,
+      "width": 1240,
+      "height": 1748,
+      "files": [
+        "examples-01-640.jpg",
+        "examples-01-640.webp",
+        "examples-01-1240.jpg",
+        "examples-01-1240.webp"
+      ]
+    },
+    {
+      "section": "examples",
+      "stem": "assets/cards/examples/examples-02",
+      "condition": "pipeline",
+      "occasion": "birthday/general",
+      "headline": "You're Welcome",
+      "purchase_intent": 0.75,
+      "source_file": "B_pipeline_no_rerank/birthday_general_581fbd0e.png",
+      "cropped": false,
+      "framing_checked": false,
+      "width": 1240,
+      "height": 1748,
+      "files": [
+        "examples-02-640.jpg",
+        "examples-02-640.webp",
+        "examples-02-1240.jpg",
+        "examples-02-1240.webp"
+      ]
+    },
+    {
+      "section": "examples",
+      "stem": "assets/cards/examples/examples-03",
+      "condition": "pipeline_reranked",
+      "occasion": "birthday/general",
+      "headline": "Rexcellent Birthday",
+      "purchase_intent": 0.74,
+      "source_file": "C_pipeline_rerank/birthday_general_a1295605.png",
+      "cropped": false,
+      "framing_checked": false,
+      "width": 1240,
+      "height": 1748,
+      "files": [
+        "examples-03-640.jpg",
+        "examples-03-640.webp",
+        "examples-03-1240.jpg",
+        "examples-03-1240.webp"
+      ]
+    },
+    {
+      "section": "examples",
+      "stem": "assets/cards/examples/examples-04",
+      "condition": "human",
+      "occasion": "birthday/general",
+      "headline": "Dinosaur fiesta - happy birthday card. P",
+      "purchase_intent": 0.74,
+      "source_file": "D_human_reference/birthday_general_8d5c1ba4.png",
+      "cropped": false,
+      "framing_checked": false,
+      "width": 736,
+      "height": 1030,
+      "files": [
+        "examples-04-640.jpg",
+        "examples-04-640.webp"
+      ]
+    },
+    {
+      "section": "quiz",
+      "stem": "assets/cards/quiz/quiz-01",
+      "condition": "pipeline_reranked",
+      "occasion": "birthday/milestone",
+      "headline": "Still A Classic",
+      "purchase_intent": 0.72,
+      "source_file": "C_pipeline_rerank/birthday_milestone_5964a790.png",
+      "cropped": false,
+      "framing_checked": false,
+      "width": 1240,
+      "height": 1748,
+      "files": [
+        "quiz-01-640.jpg",
+        "quiz-01-640.webp",
+        "quiz-01-1240.jpg",
+        "quiz-01-1240.webp"
+      ]
+    },
+    {
+      "section": "quiz",
+      "stem": "assets/cards/quiz/quiz-02",
+      "condition": "human",
+      "occasion": "birthday/general",
+      "headline": "Late But Still Here - Funny Birthday Car",
+      "purchase_intent": 0.73,
+      "source_file": "D_human_reference/birthday_general_2d4b7f72.png",
+      "cropped": false,
+      "framing_checked": true,
+      "width": 736,
+      "height": 1030,
+      "files": [
+        "quiz-02-640.jpg",
+        "quiz-02-640.webp"
+      ]
+    },
+    {
+      "section": "quiz",
+      "stem": "assets/cards/quiz/quiz-03",
+      "condition": "pipeline_reranked",
+      "occasion": "birthday/kids",
+      "headline": "Birthday Prickles!",
+      "purchase_intent": 0.73,
+      "source_file": "C_pipeline_rerank/birthday_kids_7e31d4d6.png",
+      "cropped": false,
+      "framing_checked": false,
+      "width": 1240,
+      "height": 1748,
+      "files": [
+        "quiz-03-640.jpg",
+        "quiz-03-640.webp",
+        "quiz-03-1240.jpg",
+        "quiz-03-1240.webp"
+      ]
+    },
+    {
+      "section": "quiz",
+      "stem": "assets/cards/quiz/quiz-04",
+      "condition": "human",
+      "occasion": "birthday/milestone",
+      "headline": "Supreme birthday - happy birthday card.",
+      "purchase_intent": 0.59,
+      "source_file": "D_human_reference/birthday_milestone_746b81ee.png",
+      "cropped": false,
+      "framing_checked": true,
+      "width": 736,
+      "height": 1030,
+      "files": [
+        "quiz-04-640.jpg",
+        "quiz-04-640.webp"
+      ]
+    },
+    {
+      "section": "quiz",
+      "stem": "assets/cards/quiz/quiz-05",
+      "condition": "pipeline",
+      "occasion": "birthday/general",
+      "headline": "No Regrets",
+      "purchase_intent": 0.74,
+      "source_file": "B_pipeline_no_rerank/birthday_general_fb23deb9.png",
+      "cropped": false,
+      "framing_checked": false,
+      "width": 1240,
+      "height": 1748,
+      "files": [
+        "quiz-05-640.jpg",
+        "quiz-05-640.webp",
+        "quiz-05-1240.jpg",
+        "quiz-05-1240.webp"
+      ]
+    },
+    {
+      "section": "quiz",
+      "stem": "assets/cards/quiz/quiz-06",
+      "condition": "human",
+      "occasion": "birthday/general",
+      "headline": "Rexcellent Day - Birthday Card | Greetin",
+      "purchase_intent": 0.73,
+      "source_file": "D_human_reference/birthday_general_f953716f.png",
+      "cropped": false,
+      "framing_checked": true,
+      "width": 736,
+      "height": 1030,
+      "files": [
+        "quiz-06-640.jpg",
+        "quiz-06-640.webp"
+      ]
+    },
+    {
+      "section": "failures",
+      "stem": "assets/cards/failures/failures-01",
+      "condition": "pipeline",
+      "occasion": "birthday/milestone",
+      "headline": "Still Running Fine",
+      "purchase_intent": 0.63,
+      "source_file": "B_pipeline_no_rerank/birthday_milestone_350288ee.png",
+      "cropped": false,
+      "framing_checked": false,
+      "width": 1240,
+      "height": 1748,
+      "files": [
+        "failures-01-640.jpg",
+        "failures-01-640.webp",
+        "failures-01-1240.jpg",
+        "failures-01-1240.webp"
+      ]
+    }
+  ]
+}

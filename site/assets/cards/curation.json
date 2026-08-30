@@ -1,15 +1,60 @@
 {
-  "_note": "Which cards appear on the site. Written by hand after looking at the exported gallery, then processed by scripts/prepare_site_assets.py. Every src is a path inside an eval_gallery directory. crop is optional and takes four fractions of the image, left top right bottom, used to take marketplace mockup framing off the human cards. Run the script with --list to see what is available.",
-
+  "_note": "Which cards appear on the site. Written by hand after looking at the exported gallery, then processed by scripts/prepare_site_assets.py. Every src is a path inside an eval_gallery directory. crop is optional and takes four fractions of the image, left top right bottom, used to take marketplace mockup framing off the listing cards. Run the script with --list to see what is available. Source gallery for this pass: eval_gallery_2026-08-30, run_tag run_20260805_0236, 40 cards per condition. Every card below was opened and looked at before it went in.",
   "_hero": "One card, shown large in the first screen. Pick something that looks like a card somebody would send rather than the highest scoring one.",
-  "hero": [],
-
-  "_examples": "One card per condition, same occasion across the row if possible, so the naive prompt sits next to the pipeline and the human original. Order here is the order on the page.",
-  "examples": [],
-
-  "_quiz": "Half human, half generated, shuffled by the page rather than here. Human cards need a crop, or they should not be in this list at all: the mockup frame is the answer. note is one line shown after the guess.",
-  "quiz": [],
-
-  "_failures": "Three slots, in the order the page shows them: mangled lettering, then the card that reproduced a protected character, then nothing for the third since that one is about the method rather than an image. Leave the second empty if showing it is the wrong call.",
-  "failures": []
+  "hero": [
+    {
+      "src": "C_pipeline_rerank/birthday_general_a1295605.png"
+    }
+  ],
+  "_examples": "One card per condition, same occasion across the row if possible, so the naive prompt sits next to the pipeline and the marketplace listing. Order here is the order on the page. All four are birthday/general. The hero card is deliberately repeated here so the visitor learns which condition produced the card they were shown first.",
+  "examples": [
+    {
+      "src": "A_naive_ai/birthday_general_88efd125.png"
+    },
+    {
+      "src": "B_pipeline_no_rerank/birthday_general_581fbd0e.png"
+    },
+    {
+      "src": "C_pipeline_rerank/birthday_general_a1295605.png"
+    },
+    {
+      "src": "D_human_reference/birthday_general_8d5c1ba4.png"
+    }
+  ],
+  "_quiz": "Half generated, half marketplace listings, shuffled by the page rather than here. Only the 736x1030 greetings_island listings are eligible: the 750x1000 redbubble images carry a seller watermark across the middle that no crop can remove, so they are all excluded. None of the six below needs a crop. note is one line shown after the guess.",
+  "quiz": [
+    {
+      "src": "C_pipeline_rerank/birthday_milestone_5964a790.png",
+      "note": "The headline is clean but the cassette label is nonsense. Small type is where these usually fall apart."
+    },
+    {
+      "src": "D_human_reference/birthday_general_2d4b7f72.png",
+      "note": "A marketplace listing. Plenty of sellers now use generators themselves, so this one may not be as far from the other group as it looks.",
+      "framing_checked": true
+    },
+    {
+      "src": "C_pipeline_rerank/birthday_kids_7e31d4d6.png",
+      "note": "Generated, and the lettering came out right, which is not the usual outcome."
+    },
+    {
+      "src": "D_human_reference/birthday_milestone_746b81ee.png",
+      "note": "A marketplace listing. Flat shapes and even edges are hard to get out of an image model.",
+      "framing_checked": true
+    },
+    {
+      "src": "B_pipeline_no_rerank/birthday_general_fb23deb9.png",
+      "note": "Generated. There is a scribble in the bottom corner where the model imitated an artist signature."
+    },
+    {
+      "src": "D_human_reference/birthday_general_f953716f.png",
+      "note": "A marketplace listing, and the third dinosaur pun in this small sample. The generated cards did not invent that joke, they picked it up.",
+      "framing_checked": true
+    }
+  ],
+  "_failures": "Only one image. The page shows three failures but the second is deliberately blank, since it is the card that reproduced a protected character, and the third is about the method rather than any one card.",
+  "failures": [
+    {
+      "src": "B_pipeline_no_rerank/birthday_milestone_350288ee.png"
+    }
+  ]
 }

@@ -1,4 +1,35 @@
 {
   "_note": "Rounds are filled from the evaluated 160 card set once the gallery has been exported from the cluster. Each round is one real card: file is a path under assets/cards/quiz/, condition is 'human' for the scraped marketplace cards or 'generated' for conditions B and C, and note is the one line shown after the guess. Human cards whose marketplace mockup framing or seller watermark survives cropping must not be used here, because the framing is a tell and the quiz would measure that rather than the design. With no rounds the section on the page says it is waiting rather than showing anything invented.",
-  "rounds": []
+  "rounds": [
+    {
+      "file": "assets/cards/quiz/quiz-01-640.jpg",
+      "condition": "generated",
+      "note": "The headline is clean but the cassette label is nonsense. Small type is where these usually fall apart."
+    },
+    {
+      "file": "assets/cards/quiz/quiz-02-640.jpg",
+      "condition": "human",
+      "note": "A marketplace listing. Plenty of sellers now use generators themselves, so this one may not be as far from the other group as it looks."
+    },
+    {
+      "file": "assets/cards/quiz/quiz-03-640.jpg",
+      "condition": "generated",
+      "note": "Generated, and the lettering came out right, which is not the usual outcome."
+    },
+    {
+      "file": "assets/cards/quiz/quiz-04-640.jpg",
+      "condition": "human",
+      "note": "A marketplace listing. Flat shapes and even edges are hard to get out of an image model."
+    },
+    {
+      "file": "assets/cards/quiz/quiz-05-640.jpg",
+      "condition": "generated",
+      "note": "Generated. There is a scribble in the bottom corner where the model imitated an artist signature."
+    },
+    {
+      "file": "assets/cards/quiz/quiz-06-640.jpg",
+      "condition": "human",
+      "note": "A marketplace listing, and the third dinosaur pun in this small sample. The generated cards did not invent that joke, they picked it up."
+    }
+  ]
 }
