@@ -223,6 +223,44 @@ img { max-width: 100%; display: block; }
   max-width: 18rem;
 }
 
+/* The four conditions side by side. Four across on a wide screen so the
+   comparison is one glance rather than a scroll, two across once the cards
+   get too narrow to read the lettering, which is the whole point of them. */
+.exhibit {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: clamp(0.7rem, 1.8vw, 1.2rem);
+  margin-block: 2rem 1.6rem;
+  padding: 0;
+  list-style: none;
+}
+
+@media (max-width: 46rem) {
+  .exhibit { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+/* The card here is a span, so it needs blockifying before aspect-ratio will
+   size it. Left inline it has no height, the row collapses, and the caption
+   underneath climbs on top of the labels. */
+.exhibit > li { display: grid; align-content: start; }
+.exhibit .card { display: block; }
+
+.exhibit__label {
+  display: block;
+  margin-top: 0.7rem;
+  font-family: var(--font-ui);
+  font-size: var(--step--1);
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+.exhibit__note {
+  display: block;
+  margin-top: 0.15rem;
+  color: var(--ink-soft);
+  font-size: var(--step--1);
+}
+
 /* --------------------------------------------------------------- controls */
 
 .field { display: block; margin-bottom: 1.4rem; }

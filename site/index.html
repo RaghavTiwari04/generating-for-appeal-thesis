@@ -259,9 +259,13 @@
 
       <!-- One card, large, while the form is being filled in. -->
       <div x-show="phase === 'intro' || phase === 'generating'">
-        <div class="card card--hero card--placeholder">
-          <span>A generated card goes here once the gallery has been exported
-          from the cluster.</span>
+        <div class="card card--hero">
+          <img src="assets/cards/hero/hero-01-640.jpg"
+               srcset="assets/cards/hero/hero-01-640.jpg 640w,
+                       assets/cards/hero/hero-01-1240.jpg 1240w"
+               sizes="(max-width: 46rem) 70vw, 24rem"
+               alt="A birthday card reading Rexcellent Birthday, with a dinosaur leaning over a cake"
+               width="640" height="902">
         </div>
       </div>
 
@@ -403,6 +407,61 @@
           largest effect in the study.
         </p>
 
+        <ul class="exhibit">
+          <li>
+            <span class="card">
+              <img src="assets/cards/examples/examples-01-640.jpg"
+                   srcset="assets/cards/examples/examples-01-640.jpg 640w,
+                           assets/cards/examples/examples-01-1240.jpg 1240w"
+                   sizes="(max-width: 46rem) 44vw, 15rem"
+                   alt="Happy Birthday in decorated script inside a floral border"
+                   loading="lazy" width="640" height="902">
+            </span>
+            <span class="exhibit__label">Naive prompt</span>
+            <span class="exhibit__note">Lettering and a border. No idea behind it.</span>
+          </li>
+          <li>
+            <span class="card">
+              <img src="assets/cards/examples/examples-02-640.jpg"
+                   srcset="assets/cards/examples/examples-02-640.jpg 640w,
+                           assets/cards/examples/examples-02-1240.jpg 1240w"
+                   sizes="(max-width: 46rem) 44vw, 15rem"
+                   alt="A cat beside a tiered cake, captioned You're Welcome"
+                   loading="lazy" width="640" height="902">
+            </span>
+            <span class="exhibit__label">Pipeline</span>
+            <span class="exhibit__note">A joke, and a picture that carries it.</span>
+          </li>
+          <li>
+            <span class="card">
+              <img src="assets/cards/examples/examples-03-640.jpg"
+                   srcset="assets/cards/examples/examples-03-640.jpg 640w,
+                           assets/cards/examples/examples-03-1240.jpg 1240w"
+                   sizes="(max-width: 46rem) 44vw, 15rem"
+                   alt="A dinosaur leaning over a cake, captioned Rexcellent Birthday"
+                   loading="lazy" width="640" height="902">
+            </span>
+            <span class="exhibit__label">Pipeline, best of eight</span>
+            <span class="exhibit__note">The card at the top of this page.</span>
+          </li>
+          <li>
+            <span class="card">
+              <img src="assets/cards/examples/examples-04-640.jpg"
+                   alt="A blue dinosaur holding balloons, captioned Have a Rawsome Birthday"
+                   loading="lazy" width="640" height="896">
+            </span>
+            <span class="exhibit__label">Sold on a marketplace</span>
+            <span class="exhibit__note">Someone else's dinosaur, listed for sale.</span>
+          </li>
+        </ul>
+
+        <p class="axis-note" style="margin-bottom:1.6rem">
+          One card per condition, all four for the same occasion. The two on
+          the right landed on the same joke without being asked to, which is
+          less of a coincidence than it looks: dinosaur puns are all over the
+          scraped corpus, and that corpus is what the adapter learned from.
+        </p>
+
         <ul class="compare">
           <li class="compare__row">
             <span class="compare__label">Naive prompt</span>
@@ -420,7 +479,7 @@
             <span class="compare__value">0.707</span>
           </li>
           <li class="compare__row" data-mark="human">
-            <span class="compare__label">Human designed</span>
+            <span class="compare__label">Sold on a marketplace</span>
             <span class="compare__track"><span class="compare__fill" style="width:77%"></span></span>
             <span class="compare__value">0.692</span>
           </li>
@@ -473,7 +532,7 @@
       <!-- finding 3 -->
       <div>
         <h3 style="font-size:var(--step-2);margin-bottom:0.8rem">
-          Whether it matches human designers depends on who is asked.
+          Whether it matches the cards already on sale depends on who is asked.
         </h3>
         <p style="color:var(--ink-soft)">
           The judge that produced the training labels also scored the final
@@ -500,7 +559,7 @@
             <span class="judge__name">A second family</span>
             <span class="judge__order">A &lt; D &lt; B &lt; C</span>
             <span class="judge__note">
-              Puts both pipeline conditions above the human cards, and
+              Puts both pipeline conditions above the marketplace cards, and
               compresses everything into a narrow band.
             </span>
           </li>
@@ -516,7 +575,7 @@
 
         <p class="axis-note" style="margin-top:0.9rem">
           A is the naive prompt, B the pipeline, C the pipeline with
-          reranking, D the human designed cards.
+          reranking, D the cards pulled from marketplace listings.
         </p>
 
         <details class="disclose">
@@ -545,7 +604,7 @@
                 <th scope="col">Naive</th>
                 <th scope="col">Pipeline</th>
                 <th scope="col">Best of 8</th>
-                <th scope="col">Human</th>
+                <th scope="col">Marketplace</th>
               </tr>
             </thead>
             <tbody>
@@ -559,7 +618,7 @@
         </div>
         <p class="note" style="margin-top:1rem">
           The aesthetic row is the one to be careful with. Roughly 70 per cent
-          of the human card images carry marketplace mockup framing and some
+          of the marketplace card images carry mockup framing and some
           carry seller watermarks, and the judge scores that furniture along
           with the design. Every image was capped at the same resolution before
           scoring so the generated cards had no size advantage, but the framing
@@ -575,24 +634,25 @@
 <!-- ================================================================== quiz -->
 <section class="band shell" x-data="quiz" x-cloak>
   <p class="eyebrow">A game, not the experiment</p>
-  <h2 style="font-size:var(--step-3);max-width:20ch">Can you tell which ones a person made?</h2>
+  <h2 style="font-size:var(--step-3);max-width:20ch">Can you tell which ones came off a shop shelf?</h2>
 
   <div class="quiz">
     <div class="quiz__intro">
       <p style="color:var(--ink-soft)">
-        Cards from the evaluated set, half drawn by this system and half made
-        by independent designers and sold on marketplaces. Guess before you
-        scroll past.
+        Cards from the evaluated set. Half were drawn by this system and half
+        were taken from listings on card marketplaces. Guess before you scroll
+        past.
       </p>
 
       <div class="notice" style="margin-top:1.2rem">
         <strong>This is not what the thesis tested.</strong>
         The study asked whether automated judges scored the two groups
         similarly. It never asked whether a person could tell them apart, and
-        doing well or badly here says nothing about the result. The human
-        cards have also had their marketplace mockup framing cropped away,
-        since the frame would give the answer without you looking at the
-        design.
+        doing well or badly here says nothing about the result. The marketplace
+        cards are listings, not verified handiwork: the scrape recorded no
+        author, and some of those sellers may well have used a generator too.
+        Any listing whose mockup frame or seller watermark would have given the
+        answer away was left out rather than cropped.
       </div>
 
       <template x-if="!ready && loaded">
@@ -619,8 +679,8 @@
           <p class="note" x-text="`Card ${index + 1} of ${rounds.length}. Score so far ${score}.`"></p>
 
           <div style="display:flex;gap:0.6rem;flex-wrap:wrap;margin-top:0.8rem" x-show="!answer">
-            <button class="btn btn--quiet" @click="guess('human')">A person made it</button>
-            <button class="btn btn--quiet" @click="guess('generated')">The model made it</button>
+            <button class="btn btn--quiet" @click="guess('human')">From a marketplace</button>
+            <button class="btn btn--quiet" @click="guess('generated')">Made by this system</button>
           </div>
 
           <template x-if="answer">
@@ -628,7 +688,7 @@
               <p class="quiz__verdict"
                  x-text="(answer === 'human') === isHuman ? 'Right.' : 'Wrong.'"
                  :data-right="(answer === 'human') === isHuman"></p>
-              <p class="note" x-text="isHuman ? 'Designed by a person and sold on a marketplace.' : 'Generated by this system.'"></p>
+              <p class="note" x-text="isHuman ? 'This one was listed for sale on a marketplace.' : 'Generated by this system.'"></p>
               <p class="note" x-show="round.note" x-text="round.note" style="margin-top:0.5rem"></p>
               <button class="btn btn--primary" style="margin-top:1rem" @click="next()">Next card</button>
             </div>
@@ -664,15 +724,20 @@
   <h2 style="font-size:var(--step-3);max-width:20ch">Three things it gets wrong.</h2>
   <p class="lede" style="margin-top:1rem">
     A demo that only shows its best output is not worth much. These are the
-    failures I could reproduce, and two of them are the reason this site
-    gates the generator rather than leaving it open.
+    failures I could reproduce, and the second one is why this site keeps
+    the generator behind a link rather than leaving it open.
   </p>
 
   <div class="failures">
 
     <article class="failure">
-      <div class="card card--placeholder">
-        <span>A card with mangled lettering goes here once the gallery is exported.</span>
+      <div class="card">
+        <img src="assets/cards/failures/failures-01-640.jpg"
+             srcset="assets/cards/failures/failures-01-640.jpg 640w,
+                     assets/cards/failures/failures-01-1240.jpg 1240w"
+             sizes="(max-width: 46rem) 80vw, 20rem"
+             alt="A card whose large headline reads correctly while every smaller label on it is nonsense"
+             loading="lazy" width="640" height="902">
       </div>
       <div>
         <h3 class="failure__title">The words come out wrong</h3>
@@ -681,10 +746,16 @@
           rather than typeset over it, which is what makes the lettering look
           like part of the design. It also means the model can misspell. Cards
           in the evaluated set include a doubled word and a greeting that
-          turned into a different word entirely. There is no spell check on
-          the output, because the only reader available is an OCR engine that
-          cannot read brush script on illustration and marks correct cards as
-          failures.
+          turned into a different word entirely. The card above is the usual
+          shape of it: the headline is perfect and every smaller label on the
+          diagram is gibberish, because small text is where the model has the
+          least room to work. It also signs cards. Some outputs carry a
+          scribble in the corner where a signature would go, and at least one
+          renders the literal word the adapter was trained against, since that
+          word was never taught to mean anything and the model treats it as
+          something to draw. There is no spell check on the output, because
+          the only reader available is an OCR engine that cannot read brush
+          script on illustration and marks correct cards as failures.
         </p>
       </div>
     </article>
