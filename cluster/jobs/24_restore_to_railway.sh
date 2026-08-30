@@ -41,6 +41,17 @@ if [ -z "$DUMP" ] || [ ! -f "$DUMP" ]; then
     exit 1
 fi
 
+# Checked before any work happens, not after. The first run of this restored
+# the whole corpus and then died on the last line because this cluster's
+# checkout predates the migration, which is a bad order to discover it in.
+MIGRATION="migrations/0006_demo_choice_events.sql"
+if [ ! -f "$MIGRATION" ]; then
+    echo "No $MIGRATION in $(pwd)." >&2
+    echo "This checkout is behind the one the demo is built from. Pull, or" >&2
+    echo "copy the file over, before restoring." >&2
+    exit 1
+fi
+
 DSN_FILE="$HOME/.gc_railway_dsn"
 if [ ! -f "$DSN_FILE" ]; then
     echo "No $DSN_FILE. Put the connection string in it and chmod 600." >&2
@@ -92,7 +103,7 @@ psql "$DSN" -tAc "SELECT 'embeddings: ' || count(*) FROM listing_features WHERE 
 # not in any dump taken from it.
 echo
 echo "--- migration 0006 ---"
-psql "$DSN" -f migrations/0006_demo_choice_events.sql
+psql "$DSN" -f "$MIGRATION"
 psql "$DSN" -tAc "SELECT 'demo_choice_events exists: ' || to_regclass('public.demo_choice_events')::text"
 
 echo
