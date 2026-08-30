@@ -1,0 +1,9 @@
+# A research demo attached to an MSc thesis. Indexing is welcome; the pages
+# that would be pointless to index are the data files the page fetches for
+# itself.
+User-agent: *
+Allow: /
+Disallow: /data/
+Disallow: /assets/cards/manifest.json
+
+Sitemap: https://generating-for-appeal-production.up.railway.app/sitemap.xml

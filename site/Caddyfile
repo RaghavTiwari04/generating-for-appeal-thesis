@@ -33,4 +33,12 @@
 	header @revalidate Cache-Control "no-cache"
 
 	file_server
+
+	# Otherwise a mistyped path gets Caddy's own bare 404 rather than anything
+	# belonging to this site.
+	handle_errors {
+		@notfound expression {err.status_code} == 404
+		rewrite @notfound /404.html
+		file_server
+	}
 }

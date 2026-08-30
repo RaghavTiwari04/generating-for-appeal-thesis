@@ -11,6 +11,13 @@ COPY Caddyfile /etc/caddy/Caddyfile
 # ship assets/cards/curation.json, which is the input to the image prep script
 # and holds working notes rather than anything the page reads.
 COPY index.html /srv/index.html
+COPY 404.html /srv/404.html
+COPY robots.txt /srv/robots.txt
+COPY sitemap.xml /srv/sitemap.xml
+COPY favicon.svg /srv/favicon.svg
+COPY favicon.ico /srv/favicon.ico
+COPY apple-touch-icon.png /srv/apple-touch-icon.png
+COPY og.jpg /srv/og.jpg
 COPY css /srv/css
 COPY js /srv/js
 COPY data /srv/data
