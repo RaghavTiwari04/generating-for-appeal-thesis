@@ -47,8 +47,11 @@ CONDITIONS = {
     "D_human_bestseller": "human",
 }
 
-# The widths the page actually asks for, via srcset.
-WIDTHS = (640, 1280)
+# The widths the page actually asks for, via srcset. 1240 rather than a round
+# 1280 because that is the full width of a generated card and there is nothing
+# above it to resample from. Anything wider than the source is skipped, so the
+# scraped listings, which are narrower, come out at 640 alone.
+WIDTHS = (640, 1240)
 JPEG_QUALITY = 85
 
 SITE = pathlib.Path("site")
@@ -179,6 +182,11 @@ def main(
                 "purchase_intent": meta["purchase_intent"],
                 "source_file": src,
                 "cropped": bool(entry.get("crop")),
+                # Set by hand, and only after opening the file. Says the image
+                # was checked and carries no mockup frame or watermark, so it
+                # needs no crop. Without it an uncropped listing is assumed
+                # framed, which is the safe way round.
+                "framing_checked": bool(entry.get("framing_checked")),
                 **info,
             }
             manifest.append(row)
@@ -213,16 +221,20 @@ def main(
         quiz_path.write_text(json.dumps(doc, indent=2), encoding="utf-8")
         print(f"wrote {len(quiz_rounds)} quiz rounds")
 
-    human_uncropped = [
+    unchecked = [
         r for r in manifest
-        if r["section"] == "quiz" and r["condition"] == "human" and not r["cropped"]
+        if r["section"] == "quiz" and r["condition"] == "human"
+        and not r["cropped"] and not r["framing_checked"]
     ]
-    if human_uncropped:
+    if unchecked:
         print(
-            f"\nWARNING: {len(human_uncropped)} human cards are in the quiz without a "
-            "crop. Marketplace framing gives the answer away; crop them or move them "
-            "to the examples row."
+            f"\nWARNING: {len(unchecked)} marketplace cards are in the quiz "
+            "with no crop and no framing check. Mockup framing gives the answer "
+            "away. Open each one, then either crop it, set framing_checked, or "
+            "drop it."
         )
+        for r in unchecked:
+            print(f"  {r['source_file']}")
 
     print(f"processed {len(manifest)} cards into {OUT}")
 
