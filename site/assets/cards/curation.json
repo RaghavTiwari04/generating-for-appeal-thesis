@@ -1,0 +1,15 @@
+{
+  "_note": "Which cards appear on the site. Written by hand after looking at the exported gallery, then processed by scripts/prepare_site_assets.py. Every src is a path inside an eval_gallery directory. crop is optional and takes four fractions of the image, left top right bottom, used to take marketplace mockup framing off the human cards. Run the script with --list to see what is available.",
+
+  "_hero": "One card, shown large in the first screen. Pick something that looks like a card somebody would send rather than the highest scoring one.",
+  "hero": [],
+
+  "_examples": "One card per condition, same occasion across the row if possible, so the naive prompt sits next to the pipeline and the human original. Order here is the order on the page.",
+  "examples": [],
+
+  "_quiz": "Half human, half generated, shuffled by the page rather than here. Human cards need a crop, or they should not be in this list at all: the mockup frame is the answer. note is one line shown after the guess.",
+  "quiz": [],
+
+  "_failures": "Three slots, in the order the page shows them: mangled lettering, then the card that reproduced a protected character, then nothing for the third since that one is about the method rather than an image. Leave the second empty if showing it is the wrong call.",
+  "failures": []
+}
