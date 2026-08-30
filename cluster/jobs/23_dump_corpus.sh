@@ -37,13 +37,32 @@ echo "=== Corpus dump ==="
 echo "Node: $(hostname)  Start: $(date)"
 
 # What is going into the dump, so a truncated restore is obvious later.
+#
+# Real counts, not pg_stat_user_tables.n_live_tup. Those are autovacuum
+# statistics and they reset when the server restarts, which this job does
+# every time: the first run of it reported every table as empty on a corpus
+# of nearly four thousand listings.
 echo
 echo "--- row counts at dump time ---"
 psql -h localhost -p 5433 -d greeting_cards -c "
-SELECT relname AS table, n_live_tup AS approx_rows
-FROM pg_stat_user_tables
-ORDER BY n_live_tup DESC;
+SELECT 'listings'           AS table, count(*) FROM listings
+UNION ALL SELECT 'listing_features',    count(*) FROM listing_features
+UNION ALL SELECT 'listing_images',      count(*) FROM listing_images
+UNION ALL SELECT 'saleability_labels',  count(*) FROM saleability_labels
+UNION ALL SELECT 'generated_cards',     count(*) FROM generated_cards
+ORDER BY 1;
 "
+
+# Stop rather than ship an empty archive. The brief generator reads market
+# signals out of these two tables, so a dump without them restores cleanly
+# and then fails at the first card.
+LISTINGS="$(psql -h localhost -p 5433 -d greeting_cards -tAc 'SELECT count(*) FROM listings')"
+FEATURES="$(psql -h localhost -p 5433 -d greeting_cards -tAc 'SELECT count(*) FROM listing_features WHERE clip_embedding IS NOT NULL')"
+echo "listings=$LISTINGS  listing_features with an embedding=$FEATURES"
+if [ "$LISTINGS" -lt 1 ] || [ "$FEATURES" -lt 1 ]; then
+    echo "FATAL: the corpus is empty, so there is nothing worth dumping." >&2
+    exit 1
+fi
 
 echo "--- extensions in use ---"
 psql -h localhost -p 5433 -d greeting_cards -c "SELECT extname, extversion FROM pg_extension ORDER BY extname;"
@@ -67,7 +86,15 @@ pg_dump -h localhost -p 5433 -d greeting_cards \
 echo "--- verifying the archive ---"
 pg_restore --list "$DUMP" > "$DUMP.toc"
 echo "table definitions in archive: $(grep -c 'TABLE DATA' "$DUMP.toc" || true)"
-echo "size: $(du -h "$DUMP" | cut -f1)"
+
+# stat, not du. du reports allocated blocks and it is wrong on this NFS mount:
+# it called a 28 MB dump "512", which reads exactly like a failed dump.
+BYTES="$(stat -c %s "$DUMP")"
+echo "size: $BYTES bytes ($((BYTES / 1024 / 1024)) MB)"
+if [ "$BYTES" -lt 1000000 ]; then
+    echo "FATAL: $BYTES bytes is far too small for this corpus." >&2
+    exit 1
+fi
 
 echo
 echo "=== Done: $(date) ==="
