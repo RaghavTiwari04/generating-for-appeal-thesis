@@ -68,7 +68,10 @@ document.addEventListener('alpine:init', () => {
 
     async init() {
       try {
-        const r = await fetch('data/quiz.json', { cache: 'force-cache' });
+        // Deliberately not force-cache. This file gains rounds when a new
+        // gallery is curated, and a visitor holding the older copy would sit
+        // on an empty quiz with no way to find out otherwise.
+        const r = await fetch('data/quiz.json');
         if (r.ok) {
           const doc = await r.json();
           this.rounds = Array.isArray(doc.rounds) ? doc.rounds : [];
@@ -95,7 +98,20 @@ document.addEventListener('alpine:init', () => {
       this.index += 1;
     },
 
+    /* The curated file alternates generated and marketplace so it can be read
+     * and checked by hand. Played in that order the pattern is obvious after
+     * three cards, so the order is thrown here instead, once per attempt. */
+    shuffle() {
+      const r = this.rounds.slice();
+      for (let i = r.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [r[i], r[j]] = [r[j], r[i]];
+      }
+      this.rounds = r;
+    },
+
     restart() {
+      this.shuffle();
       this.index = 0;
       this.answer = null;
       this.score = 0;
@@ -331,7 +347,9 @@ document.addEventListener('alpine:init', () => {
       this.startClock();
 
       try {
-        const r = await fetch('data/sample_run.json', { cache: 'force-cache' });
+        // Same reason as the quiz file: this one is filled in from a real
+        // run later, and a cached empty copy would never correct itself.
+        const r = await fetch('data/sample_run.json');
         if (!r.ok) throw new Error('missing sample');
         const sample = await r.json();
 
