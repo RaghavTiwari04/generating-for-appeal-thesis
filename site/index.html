@@ -1,0 +1,227 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Generating for Appeal</title>
+<meta name="description" content="Can a model learn what makes a birthday card worth choosing? A research demo from an MSc thesis at Imperial College London.">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600&family=Archivo:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/site.css">
+
+<script src="js/config.js"></script>
+<script src="js/app.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.1/dist/cdn.min.js" defer></script>
+</head>
+
+<body>
+
+<!-- Stated once, at the top, because the thesis is clear that this system is
+     not fit to be a product: the adapter is trained on designs belonging to
+     the sellers who made them, and nothing filters what comes out. -->
+<div class="prototype-banner">
+  <strong>Research prototype.</strong>
+  Not a card shop, and nothing here is for sale.
+</div>
+
+<main>
+
+<section class="hero shell" x-data="heroLoop" x-cloak>
+  <div class="hero__grid">
+
+    <!-- ------------------------------------------------------ left column -->
+    <div class="hero__stage">
+
+      <!-- intro ------------------------------------------------------- -->
+      <div x-show="phase === 'intro'" class="stack">
+        <h1 class="hero__question">Can a model learn what makes a birthday card worth choosing?</h1>
+
+        <p class="lede">
+          This is the working half of an MSc thesis. It reads a few thousand
+          cards that already sell, writes its own briefs, draws the artwork
+          with the greeting lettered into it, and then tries to guess which
+          card people would want.
+        </p>
+
+        <p class="lede">
+          The guessing is the part I could not check. So the demo makes four
+          cards and asks you to pick one.
+        </p>
+
+        <div class="stack stack--tight" style="margin-top:2rem">
+          <label class="field">
+            <span class="label">Who is it for?</span>
+            <select class="select" x-model="form.relationship">
+              <template x-for="r in recipients" :key="r.value">
+                <option :value="r.value" x-text="r.label"></option>
+              </template>
+            </select>
+          </label>
+
+          <label class="field">
+            <span class="label">What should it sound like?</span>
+            <select class="select" x-model="form.tone">
+              <template x-for="t in tones" :key="t.value">
+                <option :value="t.value" x-text="t.label"></option>
+              </template>
+            </select>
+          </label>
+
+          <div class="field">
+            <span class="label">A milestone birthday? (optional)</span>
+            <div class="chips">
+              <template x-for="age in milestones" :key="age">
+                <button type="button" class="chip"
+                        :aria-pressed="form.age === age"
+                        @click="pickAge(age)"
+                        x-text="age"></button>
+              </template>
+            </div>
+          </div>
+        </div>
+
+        <div style="margin-top:1.6rem;display:flex;align-items:center;gap:1rem;flex-wrap:wrap">
+          <button class="btn btn--primary" @click="begin()" x-text="ctaLabel"></button>
+          <span class="note" x-show="$store.backend.state === 'down'" style="max-width:22rem">
+            The generator runs on a rented GPU that is not left switched on.
+          </span>
+        </div>
+
+        <p class="notice" x-show="error" x-text="error" style="margin-top:1.4rem"></p>
+
+        <p class="byline">
+          Raghav Tiwari. MSc Computing, Imperial College London.
+          Supervised by Dr Thomas Lancaster.
+        </p>
+      </div>
+
+      <!-- generating -------------------------------------------------- -->
+      <div x-show="phase === 'generating'" class="stack">
+        <p class="eyebrow" x-text="replaying ? 'Replaying a saved run' : 'Working'"></p>
+        <h2 style="font-size:var(--step-3);margin-bottom:1.6rem">
+          Four briefs, four cards.
+        </h2>
+
+        <ul class="stages">
+          <template x-for="s in stages" :key="s.key">
+            <li class="stage" :data-state="s.state">
+              <span class="stage__mark" x-text="s.state === 'done' ? '✓' : ''"></span>
+              <span>
+                <span class="stage__name" x-text="s.name"></span><br>
+                <span class="stage__detail" x-text="s.detail"></span>
+              </span>
+            </li>
+          </template>
+        </ul>
+
+        <p class="note" style="margin-top:1.4rem">
+          <span x-show="!replaying">
+            About a minute. Each card is a language model writing a brief, then
+            a diffusion model drawing it.
+          </span>
+          <span x-show="replaying">
+            This is a run I captured earlier, played back at roughly the pace
+            the real thing takes.
+          </span>
+        </p>
+      </div>
+
+      <!-- choose ------------------------------------------------------ -->
+      <div x-show="phase === 'choose'" class="stack">
+        <p class="eyebrow">Your turn</p>
+        <h2 style="font-size:var(--step-3);margin-bottom:1rem">
+          Which one would you actually send?
+        </h2>
+
+        <p class="lede">
+          The model has already ranked these four. You cannot see how, and
+          neither can your browser: the ranking stays on the server until you
+          have committed to one.
+        </p>
+
+        <p class="note" style="margin-top:1.2rem">
+          Pick the card, then confirm. There is no right answer, which is
+          rather the point.
+        </p>
+
+        <!-- Shown only when the backend says it is recording. The notice and
+             the recording cannot disagree, because both read the same flag. -->
+        <div class="notice notice--data" x-show="$store.backend.logging" style="margin-top:1.4rem">
+          <strong>This choice is recorded.</strong>
+          Anonymously: which card you picked, how the model had ranked it, and
+          how long you took. No name, no address, nothing you typed.
+        </div>
+
+        <div style="margin-top:1.8rem;display:flex;gap:0.8rem;flex-wrap:wrap">
+          <button class="btn btn--primary" :disabled="!selected" @click="commit()">
+            This one
+          </button>
+          <button class="btn btn--quiet" @click="startOver()">Start again</button>
+        </div>
+      </div>
+
+      <!-- reveal ------------------------------------------------------ -->
+      <div x-show="phase === 'reveal'" class="stack">
+        <p class="eyebrow">Chosen</p>
+        <h2 style="font-size:var(--step-3)">You picked this one.</h2>
+        <p class="lede">The comparison with the model goes here next.</p>
+        <button class="btn btn--quiet" @click="startOver()" style="margin-top:1rem">
+          Make another
+        </button>
+      </div>
+
+    </div>
+
+    <!-- ----------------------------------------------------- right column -->
+    <div class="hero__stage">
+
+      <!-- One card, large, while the form is being filled in. -->
+      <div x-show="phase === 'intro' || phase === 'generating'">
+        <div class="card card--hero card--placeholder">
+          <span>A generated card goes here once the gallery has been exported
+          from the cluster.</span>
+        </div>
+      </div>
+
+      <!-- The slate. -->
+      <div x-show="phase === 'choose'" class="choose__grid">
+        <template x-for="(card, i) in cards" :key="card.display_id">
+          <button type="button" class="pick"
+                  :aria-pressed="selected === card.display_id"
+                  @click="select(card)">
+            <span class="card">
+              <img :src="card.image_data_url" :alt="'Card reading ' + card.headline" loading="lazy">
+            </span>
+            <span class="pick__caption" x-text="card.headline"></span>
+          </button>
+        </template>
+      </div>
+
+      <div x-show="phase === 'reveal'">
+        <div class="card">
+          <img x-show="chosenCard" :src="chosenCard && chosenCard.image_data_url"
+               :alt="chosenCard ? 'Card reading ' + chosenCard.headline : ''">
+        </div>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+</main>
+
+<footer class="band band--sunk">
+  <div class="shell">
+    <p class="note">
+      Built for an MSc thesis at Imperial College London. The cards are
+      generated by a diffusion model fine tuned on marketplace listings, and
+      scored by a model rather than by people, which is the main thing the
+      research is honest about not having solved.
+    </p>
+  </div>
+</footer>
+
+</body>
+</html>
