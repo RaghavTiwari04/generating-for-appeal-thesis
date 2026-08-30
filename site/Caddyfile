@@ -1,0 +1,36 @@
+{
+	admin off
+	persist_config off
+}
+
+# Railway injects PORT. The fallback is for running the image locally.
+:{$PORT:8080} {
+	root * /srv
+	encode zstd gzip
+
+	header {
+		-Server
+		X-Content-Type-Options nosniff
+		X-Frame-Options SAMEORIGIN
+		Referrer-Policy no-referrer
+	}
+
+	# Card images are rewritten under the same filenames whenever the
+	# curation changes, so they get an hour rather than a year.
+	@images path /assets/*
+	header @images Cache-Control "public, max-age=3600, must-revalidate"
+
+	# Everything else revalidates. The page and its data files keep their
+	# names when their contents change, and this is not hypothetical
+	# caution: an earlier force-cache on quiz.json left the browser holding
+	# an empty copy, so the quiz claimed it was still waiting for the
+	# cluster while the rounds were already on disk. file_server sends
+	# ETags, so a revalidation that finds nothing new costs a 304.
+	#
+	# Matched as "not an image" rather than by listing paths, because a
+	# rule written as /index.html does not match a request for /.
+	@revalidate not path /assets/*
+	header @revalidate Cache-Control "no-cache"
+
+	file_server
+}
