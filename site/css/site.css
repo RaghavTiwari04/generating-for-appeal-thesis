@@ -641,6 +641,155 @@ img { max-width: 100%; display: block; }
 .disclose[open] > summary::before { content: "\2212 "; }
 .disclose > *:not(summary) { margin-top: 1rem; }
 
+/* -------------------------------------------------------------- pipeline */
+
+.pipeline {
+  list-style: none;
+  margin: 2rem 0 0;
+  padding: 0;
+  display: grid;
+  gap: 1px;
+  background: var(--rule-soft);
+  border: 1px solid var(--rule-soft);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+@media (min-width: 52rem) {
+  .pipeline { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+}
+
+.pipeline__step {
+  background: var(--paper);
+  padding: 1.2rem 1.1rem;
+  display: grid;
+  gap: 0.4rem;
+  align-content: start;
+  transition: background 160ms ease;
+}
+
+.pipeline__step:hover,
+.pipeline__step:focus-within { background: var(--paper-raised); }
+
+.pipeline__n {
+  font-family: var(--serif);
+  font-size: var(--step-1);
+  color: var(--ink-faint);
+  line-height: 1;
+}
+
+.pipeline__name { font-weight: 600; font-size: var(--step--1); }
+.pipeline__what { font-size: var(--step--1); color: var(--ink-soft); line-height: 1.5; }
+.pipeline__tech { font-size: var(--step--2); color: var(--ink-faint); font-family: var(--sans); }
+
+/* ---------------------------------------------------------------- charts */
+
+/* Bars for four conditions. Drawn from a floor rather than from zero, because
+   every score here sits between roughly 0.4 and 0.8 and a zero based axis
+   would render four near identical bars. The axis note under each chart says
+   where the scale starts, which is the honest way to do this. */
+.compare {
+  list-style: none;
+  margin: 1.6rem 0 0.9rem;
+  padding: 0;
+  display: grid;
+  gap: 0.7rem;
+}
+
+.compare__row {
+  display: grid;
+  grid-template-columns: minmax(7.5rem, auto) minmax(0, 1fr) 3.2rem;
+  gap: 0.9rem;
+  align-items: center;
+}
+
+.compare__label { font-size: var(--step--1); color: var(--ink-soft); }
+.compare__track { background: var(--rule-soft); border-radius: 999px; height: 10px; }
+
+.compare__fill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--ink-faint);
+}
+
+.compare__row[data-mark="pipeline"] .compare__fill { background: var(--accent); }
+.compare__row[data-mark="human"] .compare__fill { background: var(--good); }
+
+.compare__value {
+  font-size: var(--step--1);
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-soft);
+  text-align: right;
+}
+
+.compare__row[data-mark="pipeline"] .compare__label,
+.compare__row[data-mark="pipeline"] .compare__value { color: var(--ink); font-weight: 600; }
+
+.axis-note {
+  font-size: var(--step--2);
+  color: var(--ink-faint);
+  margin: 0;
+}
+
+/* ---------------------------------------------------------------- judges */
+
+.judges {
+  list-style: none;
+  margin: 1.8rem 0 0;
+  padding: 0;
+  display: grid;
+  gap: 1rem;
+}
+
+@media (min-width: 48rem) {
+  .judges { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+
+.judge {
+  border: 1px solid var(--rule-soft);
+  border-radius: 2px;
+  background: var(--paper-raised);
+  padding: 1.1rem 1.2rem;
+  display: grid;
+  gap: 0.55rem;
+  align-content: start;
+}
+
+.judge__name { font-weight: 600; font-size: var(--step--1); }
+
+.judge__order {
+  font-family: var(--serif);
+  font-size: var(--step-1);
+  letter-spacing: 0.02em;
+  color: var(--accent);
+}
+
+.judge__note { font-size: var(--step--2); color: var(--ink-soft); line-height: 1.5; }
+
+/* ----------------------------------------------------------------- table */
+
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--step--1);
+  font-variant-numeric: tabular-nums;
+}
+
+.data-table th,
+.data-table td {
+  text-align: right;
+  padding: 0.5rem 0.7rem;
+  border-bottom: 1px solid var(--rule-soft);
+}
+
+.data-table th:first-child,
+.data-table td:first-child { text-align: left; }
+.data-table thead th { color: var(--ink-faint); font-weight: 600; }
+.data-table .lead { color: var(--ink); font-weight: 600; }
+
+.table-scroll { overflow-x: auto; }
+
 /* --------------------------------------------------------------- utility */
 
 .stack > * + * { margin-top: var(--stack-gap, 1.2rem); }

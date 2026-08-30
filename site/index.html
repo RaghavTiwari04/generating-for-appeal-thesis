@@ -300,6 +300,278 @@
   </div>
 </section>
 
+<hr class="rule">
+
+<!-- ==================================================== what just happened -->
+<section class="band shell">
+  <p class="eyebrow">What just happened</p>
+  <h2 style="font-size:var(--step-3);max-width:22ch">
+    Six steps, and only one of them is an image model.
+  </h2>
+  <p class="lede" style="margin-top:1rem">
+    The interesting claim in this project is not that a diffusion model can
+    draw. It is that wrapping one in a pipeline that knows what already sells
+    makes a measurable difference, which turned out to be true.
+  </p>
+
+  <ol class="pipeline">
+    <li class="pipeline__step">
+      <span class="pipeline__n">1</span>
+      <span class="pipeline__name">Read the market</span>
+      <span class="pipeline__what">
+        Cards were scraped from two marketplaces, near duplicates collapsed,
+        and each design scored on five dimensions.
+      </span>
+      <span class="pipeline__tech">3,906 listings, 2,795 distinct designs, 2,468 labelled</span>
+    </li>
+    <li class="pipeline__step">
+      <span class="pipeline__n">2</span>
+      <span class="pipeline__name">Learn what does well</span>
+      <span class="pipeline__what">
+        A small model learns to predict those scores from the picture alone,
+        so it can rate a card that does not exist yet.
+      </span>
+      <span class="pipeline__tech">Ridge regression on frozen SigLIP embeddings</span>
+    </li>
+    <li class="pipeline__step">
+      <span class="pipeline__n">3</span>
+      <span class="pipeline__name">Write a brief</span>
+      <span class="pipeline__what">
+        A language model gets the occasion and the titles of cards that
+        already sell, and writes a concept, a headline and an inside message.
+      </span>
+      <span class="pipeline__tech">Anchored on a different bestseller per candidate</span>
+    </li>
+    <li class="pipeline__step">
+      <span class="pipeline__n">4</span>
+      <span class="pipeline__name">Draw it</span>
+      <span class="pipeline__what">
+        The artwork is generated with the greeting lettered into it, rather
+        than typeset on top afterwards.
+      </span>
+      <span class="pipeline__tech">FLUX.1 with an adapter trained on the corpus</span>
+    </li>
+    <li class="pipeline__step">
+      <span class="pipeline__n">5</span>
+      <span class="pipeline__name">Pick one</span>
+      <span class="pipeline__what">
+        The appeal model rates the batch and returns its favourite. This is
+        the step that turned out not to matter.
+      </span>
+      <span class="pipeline__tech">Best of N selection</span>
+    </li>
+  </ol>
+
+  <details class="disclose">
+    <summary>The technical version</summary>
+    <p class="note" style="max-width:var(--measure)">
+      Listings are deduplicated by perceptual hash and by cosine similarity
+      over frozen SigLIP embeddings, resolved with union find. Those same
+      embeddings, cached in Postgres with pgvector, feed a per head ridge
+      probe that predicts five judged dimensions. Briefs come from a language
+      model prompted with k means clusters over the top scoring designs plus
+      the thirty best titles for the occasion. Images are FLUX.1-dev with a
+      rank 32 LoRA trained on 148 cards, 37 per subtype. The reranker scores
+      candidates with the same frozen encoder the corpus was embedded with,
+      which matters more than it sounds: embed the candidates differently from
+      the training set and the only symptom is quietly worse selection.
+    </p>
+  </details>
+</section>
+
+<!-- ============================================================= findings -->
+<section class="band band--sunk">
+  <div class="shell">
+    <p class="eyebrow">What the numbers said</p>
+    <h2 style="font-size:var(--step-3);max-width:20ch">Three findings, two of them negative.</h2>
+
+    <!-- Figures throughout this section come from
+         artifacts/llm_system_eval/raw_ratings.csv and
+         artifacts/judge_robustness/ratings_{anthropic_claude_sonnet_4_6,
+         openai_gpt_4o}.csv, computed for the thesis. Do not edit without
+         re-deriving them from those files. -->
+
+    <div class="stack stack--loose" style="margin-top:3rem">
+
+      <!-- finding 1 -->
+      <div>
+        <h3 style="font-size:var(--step-2);margin-bottom:0.8rem">The pipeline was worth building.</h3>
+        <p style="color:var(--ink-soft)">
+          Four conditions, forty cards each, all scored by the same judge.
+          Naive prompting means asking the image model directly, with no brief
+          and no adapter. The gap between that and the full pipeline is the
+          largest effect in the study.
+        </p>
+
+        <ul class="compare">
+          <li class="compare__row">
+            <span class="compare__label">Naive prompt</span>
+            <span class="compare__track"><span class="compare__fill" style="width:20%"></span></span>
+            <span class="compare__value">0.624</span>
+          </li>
+          <li class="compare__row">
+            <span class="compare__label">Pipeline</span>
+            <span class="compare__track"><span class="compare__fill" style="width:71%"></span></span>
+            <span class="compare__value">0.685</span>
+          </li>
+          <li class="compare__row" data-mark="pipeline">
+            <span class="compare__label">Pipeline, best of eight</span>
+            <span class="compare__track"><span class="compare__fill" style="width:89%"></span></span>
+            <span class="compare__value">0.707</span>
+          </li>
+          <li class="compare__row" data-mark="human">
+            <span class="compare__label">Human designed</span>
+            <span class="compare__track"><span class="compare__fill" style="width:77%"></span></span>
+            <span class="compare__value">0.692</span>
+          </li>
+        </ul>
+        <p class="axis-note">
+          Judged purchase intent, mean over 40 cards. The bars run from 0.60 to
+          0.72, not from zero.
+        </p>
+
+        <div class="notice" style="margin-top:1.4rem">
+          <strong>These are model judgements, not sales.</strong>
+          Every commercial field in the scraped corpus came back empty, so
+          nothing here was ever checked against what people bought.
+        </div>
+      </div>
+
+      <!-- finding 2 -->
+      <div>
+        <h3 style="font-size:var(--step-2);margin-bottom:0.8rem">Picking the best of eight did not help.</h3>
+        <p style="color:var(--ink-soft)">
+          This is the result I expected least and trust most. Generating eight
+          cards and letting the appeal model choose one is statistically
+          equivalent to generating a single card and keeping it. It is the one
+          finding that holds under every judge tested.
+        </p>
+        <p style="color:var(--ink-soft)">
+          The reason turned up when I measured how different the eight
+          candidates actually are. A batch spans about 42 per cent of the
+          spread you see across the scraped market, and a selector cannot pick
+          out a difference that is not there. It is the same reason the reveal
+          above is a coin toss on any single visit.
+        </p>
+
+        <details class="disclose">
+          <summary>The statistical form of that claim</summary>
+          <p class="note" style="max-width:var(--measure)">
+            Equivalence was tested rather than inferred from a null result,
+            because failing to find a difference is not the same as showing
+            there is none. Two one sided tests at a margin of 0.02 on the
+            judge's scale, rank based to match the other contrasts. The
+            location shift between one candidate and best of eight is 0.0054
+            by the Hodges Lehmann estimate, well inside the margin. The margin
+            itself is asserted, not derived: no study of card buying tells you
+            what difference would matter commercially, so the thesis reports
+            the verdict across a range of margins instead of defending one.
+          </p>
+        </details>
+      </div>
+
+      <!-- finding 3 -->
+      <div>
+        <h3 style="font-size:var(--step-2);margin-bottom:0.8rem">
+          Whether it matches human designers depends on who is asked.
+        </h3>
+        <p style="color:var(--ink-soft)">
+          The judge that produced the training labels also scored the final
+          cards, which is circular, so every card was scored again by two
+          judges from other model families. The headline survives in a weaker
+          form than I would have liked.
+        </p>
+        <p style="color:var(--ink-soft);font-weight:500">
+          No judge rated the pipeline below the human reference. Whether the
+          two count as statistically equivalent depends on the judge: two of
+          the three support it, the third puts the pipeline above.
+        </p>
+
+        <ul class="judges">
+          <li class="judge">
+            <span class="judge__name">The reporting judge</span>
+            <span class="judge__order">A &lt; B &lt; D &lt; C</span>
+            <span class="judge__note">
+              Produced the training labels too, which is why the other two
+              exist. Spreads the conditions widest.
+            </span>
+          </li>
+          <li class="judge">
+            <span class="judge__name">A second family</span>
+            <span class="judge__order">A &lt; D &lt; B &lt; C</span>
+            <span class="judge__note">
+              Puts both pipeline conditions above the human cards, and
+              compresses everything into a narrow band.
+            </span>
+          </li>
+          <li class="judge">
+            <span class="judge__name">A third family</span>
+            <span class="judge__order">A &lt; D &lt; B &lt; C</span>
+            <span class="judge__note">
+              Agrees on the shape, disagrees on the level. Rates the naive
+              cards lowest of anyone.
+            </span>
+          </li>
+        </ul>
+
+        <p class="axis-note" style="margin-top:0.9rem">
+          A is the naive prompt, B the pipeline, C the pipeline with
+          reranking, D the human designed cards.
+        </p>
+
+        <details class="disclose">
+          <summary>Where the judges disagree</summary>
+          <p class="note" style="max-width:var(--measure)">
+            All three agree on the two things the study turns on: naive
+            prompting is worst, reranking is not worth it. They agree far less
+            about individual cards. Rank correlation between any two judges,
+            card by card, runs from 0.41 to 0.65. So a single card's score is
+            substantially a matter of which judge you asked, while the
+            comparison between conditions is not. That is a normal pattern in
+            evaluation work rather than a defect, but it does put a ceiling on
+            how much any one number here deserves to be trusted.
+          </p>
+        </details>
+      </div>
+
+      <!-- full table -->
+      <details class="disclose">
+        <summary>All five dimensions</summary>
+        <div class="table-scroll">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th scope="col">Dimension</th>
+                <th scope="col">Naive</th>
+                <th scope="col">Pipeline</th>
+                <th scope="col">Best of 8</th>
+                <th scope="col">Human</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr><th scope="row">Purchase intent</th><td>0.624</td><td>0.685</td><td class="lead">0.707</td><td>0.692</td></tr>
+              <tr><th scope="row">Occasion fit</th><td>0.761</td><td>0.761</td><td class="lead">0.842</td><td>0.817</td></tr>
+              <tr><th scope="row">Aesthetic</th><td>0.672</td><td>0.700</td><td class="lead">0.753</td><td>0.589</td></tr>
+              <tr><th scope="row">Emotional resonance</th><td>0.525</td><td>0.669</td><td class="lead">0.686</td><td>0.669</td></tr>
+              <tr><th scope="row">Distinctiveness</th><td>0.397</td><td class="lead">0.592</td><td>0.586</td><td>0.506</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="note" style="margin-top:1rem">
+          The aesthetic row is the one to be careful with. Roughly 70 per cent
+          of the human card images carry marketplace mockup framing and some
+          carry seller watermarks, and the judge scores that furniture along
+          with the design. Every image was capped at the same resolution before
+          scoring so the generated cards had no size advantage, but the framing
+          could not be normalised away. Read that row as a comparison of
+          photographs, not of card designs.
+        </p>
+      </details>
+
+    </div>
+  </div>
+</section>
+
 </main>
 
 <footer class="band band--sunk">
