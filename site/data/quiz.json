@@ -1,0 +1,4 @@
+{
+  "_note": "Rounds are filled from the evaluated 160 card set once the gallery has been exported from the cluster. Each round is one real card: file is a path under assets/cards/quiz/, condition is 'human' for the scraped marketplace cards or 'generated' for conditions B and C, and note is the one line shown after the guess. Human cards whose marketplace mockup framing or seller watermark survives cropping must not be used here, because the framing is a tell and the quiz would measure that rather than the design. With no rounds the section on the page says it is waiting rather than showing anything invented.",
+  "rounds": []
+}

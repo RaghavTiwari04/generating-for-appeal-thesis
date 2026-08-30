@@ -47,6 +47,62 @@ document.addEventListener('alpine:init', () => {
     },
   });
 
+  /* Human designed or generated?
+   *
+   * A game, and framed as one. The thesis never tested whether people can
+   * tell the difference; it tested whether automated judges scored the two
+   * groups similarly. Those are not the same claim and the intro says so
+   * before anyone plays.
+   *
+   * Rounds come from data/quiz.json, which is filled from the evaluated set
+   * once the gallery has been exported. With no rounds the section says it is
+   * waiting rather than inventing anything.
+   */
+  Alpine.data('quiz', () => ({
+    rounds: [],
+    loaded: false,
+    started: false,
+    index: 0,
+    answer: null,
+    score: 0,
+
+    async init() {
+      try {
+        const r = await fetch('data/quiz.json', { cache: 'force-cache' });
+        if (r.ok) {
+          const doc = await r.json();
+          this.rounds = Array.isArray(doc.rounds) ? doc.rounds : [];
+        }
+      } catch (e) {
+        this.rounds = [];
+      }
+      this.loaded = true;
+    },
+
+    get ready() { return this.loaded && this.rounds.length > 0; },
+    get round() { return this.rounds[this.index] || null; },
+    get finished() { return this.index >= this.rounds.length; },
+    get isHuman() { return this.round && this.round.condition === 'human'; },
+
+    guess(said) {
+      if (this.answer) return;
+      this.answer = said;
+      if ((said === 'human') === this.isHuman) this.score += 1;
+    },
+
+    next() {
+      this.answer = null;
+      this.index += 1;
+    },
+
+    restart() {
+      this.index = 0;
+      this.answer = null;
+      this.score = 0;
+      this.started = true;
+    },
+  }));
+
   Alpine.data('heroLoop', () => ({
 
     phase: 'intro',

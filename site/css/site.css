@@ -790,6 +790,32 @@ img { max-width: 100%; display: block; }
 
 .table-scroll { overflow-x: auto; }
 
+/* ------------------------------------------------------------------ quiz */
+
+.quiz { margin-top: 2rem; display: grid; gap: 2rem; }
+.quiz__intro { max-width: var(--measure); }
+
+.quiz__play {
+  display: grid;
+  gap: clamp(1.2rem, 4vw, 2.4rem);
+  align-items: center;
+}
+
+@media (min-width: 46rem) {
+  .quiz__play { grid-template-columns: minmax(0, 16rem) minmax(0, 1fr); }
+}
+
+.quiz__card { max-width: 16rem; }
+
+.quiz__verdict {
+  font-family: var(--serif);
+  font-size: var(--step-2);
+  margin: 0 0 0.4rem;
+}
+
+.quiz__verdict[data-right="true"] { color: var(--good); }
+.quiz__verdict[data-right="false"] { color: var(--warn); }
+
 /* -------------------------------------------------------------- failures */
 
 .failures { display: grid; gap: clamp(2rem, 5vw, 3.2rem); margin-top: 2.6rem; }
