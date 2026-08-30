@@ -125,7 +125,9 @@
         <label class="block text-sm font-medium text-stone-600 mb-1">
           Candidates to generate: <span class="font-bold text-blue-600" x-text="form.n_candidates"></span>
         </label>
-        <input type="range" min="1" max="16" step="1" x-model.number="form.n_candidates"
+        <!-- 8 is the API's cap; the slider used to offer 16 and any request
+             above 8 came back as a 400. -->
+        <input type="range" min="1" max="8" step="1" x-model.number="form.n_candidates"
                class="w-full accent-blue-500">
         <p class="text-xs text-stone-400 mt-1">More = better quality, slower (~5s per candidate)</p>
       </div>
