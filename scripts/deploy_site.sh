@@ -44,6 +44,12 @@ cat > "$STAMP" <<JSON
 }
 JSON
 
-echo "Deploying site/ at ${commit}${suffix}"
+# Name the service explicitly. `railway up` otherwise deploys to whatever
+# the directory is linked to, and that link moves without warning: running
+# `railway add --database postgres` here repointed it at the new database, and
+# the next deploy pushed this static site over the top of Postgres.
+SERVICE="${RAILWAY_SERVICE:-generating-for-appeal}"
+
+echo "Deploying site/ at ${commit}${suffix} to service $SERVICE"
 cd "$ROOT/site"
-railway up "$@"
+railway up --service "$SERVICE" "$@"
