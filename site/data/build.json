@@ -1,0 +1,5 @@
+{
+  "_note": "Overwritten by scripts/deploy_site.sh just before railway up, and put back to this straight afterwards. Tracked on purpose rather than gitignored: an ignored file risks being left out of the upload, and the footer would then be quoting a commit that never shipped. Locally it stays 'unknown' and the footer says nothing.",
+  "commit": "unknown",
+  "deployed_at": null
+}

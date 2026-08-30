@@ -831,10 +831,14 @@
           <li><a href="#">Source code</a></li>
         </ul>
 
+        <p class="note" x-data="buildStamp" x-show="commit" style="margin-top:0.9rem">
+          Deployed from commit <span x-text="commit"></span>.
+        </p>
+
         <h3 class="footer__head" style="margin-top:1.6rem">Standing warnings</h3>
         <p class="note">
           Research prototype, not a product. The adapter that draws these
-          cards was trained on 148 designs belonging to the independent
+          cards was trained on 240 designs belonging to the independent
           sellers who made them, and the thesis is clear that a commercial
           version would need licensed training data. There is no filter on
           what comes out. The base image model is licensed for

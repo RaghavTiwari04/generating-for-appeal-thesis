@@ -58,6 +58,24 @@ document.addEventListener('alpine:init', () => {
    * once the gallery has been exported. With no rounds the section says it is
    * waiting rather than inventing anything.
    */
+  /* The commit the live site was deployed from. scripts/deploy_site.sh writes
+   * it into data/build.json on the way past; locally the file says "unknown"
+   * and the footer stays quiet rather than showing a placeholder. */
+  Alpine.data('buildStamp', () => ({
+    commit: '',
+
+    async init() {
+      try {
+        const r = await fetch('data/build.json');
+        if (!r.ok) return;
+        const doc = await r.json();
+        if (doc.commit && doc.commit !== 'unknown') this.commit = doc.commit;
+      } catch (e) {
+        // Nothing to say, so the line stays hidden.
+      }
+    },
+  }));
+
   Alpine.data('quiz', () => ({
     rounds: [],
     loaded: false,
