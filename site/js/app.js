@@ -101,6 +101,13 @@ document.addEventListener('alpine:init', () => {
     selected: null,
     gridShownAt: 0,
 
+    // Reveal state. Nothing here exists until a choice has been committed.
+    ranking: null,
+    modelTop: null,
+    opened: false,
+    editedMessage: '',
+    briefOpen: false,
+
     init() {
       this.resetStages();
       Alpine.store('backend').check();
@@ -301,6 +308,51 @@ document.addEventListener('alpine:init', () => {
       return this.cards.find((c) => c.display_id === this.selected) || null;
     },
 
+    /* Where the visitor's pick came in the model's order. */
+    get chosenRank() {
+      if (!this.ranking) return null;
+      const row = this.ranking.find((r) => r.display_id === this.selected);
+      return row ? row.rank : null;
+    },
+
+    get agreed() { return this.chosenRank === 1; },
+
+    /* The cards in the model's order, each carrying the position it was
+     * actually shown in, so the reveal can point at the grid the visitor
+     * saw rather than at an abstract ranking. */
+    get rankedCards() {
+      if (!this.ranking) return [];
+      return this.ranking
+        .map((r) => ({
+          ...r,
+          card: this.cards.find((c) => c.display_id === r.display_id),
+          shownAt: this.cards.findIndex((c) => c.display_id === r.display_id) + 1,
+          isChoice: r.display_id === this.selected,
+        }))
+        .sort((a, b) => a.rank - b.rank);
+    },
+
+    /* Purchase intent is what the whole thesis ranks on, so it is the number
+     * the bars show. Calibrated where the predictor supplies it. */
+    scoreOf(row) {
+      const s = row.scores || {};
+      const v = s.purchase_intent_calibrated ?? s.purchase_intent ?? 0;
+      return Number(v);
+    },
+
+    /* Bars are scaled to the batch, not to the full 0 to 1 range. Across four
+     * siblings from one brief the absolute numbers sit within a few
+     * hundredths of each other, and a bar chart from zero would show four
+     * identical bars, which hides the very thing worth seeing. The caption
+     * next to it says so, so nobody reads the widths as large differences. */
+    barWidth(row) {
+      const vals = this.rankedCards.map((r) => this.scoreOf(r));
+      const lo = Math.min(...vals);
+      const hi = Math.max(...vals);
+      if (hi - lo < 1e-9) return 100;
+      return 18 + 82 * ((this.scoreOf(row) - lo) / (hi - lo));
+    },
+
     /* Committing is what unlocks the ranking. Until this runs, the browser
      * has never been told which card the model preferred. */
     async commit() {
@@ -310,26 +362,83 @@ document.addEventListener('alpine:init', () => {
       if (this.jobId) {
         // Fire and forget. A visitor should never wait on the study, and the
         // endpoint answers 204 whether or not it recorded anything.
-        fetch(gcUrl('/api/choice'), {
-          method: 'POST',
-          headers: gcHeaders({ 'Content-Type': 'application/json' }),
-          body: JSON.stringify({
-            session_id: gcSession(),
-            job_id: this.jobId,
-            event_type: 'choice',
-            time_to_choice_ms: elapsed,
-          }),
-        }).catch(() => {});
+        this.report('choice', elapsed);
+
+        try {
+          const r = await fetch(gcUrl(`/api/generate/${this.jobId}/reveal`), {
+            method: 'POST',
+            headers: gcHeaders({ 'Content-Type': 'application/json' }),
+            body: JSON.stringify({ chosen_display_id: this.selected }),
+          });
+          if (!r.ok) throw new Error(`reveal failed (${r.status})`);
+          const body = await r.json();
+          this.ranking = body.candidates;
+          this.modelTop = body.model_top_display_id;
+        } catch (e) {
+          // The choice still stands even if the comparison cannot be fetched.
+          this.ranking = null;
+          this.modelTop = null;
+        }
+      } else if (this._sample && this._sample.reveal) {
+        this.ranking = this._sample.reveal.candidates;
+        this.modelTop = this._sample.reveal.model_top_display_id;
       }
 
+      this.editedMessage = this.chosenCard ? this.chosenCard.inside_message : '';
+      this.opened = false;
       this.phase = 'reveal';
     },
 
+    /* One place for every interaction the study records. Silent, optional,
+     * and never blocking: if the backend is not logging, the endpoint answers
+     * 204 and nothing here can tell the difference. */
+    report(eventType, ms) {
+      if (!this.jobId) return;
+      fetch(gcUrl('/api/choice'), {
+        method: 'POST',
+        headers: gcHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({
+          session_id: gcSession(),
+          job_id: this.jobId,
+          event_type: eventType,
+          time_to_choice_ms: ms ?? null,
+        }),
+      }).catch(() => {});
+    },
+
+    open() {
+      this.opened = true;
+      this.phase = 'open';
+    },
+
+    /* The image is already a data URL at print resolution, 1240 by 1748,
+     * which is A6 at 300 dpi. So the download is an anchor and nothing has to
+     * be fetched: it keeps working after the job has aged out of the server's
+     * memory. */
+    downloadFront() {
+      const card = this.chosenCard;
+      if (!card) return;
+      const a = document.createElement('a');
+      a.href = card.image_data_url;
+      a.download = `${(card.headline || 'card').toLowerCase().replace(/[^a-z0-9]+/g, '-')}.jpg`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      this.report('download_front');
+    },
+
+    messageEdited() { this.report('message_edited'); },
+
     startOver() {
+      if (this.jobId) this.report('regenerate');
       this.phase = 'intro';
       this.cards = [];
       this.selected = null;
       this.jobId = null;
+      this.ranking = null;
+      this.modelTop = null;
+      this.opened = false;
+      this.briefOpen = false;
       this.replaying = false;
       this.error = '';
       this.resetStages();

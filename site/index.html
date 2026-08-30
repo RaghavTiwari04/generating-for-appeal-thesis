@@ -163,13 +163,93 @@
       </div>
 
       <!-- reveal ------------------------------------------------------ -->
-      <div x-show="phase === 'reveal'" class="stack">
+      <div x-show="phase === 'reveal' || phase === 'open'" class="stack">
         <p class="eyebrow">Chosen</p>
-        <h2 style="font-size:var(--step-3)">You picked this one.</h2>
-        <p class="lede">The comparison with the model goes here next.</p>
-        <button class="btn btn--quiet" @click="startOver()" style="margin-top:1rem">
-          Make another
-        </button>
+
+        <template x-if="ranking">
+          <div>
+            <h2 style="font-size:var(--step-3);margin-bottom:1rem">
+              <span x-show="agreed">You and the model agreed.</span>
+              <span x-show="!agreed">
+                You picked the model's
+                <span x-text="chosenRank === 2 ? 'second' : chosenRank === 3 ? 'third' : 'fourth'"></span>
+                choice.
+              </span>
+            </h2>
+
+            <ol class="ranking">
+              <template x-for="row in rankedCards" :key="row.display_id">
+                <li class="ranking__row" :data-mine="row.isChoice">
+                  <span class="ranking__place" x-text="row.rank"></span>
+                  <span class="ranking__body">
+                    <span class="ranking__name" x-text="row.card ? row.card.headline : ''"></span>
+                    <span class="ranking__bar" :style="`width:${barWidth(row)}%`"></span>
+                  </span>
+                  <span class="ranking__tag" x-show="row.isChoice">yours</span>
+                </li>
+              </template>
+            </ol>
+
+            <p class="note" style="margin-top:1rem">
+              The bars are stretched to show the gaps. In real terms these four
+              sit within a few hundredths of one another, which is the finding
+              underneath this whole demo: a batch from one brief spans about
+              42 per cent of the spread you see across the market, so there is
+              not much for a ranker to work with. Agreeing or disagreeing once
+              is close to a coin toss. It is the pattern across many visitors
+              that would say something.
+            </p>
+          </div>
+        </template>
+
+        <template x-if="!ranking">
+          <div>
+            <h2 style="font-size:var(--step-3);margin-bottom:1rem">You picked this one.</h2>
+            <p class="note">
+              The model's ranking could not be fetched, so there is nothing to
+              compare against this time.
+            </p>
+          </div>
+        </template>
+
+        <div style="margin-top:1.6rem;display:flex;gap:0.8rem;flex-wrap:wrap">
+          <button class="btn btn--primary" @click="open()" x-show="phase === 'reveal'">
+            Open the card
+          </button>
+          <button class="btn btn--primary" @click="downloadFront()" x-show="phase === 'open'">
+            Download it
+          </button>
+          <button class="btn btn--quiet" @click="startOver()">Make another</button>
+        </div>
+
+        <details class="disclose" x-show="chosenCard && chosenCard.brief">
+          <summary>How this card was written</summary>
+          <template x-if="chosenCard && chosenCard.brief">
+            <dl class="brief">
+              <div class="brief__row">
+                <dt>Concept</dt>
+                <dd x-text="chosenCard.brief.concept"></dd>
+              </div>
+              <div class="brief__row">
+                <dt>Register</dt>
+                <dd x-text="chosenCard.brief.tone"></dd>
+              </div>
+              <div class="brief__row" x-show="chosenCard.brief.style_tags">
+                <dt>Styling</dt>
+                <dd x-text="(chosenCard.brief.style_tags || []).join(', ')"></dd>
+              </div>
+              <div class="brief__row" x-show="chosenCard.brief.visual_prompt">
+                <dt>Sent to the image model</dt>
+                <dd x-text="chosenCard.brief.visual_prompt"></dd>
+              </div>
+            </dl>
+          </template>
+          <p class="note">
+            A language model wrote this from the occasion plus a list of cards
+            that already score well. The words on the front were then painted
+            into the artwork rather than laid over it.
+          </p>
+        </details>
       </div>
 
     </div>
@@ -199,10 +279,20 @@
         </template>
       </div>
 
-      <div x-show="phase === 'reveal'">
-        <div class="card">
+      <!-- The chosen card, closed, then opened to its inside. -->
+      <div x-show="phase === 'reveal' || phase === 'open'" class="spread"
+           :data-open="phase === 'open'">
+        <div class="card spread__front">
           <img x-show="chosenCard" :src="chosenCard && chosenCard.image_data_url"
                :alt="chosenCard ? 'Card reading ' + chosenCard.headline : ''">
+        </div>
+
+        <div class="card spread__inside" x-show="phase === 'open'">
+          <label class="visually-hidden" for="inside">Inside message</label>
+          <textarea id="inside" class="inside__text" x-model="editedMessage"
+                    @change="messageEdited()"
+                    rows="6"></textarea>
+          <p class="inside__hint">The inside is written after the front. Edit it if it is not right.</p>
         </div>
       </div>
 

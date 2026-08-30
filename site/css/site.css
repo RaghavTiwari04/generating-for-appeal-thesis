@@ -460,6 +460,144 @@ img { max-width: 100%; display: block; }
 
 .pick[aria-pressed="true"] .pick__caption { color: var(--ink); font-weight: 600; }
 
+/* ---------------------------------------------------------------- reveal */
+
+.ranking { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.55rem; }
+
+.ranking__row {
+  display: grid;
+  grid-template-columns: 1.6rem minmax(0, 1fr) auto;
+  gap: 0.85rem;
+  align-items: center;
+  padding: 0.5rem 0.6rem;
+  border-radius: 2px;
+  border: 1px solid transparent;
+}
+
+.ranking__row[data-mine="true"] {
+  border-color: var(--rule);
+  background: var(--paper-raised);
+}
+
+.ranking__place {
+  font-family: var(--serif);
+  font-size: var(--step-1);
+  color: var(--ink-faint);
+  text-align: right;
+}
+
+.ranking__row[data-mine="true"] .ranking__place { color: var(--accent); }
+
+.ranking__body { display: grid; gap: 0.35rem; min-width: 0; }
+
+.ranking__name {
+  font-size: var(--step--1);
+  color: var(--ink-soft);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ranking__bar {
+  height: 5px;
+  border-radius: 999px;
+  background: var(--rule);
+  transition: width 420ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.ranking__row[data-mine="true"] .ranking__bar { background: var(--accent); }
+
+.ranking__tag {
+  font-size: var(--step--2);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--accent);
+  font-weight: 600;
+}
+
+/* ---------------------------------------------------------------- spread */
+
+/* Closed, the front sits alone. Opened, the inside slides out beside it, so
+   the card reads as an object with two faces rather than as two pictures. */
+.spread {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: clamp(0.7rem, 2vw, 1.2rem);
+  justify-items: center;
+}
+
+/* Side by side only where there is room for it. Below that the inside sits
+   under the front, which is also how you would actually hold the thing. */
+@media (min-width: 34rem) {
+  .spread[data-open="true"] { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+.spread .card { height: min(52svh, 30rem); width: auto; }
+
+.spread__inside {
+  display: flex;
+  flex-direction: column;
+  padding: clamp(1rem, 3vw, 1.8rem);
+  background: var(--paper-raised);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .spread__inside { animation: unfold 420ms cubic-bezier(0.22, 1, 0.36, 1); }
+}
+
+@keyframes unfold {
+  from { opacity: 0; transform: perspective(900px) rotateY(-22deg); transform-origin: left center; }
+  to { opacity: 1; transform: none; }
+}
+
+/* Sized against the card rather than the page: the card is a fixed slab of
+   viewport height, so page-level type steps overflow it on a narrow screen
+   while looking undersized on a wide one. cqi tracks the card itself. */
+.spread__inside { container-type: inline-size; }
+
+.inside__text {
+  flex: 1;
+  width: 100%;
+  border: 0;
+  background: transparent;
+  resize: none;
+  font-family: var(--serif);
+  font-size: clamp(0.82rem, 5.2cqi, 1.25rem);
+  line-height: 1.5;
+  color: var(--ink);
+  text-align: center;
+  align-content: center;
+}
+
+.inside__text:focus { outline: none; background: var(--accent-wash); border-radius: 2px; }
+
+.inside__hint {
+  font-size: var(--step--2);
+  color: var(--ink-faint);
+  text-align: center;
+  margin: 0;
+}
+
+/* ----------------------------------------------------------------- brief */
+
+.brief { margin: 0 0 1rem; display: grid; gap: 0.7rem; }
+.brief__row { display: grid; gap: 0.15rem; }
+
+.brief dt {
+  font-size: var(--step--2);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  font-weight: 600;
+}
+
+.brief dd {
+  margin: 0;
+  font-size: var(--step--1);
+  color: var(--ink-soft);
+  line-height: 1.5;
+}
+
 /* --------------------------------------------------------------- notices */
 
 .notice {
