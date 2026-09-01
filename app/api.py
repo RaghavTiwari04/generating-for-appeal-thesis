@@ -329,6 +329,13 @@ async def start_generate(
     return GenerateResponse(job_id=job_id)
 
 
+# A comment line in the SSE grammar. EventSource drops anything beginning with
+# a colon before it reaches a handler, so this is invisible to the page and
+# exists purely to keep bytes moving through whatever sits in front of us.
+_HEARTBEAT = ": keepalive\n\n"
+_HEARTBEAT_SECONDS = 10
+
+
 @app.get("/api/generate/{job_id}")
 async def stream_job(job_id: str, token: str = Depends(check_token_query)):
     """Server-Sent Events stream for generation progress + final results.
@@ -342,12 +349,14 @@ async def stream_job(job_id: str, token: str = Depends(check_token_query)):
     async def _sse() -> AsyncIterator[str]:
         job = _JOBS[job_id]
         sent = 0
+        quiet = 0
         while True:
             # Flush any new progress messages
             while sent < len(job.progress):
                 msg = json.dumps({"type": "progress", "message": job.progress[sent]})
                 yield f"data: {msg}\n\n"
                 sent += 1
+                quiet = 0
 
             if job.status == "done":
                 # public_results only. Sending job.results here would undo the
@@ -362,6 +371,18 @@ async def stream_job(job_id: str, token: str = Depends(check_token_query)):
                 return
 
             await asyncio.sleep(1.0)
+
+            # Progress messages are coarse, and the gap between "generating
+            # images" and the scoring line spans every diffusion pass with
+            # nothing to report: minutes of a connection with no bytes on it.
+            # Proxies read that as a dead origin and hang up. RunPod fronts
+            # pods with Cloudflare, which gives up after 100 seconds, so
+            # without this the demo fails on the proxy while the GPU is still
+            # working perfectly.
+            quiet += 1
+            if quiet >= _HEARTBEAT_SECONDS:
+                yield _HEARTBEAT
+                quiet = 0
 
     return StreamingResponse(_sse(), media_type="text/event-stream")
 
